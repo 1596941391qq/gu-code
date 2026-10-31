@@ -353,19 +353,23 @@ const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 const SPI = Object.fromEntries(SPECIES.map((s, i) => [s.id, i]));
 const TRI = Object.fromEntries(TRAIT_ALL.map((k, i) => [k, i]));
 const QUI = Object.fromEntries(QUIRK_KEYS.map((k, i) => [k, i]));
+// 位宽：ver 1/2 物种 4 位、词条 4 位、道痕 12 位（旧码照旧能读）；ver 3 物种 7 位、词条 7 位、道痕 16 位（64 种蛊、66 个词条，各留余量）
+const CODE_W = v => v >= 3 ? { sp: 7, tr: 7, mk: 16 } : { sp: 4, tr: 4, mk: 12 };
+export const CODE_VER = 3;
 function utf8(s) { return typeof TextEncoder !== 'undefined' ? new TextEncoder().encode(s) : Buffer.from(s, 'utf8'); }
 function unutf8(b) { return typeof TextDecoder !== 'undefined' ? new TextDecoder().decode(new Uint8Array(b)) : Buffer.from(b).toString('utf8'); }
 export function encodeTeam(team, meta = {}) {
   const bits = [];
   const put = (v, n) => { v = Math.max(0, Math.min(Math.floor(v) || 0, 2 ** n - 1)); for (let i = n - 1; i >= 0; i--) bits.push(Math.floor(v / 2 ** i) % 2); };
   let nm = utf8(String(meta.name || '').slice(0, 8)); if (nm.length > 24) nm = nm.slice(0, 24);
-  put(2, 3); put(meta.realm || 0, 3); put(team.length, 3); put(nm.length, 5); nm.forEach(b => put(b, 8));
-  let mb = 0; (meta.marks || []).forEach(k => { const i = MARK_KEYS.indexOf(k); if (i >= 0) mb += 2 ** i; }); put(mb, 12);
+  const W = CODE_W(CODE_VER);
+  put(CODE_VER, 3); put(meta.realm || 0, 3); put(team.length, 3); put(nm.length, 5); nm.forEach(b => put(b, 8));
+  let mb = 0; (meta.marks || []).forEach(k => { const i = MARK_KEYS.indexOf(k); if (i >= 0) mb += 2 ** i; }); put(mb, W.mk);
   for (const g of team.slice(0, SLOTS)) {
-    put(SPI[g.sp], 4); put(g.atk, 8); put(g.hp, 8); put(g.wound || 0, 2);
-    put(g.tr.length, 3); g.tr.forEach(([id, v]) => { put(TRI[id], 4); put(v, 2); });
+    put(SPI[g.sp], W.sp); put(g.atk, 8); put(g.hp, 8); put(g.wound || 0, 2);
+    put(g.tr.length, 3); g.tr.forEach(([id, v]) => { put(TRI[id], W.tr); put(v, 2); });
     put(g.q.length, 2); g.q.forEach(q => put(QUI[q], 3));
-    put(g.att.length, 2); g.att.forEach(a => put(SPI[a], 4));
+    put(g.att.length, 2); g.att.forEach(a => put(SPI[a], W.sp));
     put(Math.round((g.fed || 0) / 10000), 18); put(g.mut || 0, 7); put(g.boss ? 1 : 0, 1); put((g.star || 1) - 1, 2);
   }
   let chk = 0; bits.forEach((b, i) => { if (b) chk = (chk + i * 7 + 3) % 64; }); put(chk, 6);
@@ -379,17 +383,17 @@ export function decodeTeam(code) {
     if (!/^[A-Za-z0-9_-]{8,}$/.test(code)) return null;
     const bits = []; for (const ch of code) { const v = B64.indexOf(ch); for (let j = 5; j >= 0; j--) bits.push((v >> j) & 1); }
     let p = 0; const get = n => { let v = 0; for (let i = 0; i < n; i++) { if (p >= bits.length) throw 0; v = v * 2 + bits[p++]; } return v; };
-    const ver = get(3); if (ver !== 1 && ver !== 2) return null;
+    const ver = get(3); if (ver < 1 || ver > CODE_VER) return null; const W = CODE_W(ver);
     const realm = get(3), n = get(3), nl = get(5), nm = []; for (let i = 0; i < nl; i++) nm.push(get(8));
-    const marks = []; if (ver >= 2) { const mb = get(12); MARK_KEYS.forEach((k, i) => { if (Math.floor(mb / 2 ** i) % 2) marks.push(k); }); }
+    const marks = []; if (ver >= 2) { const mb = get(W.mk); MARK_KEYS.forEach((k, i) => { if (Math.floor(mb / 2 ** i) % 2) marks.push(k); }); }
     if (n < 1 || n > SLOTS) return null;
     const team = [];
     for (let i = 0; i < n; i++) {
-      const sp = SPECIES[get(4)]; if (!sp) return null;
+      const sp = SPECIES[get(W.sp)]; if (!sp) return null;
       const g = { uid: nuid(), sp: sp.id, atk: Math.max(1, get(8)), hp: Math.max(1, get(8)), wound: get(2), tr: [], q: [], att: [] };
-      const nt = get(3); for (let j = 0; j < nt; j++) { const k = TRAIT_ALL[get(4)], v = get(2); if (k && j < MAXTR) g.tr.push([k, Math.max(1, Math.min(MAXV, v))]); }
+      const nt = get(3); for (let j = 0; j < nt; j++) { const k = TRAIT_ALL[get(W.tr)], v = get(2); if (k && j < MAXTR) g.tr.push([k, Math.max(1, Math.min(MAXV, v))]); }
       const nq = get(2); for (let j = 0; j < nq; j++) { const k = QUIRK_KEYS[get(3)]; if (k) g.q.push(k); }
-      const na = get(2); for (let j = 0; j < na; j++) { const a = SPECIES[get(4)]; if (a && j < MAXATT) g.att.push(a.id); }
+      const na = get(2); for (let j = 0; j < na; j++) { const a = SPECIES[get(W.sp)]; if (a && j < MAXATT) g.att.push(a.id); }
       g.fed = get(18) * 10000; g.mut = get(7); if (get(1)) g.boss = 1;
       if (ver >= 2) { const st = get(2) + 1; if (st > 1) g.star = Math.min(3, st); }
       team.push(g);
