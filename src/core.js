@@ -1,5 +1,5 @@
 // 蛊码 GuCode · 纯逻辑：种子随机、数据表、洞府养成（蛊市、合成、食物、道、杀招）、坐标码。不碰 DOM。规则见 docs/design.md
-import { NEW_SPECIES, NEW_TRAITS, NEW_COMBOS, NEW_SUMMONS, NEW_POOL, OLD_EXTRA, loreWithEats, natMulOf } from './bestiary.js';
+import { NEW_SPECIES, NEW_TRAITS, NEW_COMBOS, NEW_SUMMONS, NEW_POOL, OLD_EXTRA, natMulOf } from './bestiary.js';
 import { DAOS, DAO, DAO_BY_SCHOOL } from './daos.js';
 import { FOODS, FOOD } from './foods.js';
 export const natMulFor = r => natMulOf(r);   // 本命描述里〔〕数字按转数换算（界面用）
@@ -26,9 +26,11 @@ export const baseRank = sp => (SP[sp] && SP[sp].rank) || (POOL_TIERS.findIndex(t
 export const rankOf = g => g.rank || baseRank(g.sp);
 export const fuseLv = g => Math.max(0, rankOf(g) - baseRank(g.sp));     // 合成过几次（0 = 原生转数）
 export const rankName = g => RANK.names[rankOf(g)] + SP[g.sp].n;          // 「一转野猪蛊」
-// 元石：start 新档起步；buy 买蛊；refresh 转市；sell 卖蛊 = sell × 3^(合成次数)（三只合一只，卖价也按三倍走）；
-// floor 保底：洞府里没有蛊、元石又不够买一只时补到这个数；oldPer 旧存档折算（见 ui 的迁移）
-export const ECON = { start: 10, buy: 3, refresh: 1, sell: 1, floor: 6 };
+// 各转的主色（升转外貌、转数角标用）：一转青铜、二转赤铁、三转白银、四转黄金、五转紫晶
+export const ZHENYUAN = { colors: ['#a0703f', '#a0703f', '#a4442c', '#9aa4ab', '#d9a441', '#7d62a8'] };
+// 价格（元气 = 消耗的 token）：单位是「千」，乘 tokens.js 的 unit 才是 token 数（插件 8000，网页 200）。
+// gu 买一只蛊；refresh 转市；sell 卖蛊退回 = sell × 3^(合成次数)（三只合一只，退回也按三倍走）；食物的价格 = FOODS[].cost × food
+export const PRICE = { gu: 75, refresh: 25, sell: 25, food: 25 };
 // 蛊囊（场下）：凑合成用，不上场、不出征，放在里面绝对安全。固定 8 格
 export const BAG = { cap: 8 };
 export const bagCap = () => BAG.cap;
@@ -80,7 +82,7 @@ export const SPECIES = [
   { id: 'moth',   n: '月蛾蛊', ab: '蛾', atk: 1, hp: 2, t: 'legacy', v: 2, lore: '燃尽自己照亮后人' },
 ];
 // 旧 12 种补上转数 / 喂食偏好 / 流派；蛊典扩充的 52 种接在后面（坐标码按下标编码，只能往后加）
-SPECIES.forEach(s => { Object.assign(s, OLD_EXTRA[s.id]); s.lore = loreWithEats(s.lore, s.food); });
+SPECIES.forEach(s => { Object.assign(s, OLD_EXTRA[s.id]); });
 SPECIES.push(...NEW_SPECIES);
 export const NORMAL_SPECIES = SPECIES.filter(s => !s.immortal);   // 随机池（幽灵、天劫、招蛊）：六转仙蛊只能开茧获得
 export const SP = Object.fromEntries(SPECIES.map(s => [s.id, s]));
@@ -138,18 +140,37 @@ export function daoCount(team) {
 }
 
 // ---------- 蛊市 ----------
-// 货架：蛊位 n 个、食物位 2 个；主道（罗盘定）的蛊和食物大约占六成。opts.species / opts.foods = 已解锁可上架的
-export const SHOP = { guSlots: [3, 3, 4, 4, 5, 5], foodSlots: 2, daoP: 0.6 };
+// 货架：蛊位 n 个、食物位 2 个。罗盘选中的道只让它出现的概率 +daoP（每个货位先以 daoP 的几率从这一道里挑，否则从全部里挑），
+// 蛊市照样什么道都会刷，不锁阵容。foeDaoP：程序生成的对手偏向某一道的几率（秘境房间的主题）
+export const SHOP = { guSlots: [3, 3, 4, 4, 5, 5], foodSlots: 2, daoP: 0.05, foeDaoP: 0.6 };
 export function shopSpecies(realm, unlocked) { return poolFor(realm).filter(sp => SP[sp] && !SP[sp].immortal && (!unlocked || unlocked(sp, 'species'))); }
 export function shopFoods(unlocked) { return FOODS.filter(f => !unlocked || unlocked(f.id, 'food')).map(f => f.id); }
-function pickDao(rng, list, dao, of) { const main = dao ? list.filter(x => of(x) === dao) : []; return main.length && rng() < SHOP.daoP ? rng.pick(main) : rng.pick(list); }
+function pickDao(rng, list, dao, of, p = SHOP.daoP) { const main = dao ? list.filter(x => of(x) === dao) : []; return main.length && rng() < p ? rng.pick(main) : rng.pick(list); }
 export function rollShop(rng, realm, dao, old = [], unlocked) {
   const sps = shopSpecies(realm, unlocked), fds = shopFoods(unlocked), keep = w => w && w.frozen && !w.sold;
   const gu = Array.from({ length: SHOP.guSlots[Math.min(5, realm | 0)] }, (_, i) => { const o = old.filter(w => w.kind === 'gu')[i]; return keep(o) ? o : { kind: 'gu', sp: pickDao(rng, sps, dao, daoOf), frozen: false, sold: false }; });
   const fd = Array.from({ length: SHOP.foodSlots }, (_, i) => { const o = old.filter(w => w.kind === 'food')[i]; return keep(o) ? o : (fds.length ? { kind: 'food', id: pickDao(rng, fds, dao, id => FOOD[id].dao), frozen: false, sold: false } : null); }).filter(Boolean);
   return [...gu, ...fd];
 }
-export const foodCost = id => (FOOD[id] ? FOOD[id].cost : 3);
+export const foodCost = id => (FOOD[id] ? FOOD[id].cost : 3) * PRICE.food;   // 单位同 PRICE
+
+// ---------- 阵盘：3 行 × 3 列（列 c：0 前、1 中、2 后），g.pos = { r, c } ----------
+export const COL_NAMES = ['前', '中', '后'];
+export const cellOf = g => g && g.pos ? g.pos.r * 3 + g.pos.c : -1;
+export const cellPos = k => ({ r: Math.floor(k / 3), c: k % 3 });
+const CELL_ORDER = [0, 3, 6, 1, 4, 7, 2, 5, 8];   // 自动摆放：先前列（上中下），再中列，再后列
+export function freeCell(team) { const used = new Set(team.map(cellOf)); return CELL_ORDER.find(k => !used.has(k)); }
+// 没有位置（或位置重复）的蛊按顺序摆进空格；然后按 列、行 排好（旧引擎按数组顺序读站位）
+export function autoPlace(team) {
+  const used = new Set();
+  team.forEach(g => { const k = cellOf(g); if (k < 0 || k > 8 || used.has(k)) g.pos = null; else used.add(k); });
+  team.forEach(g => { if (!g.pos) { const k = CELL_ORDER.find(x => !used.has(x)); if (k != null) { g.pos = cellPos(k); used.add(k); } } });
+  return sortTeam(team);
+}
+export function sortTeam(team) { team.sort((a, b) => (a.pos ? a.pos.c * 3 + a.pos.r : 99) - (b.pos ? b.pos.c * 3 + b.pos.r : 99)); return team; }
+// 速：物种的 spd（100 = 标准）；物种没写时按流派给个默认值（战斗引擎以它自己的推法为准，这里只给卡面显示）
+const SCHOOL_SPD = { 爆发: 125, 开锋: 120, 斩杀: 120, 控制: 110, 群攻: 105, 毒: 105, 站位: 100, 召唤: 95, 亡语: 95, 成长: 95, 续航: 90, 反伤: 85, 护体: 80, 减伤: 80, 破甲: 110 };
+export const spdOf = g => g.spd || (SP[g.sp] && (SP[g.sp].spd || SCHOOL_SPD[SP[g.sp].school])) || 100;
 
 // ---------- 收蛊与合成 ----------
 export const sameRank = (list, sp, rk) => list.filter(g => g.sp === sp && rankOf(g) === rk).length;
@@ -160,7 +181,7 @@ export function canBuy(team, sp, cap, bag = [], bc = BAG.cap) { return canTake(t
 // 收下一只蛊：能合成先合成；否则空窍有空位进空窍，再不行进蛊囊。mode 'bag'（战利品）只进蛊囊。返回 { where, merged }
 export function placeGu(team, bag, g, cap, bc = BAG.cap, mode = 'shop', pick) {
   if (fusable(team, bag, g)) { bag.push(g); return { where: 'merge', merged: mergeAll(team, bag, pick) }; }
-  if (mode === 'shop' && team.length < cap) { team.push(g); return { where: 'team', merged: [] }; }
+  if (mode === 'shop' && team.length < cap) { g.pos = cellPos(freeCell(team)); team.push(g); sortTeam(team); return { where: 'team', merged: [] }; }
   if (bag.length < bc) { bag.push(g); return { where: 'bag', merged: mergeAll(team, bag, pick) }; }
   return { where: null, merged: [] };
 }
@@ -181,7 +202,7 @@ export function mergeAll(team, bag = [], pick) {
   }
   return done;
 }
-export const sellValue = g => ECON.sell * Math.pow(3, fuseLv(g)) + (g.food ? 1 : 0);
+export const sellValue = g => PRICE.sell * Math.pow(3, fuseLv(g));   // 单位同 PRICE
 
 // ---------- 食物 ----------
 // 喂一个直接加攻血的食物：targets = 要加的蛊。永久加成记在 bonusA/bonusH（合成换表值时保留）
@@ -195,8 +216,8 @@ export function feedStat(food, targets) {
 // realm 境界（决定蛊池与转数），n 只数，up 每只额外升转的几率，dao 偏向的道（可无）
 export function genTeam(rng, o = {}) {
   const realm = Math.max(0, Math.min(5, o.realm | 0)), n = Math.max(1, Math.min(SLOTS, o.n || slotCap(realm))), pool = poolFor(realm).filter(sp => SP[sp] && !SP[sp].immortal);
-  const team = Array.from({ length: n }, () => { const sp = pickDao(rng, pool, o.dao, daoOf), r = Math.min(RANK.max, baseRank(sp) + (rng() < (o.up || 0) ? 1 : 0) + (rng() < (o.up || 0) / 3 ? 1 : 0)); return newGu(sp, r); });
-  return arrangeTeam(team);
+  const team = Array.from({ length: n }, () => { const sp = pickDao(rng, pool, o.dao, daoOf, SHOP.foeDaoP), r = Math.min(RANK.max, baseRank(sp) + (rng() < (o.up || 0) ? 1 : 0) + (rng() < (o.up || 0) / 3 ? 1 : 0)); return newGu(sp, r); });
+  return autoPlace(arrangeTeam(team));
 }
 
 // ---------- 布阵：站位效果与敌方排阵 ----------
@@ -273,16 +294,18 @@ function utf8(s) { return typeof TextEncoder !== 'undefined' ? new TextEncoder()
 function unutf8(b) { return typeof TextDecoder !== 'undefined' ? new TextDecoder().decode(new Uint8Array(b)) : Buffer.from(b).toString('utf8'); }
 // v1–v4 是旧玩法的码（带词条、怪癖、附蛊、道痕），照旧能读：只取物种和转数，攻血按新表换算。
 // v5（v2 玩法）：物种 7 位、转数 3 位、攻血各 10 位、挂件食物 6 位、蛊性 6 位，外加 1 位「试玩」
+// v6（阵盘）：v5 每只蛊后面再加 阵盘格 4 位（0–8，15 = 没摆）、速 8 位（0 = 按物种）。v1–v5 解出来按顺序自动摆进阵盘
 const OLD_W = { 1: { sp: 4, tr: 4, q: 3, st: 8, mk: 0, rk: 0 }, 2: { sp: 4, tr: 4, q: 3, st: 8, mk: 12, rk: 2 }, 3: { sp: 6, tr: 6, q: 4, st: 10, mk: 16, rk: 3 }, 4: { sp: 6, tr: 6, q: 4, st: 10, mk: 16, rk: 3, fl: 1 } };
 const W5 = { sp: 7, rk: 3, st: 10, fd: 6, xg: 6 };
 export function encodeTeam(team, meta = {}) {
   let bits = ''; const put = (v, n) => { bits += Math.max(0, Math.min(2 ** n - 1, Math.round(v) || 0)).toString(2).padStart(n, '0'); };
   const nm = Array.from(utf8((meta.name || '').slice(0, 8))).slice(0, 31);
-  put(5, 3); put(meta.realm || 0, 3); put(Math.min(SLOTS, team.length), 3); put(nm.length, 5); nm.forEach(b => put(b, 8)); put(meta.trial ? 1 : 0, 1);
+  put(6, 3); put(meta.realm || 0, 3); put(Math.min(SLOTS, team.length), 3); put(nm.length, 5); nm.forEach(b => put(b, 8)); put(meta.trial ? 1 : 0, 1);
   const xk = XING_KEYS();
   for (const g of team.slice(0, SLOTS)) {
     put(SPI[g.sp], W5.sp); put(rankOf(g), W5.rk); put(g.atk, W5.st); put(g.hp, W5.st);
     put(g.food && FDI[g.food] != null ? FDI[g.food] + 1 : 0, W5.fd); const xi = g.xing ? xk.indexOf(g.xing) : -1; put(xi + 1, W5.xg); put(g.boss ? 1 : 0, 1);
+    const k = cellOf(g); put(k >= 0 && k <= 8 ? k : 15, 4); put(g.spd || 0, 8);
   }
   while (bits.length % 6) bits += '0';
   let out = ''; for (let i = 0; i < bits.length; i += 6) out += B64[parseInt(bits.slice(i, i + 6), 2)];
@@ -293,15 +316,16 @@ export function decodeTeam(code) {
     const m = String(code).match(/[A-Za-z0-9_-]{8,}/); if (!m) return null;
     let bits = ''; for (const ch of m[0]) { const i = B64.indexOf(ch); if (i < 0) return null; bits += i.toString(2).padStart(6, '0'); }
     let p = 0; const get = n => { if (p + n > bits.length) throw 0; const v = parseInt(bits.slice(p, p + n), 2); p += n; return v; };
-    const ver = get(3); if (ver < 1 || ver > 5) return null;
+    const ver = get(3); if (ver < 1 || ver > 6) return null;
     const realm = get(3), n = get(3), nl = get(5), nm = []; for (let i = 0; i < nl; i++) nm.push(get(8));
     const team = []; let trial = false;
-    if (ver === 5) {
+    if (ver >= 5) {
       trial = !!get(1); const xk = XING_KEYS();
       for (let i = 0; i < n; i++) {
         const sp = SPECIES[get(W5.sp)]; if (!sp) return null;
         const rank = Math.max(1, Math.min(6, get(W5.rk))), g = { uid: nuid(), sp: sp.id, rank, atk: Math.max(1, get(W5.st)), hp: Math.max(1, get(W5.st)), food: null, xing: null };
         const fi = get(W5.fd); if (fi && FOODS[fi - 1]) g.food = FOODS[fi - 1].id; const xi = get(W5.xg); if (xi && xk[xi - 1]) g.xing = xk[xi - 1]; if (get(1)) g.boss = 1;
+        if (ver >= 6) { const k = get(4); if (k <= 8) g.pos = cellPos(k); const sp2 = get(8); if (sp2) g.spd = sp2; }
         team.push(g);
       }
     } else {
@@ -318,6 +342,7 @@ export function decodeTeam(code) {
       }
     }
     if (!team.length) return null;
+    autoPlace(team);
     return { team, realm, name: unutf8(nm), trial, old: ver < 5 };
   } catch (e) { return null; }
 }

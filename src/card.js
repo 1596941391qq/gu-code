@@ -26,10 +26,10 @@ export async function makeCard({ team, name, realm, total, muts, wins, code, url
   ctx.fillStyle = 'rgba(236,227,207,.6)'; ctx.font = `34px ${KAI}`; ctx.fillText('烧 Token · 养蛊 · 斗道', 98, 256);
   seal(ctx, 930, 170, REALMS[realm] || '凡人', 64, 0.06);
   if (endless) { ctx.save(); ctx.fillStyle = '#d8553f'; ctx.font = `30px ${KAI}`; ctx.textAlign = 'center'; ctx.fillText(`无尽 ${endless} 层`, 930, 300); ctx.restore(); }
-  if (trial) {   // 试玩存档：网页模拟灵流养的蛊，卡面盖一枚醒目的「试玩」章
+  if (trial) {   // 试玩存档：网页模拟元气养的蛊，卡面盖一枚醒目的「试玩」章
     ctx.save(); ctx.translate(690, 150); ctx.rotate(-0.12); ctx.strokeStyle = '#d8553f'; ctx.lineWidth = 5; ctx.strokeRect(-92, -50, 184, 100); ctx.lineWidth = 2; ctx.strokeRect(-82, -40, 164, 80);
     ctx.fillStyle = '#d8553f'; ctx.font = `64px ${KAI}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('试玩', 0, 4); ctx.restore();
-    ctx.save(); ctx.fillStyle = 'rgba(216,85,63,.85)'; ctx.font = `24px ${KAI}`; ctx.textAlign = 'center'; ctx.fillText('网页模拟灵流', 690, 236); ctx.restore();
+    ctx.save(); ctx.fillStyle = 'rgba(216,85,63,.85)'; ctx.font = `24px ${KAI}`; ctx.textAlign = 'center'; ctx.fillText('网页模拟元气', 690, 236); ctx.restore();
   }
   ctx.fillStyle = '#ece3cf'; ctx.font = `44px ${KAI}`; ctx.fillText(`${name || '无名蛊师'} 的空窍`, 92, 340);
   if (title) { const w = ctx.measureText(`${name || '无名蛊师'} 的空窍`).width; ctx.save(); ctx.font = `28px ${KAI}`; ctx.fillStyle = '#d9a441'; ctx.fillText(`「${title}」`, 104 + w, 338); ctx.restore(); }
