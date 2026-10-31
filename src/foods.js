@@ -64,7 +64,7 @@ export const FOODS = [
   F('zhuanggu', '壮骨汤', 'fight', 'tu', 2, '下一场战斗：选一只，它攻血 +40%（只这一场）', '一只陶盅，汤色奶白，盅沿搭着一根大骨', { to: 'one', eff: [E('start', 'buff', 'self', { atk: 0.4, hp: 0.4 })] }),
   F('duwu', '毒雾瓶', 'fight', 'du', 3, '下一场战斗：选一只，它开战先向敌方全体放毒（攻击 15%）（只这一场）', '一只细颈小瓷瓶，瓶口塞着布团，渗出一丝绿烟', { to: 'one', eff: [E('start', 'st', 'foe.all', { k: 'psn', atk: 0.15 })] }),
   // —— 挂件（续）——
-  F('guijia', '龟甲符', 'gear', 'tu', 5, '挂在一只蛊上：开战挂「护」2 次，第一次受到的伤害几乎全免', '一片龟甲刻着符文，裂纹里填了金粉', { eff: [E('start', 'st', 'self', { k: 'guard', n: 2 }), E('take', 'mul', null, { v: 0.01, max: 1 })] }),
+  F('guijia', '龟甲符', 'gear', 'tu', 5, '挂在一只蛊上：开战挂「护」2 次，第一次受到的伤害几乎全免', '一片龟甲刻着符文，裂纹里填了金粉', { eff: [E('start', 'st', 'self', { k: 'guard', n: 2 }), E('take', 'mul', null, { v: 0, max: 1 })] }),
   F('kaifeng', '开锋石', 'gear', 'jin', 4, '挂在一只蛊上：它的第一击伤害翻倍，并给目标打上标记 2 轮', '一块青黑的磨刀石，中间磨出一道凹槽', { eff: [E('deal', 'mul', null, { v: 2, if: 'first' }), E('attack', 'st', 'tg', { k: 'mark', n: 2, max: 1 })] }),
   F('duanhun', '断魂针', 'gear', 'an', 6, '挂在一只蛊上：它普攻有标记的敌蛊时，10% 机会一击打倒', '一根乌黑的长针，针尾系着一缕白发', { eff: [E('attack', 'dmg', 'tg', { tmx: 1, pierce: 1, chance: 0.1, if: 'tg.mark' })] }),
   F('lingxi', '灵犀角', 'gear', 'zhi', 4, '挂在一只蛊上：它的技能伤害 +25%', '一小截半透明的犀角，中间有一条白线贯通两头', { eff: [E('deal', 'mul', null, { v: 1.25, if: 'kind=skill' })] }),

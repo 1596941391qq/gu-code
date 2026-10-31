@@ -58,8 +58,8 @@ const N = [
   ['kalpa7', '七劫过尽', '通关任意秘境的劫七', { kalpa: 7 }, 'kalpa5', [[S, 'fate']], '劫数'],
   ['kalpa10', '十劫圆满', '通关任意秘境的劫十', { kalpa: 10 }, 'kalpa7', [[S, 'jiuxiao'], [CB, 'zhichi2']], '劫数'],
   // —— 挑战：通关时按出场阵容判（见 clearEvents），解锁新蛊和新杀招 ——
-  ['ch_r1q7', '一转亦能', '只用一转蛊，通关额度 7 及以上的秘境', { r1q: 7 }, 'realm1', [[S, 'qingtian']], '挑战'],
-  ['ch_r2q10', '低转为本', '只用一转、二转蛊，通关额度 10 及以上的秘境', { r2q: 10 }, 'realm2', [[CB, 'baiyi2'], [FD, 'shengzhuan']], '挑战'],
+  ['ch_r1q7', '一转亦能', '只用一转蛊，通关额度 7 及以上的秘境', { r1q: 7 }, 'realm1', [[S, 'qingtian'], [CB, 'maodu'], [CB, 'xiaobing']], '挑战'],
+  ['ch_r2q10', '低转为本', '只用一转、二转蛊，通关额度 10 及以上的秘境', { r2q: 10 }, 'realm2', [[CB, 'baiyi2'], [CB, 'yingxue'], [FD, 'shengzhuan']], '挑战'],
   ['ch_no5q14', '不仗高转', '不带五转和仙蛊，通关额度 14 及以上的秘境', { no5q: 14 }, 'realm3', [[S, 'dingxian'], [CB, 'yiri2']], '挑战'],
   ['ch_few3', '三蛊破阵', '出场不超过 3 只，通关额度 10 及以上的秘境', { few3q: 10 }, 'realm2', [[S, 'chiba']], '挑战'],
   ['ch_mono', '一道到底', '出场的蛊全属同一道，通关额度 10 及以上的秘境', { monoq: 10 }, 'realm2', [[TR, 'maigu'], [CB, 'wudu2']], '挑战'],
@@ -72,7 +72,8 @@ const N = [
 const opens = {}; N.forEach(a => a[5].forEach(([k, id]) => { const key = k + ':' + id; if (opens[key]) throw new Error('重复解锁 ' + key); opens[key] = a[0]; if (!name(k, id)) throw new Error('不存在 ' + key); }));
 const lockedSp = C.SPECIES.map(s => s.id).filter(id => !STARTERS.includes(id));
 const lockedFd = F.FOODS.map(f => f.id).filter(id => !FREE_FOOD.includes(id));
-const lockedCb = K.COMBOS2.filter(c => c.from).map(c => c.id);
+const LOCKED_LOW = ['maodu', 'xiaobing', 'yingxue'];   // 低转杀招里这三个靠「一转亦能」「低转为本」挑战解锁，其余三个开局就有
+const lockedCb = K.COMBOS2.filter(c => c.from || LOCKED_LOW.includes(c.id)).map(c => c.id);
 const lockedTr = ['maigu', 'tianting'], lockedFt = ['kalpa'];
 const miss = [...lockedSp.map(x => 'species:' + x), ...lockedFd.map(x => 'food:' + x), ...lockedCb.map(x => 'combo:' + x), ...lockedTr.map(x => 'trip:' + x), ...lockedFt.map(x => 'feature:' + x)].filter(k => !opens[k]);
 const extra = Object.keys(opens).filter(k => { const [kk, id] = k.split(':'); return !({ species: lockedSp, food: lockedFd, combo: lockedCb, trip: lockedTr, feature: lockedFt })[kk].includes(id); });
