@@ -728,7 +728,7 @@ export const SPECIES2 = [
   S('ring',       '年轮蛊',     '轮', 'zhou',  3, 2, 5, 85,  'm', null,   'slash',  'growring',      '越拖越强',    '多活一轮，身上就多一圈纹'),
   S('instant',    '刹那蛊',     '刹', 'zhou',  5, 3, 3, 150, 'm', null,   'slash',  'stoptime',      '先手连击',    '在别人眨眼的工夫里，它已经出了两刀'),
 ];
-export const SUMMONS2 = { grass: '虫草', sprout: '新芽', soul: '魂体', wormhalf: '半截地龙', bonesoul: '骨灵' };
+export const SUMMONS2 = { grass: '虫草', sprout: '新芽', soul: '魂体', wormhalf: '半截地龙', bonesoul: '骨灵', xueshen: '血神子' };
 
 // ======================= 旧 64 种 =======================
 // 道、战斗字段（速 远近 挑谁 普攻动作）

@@ -2,7 +2,7 @@
 import { NEW_SPECIES, NEW_TRAITS, NEW_COMBOS, NEW_SUMMONS, NEW_POOL, OLD_EXTRA, natMulOf } from './bestiary.js';
 import { DAOS, DAO, DAO_BY_SCHOOL } from './daos.js';
 import { SPECIES2, PATCH64, NATS, NAT_OF, SUMMONS2 } from './bestiary2.js';
-import { COMBOS2 } from './combos2.js';
+import { COMBOS2, COMBO_SUMMONS } from './combos2.js';
 import { FOODS, FOOD } from './foods.js';
 export const natMulFor = r => natMulOf(r);   // 本命描述里〔〕数字按转数换算（界面用）
 export function hashStr(s) { s = String(s); let h = 2166136261 >>> 0; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
@@ -118,7 +118,7 @@ export const natOf = sp => (SP[sp] && SP[sp].nat) || null;
 export const guRank = g => { const s = SP[g.sp]; if (!s) return 1; return s.immortal ? 6 : rankOf(g); };
 export const awOf = g => { const r = guRank(g); return r >= 5 ? 2 : r >= 3 ? 1 : 0; };
 SPECIES.forEach(s => { if (!s.dao) s.dao = DAO_BY_SCHOOL[s.school] || 'li'; });   // 物种属于哪一道（占位口径见 daos.js）
-export const SUMMON_NAMES = { pupa: '蛊蛹', shade: '分影', lunar: '月影', ...NEW_SUMMONS, ...SUMMONS2 };
+export const SUMMON_NAMES = { pupa: '蛊蛹', shade: '分影', lunar: '月影', ...NEW_SUMMONS, ...SUMMONS2, ...COMBO_SUMMONS };
 
 // 杀招：配方里的几种蛊同时在空窍，杀招就自动成形，挂在配方第一种蛊（站得最靠前的那只）身上
 export const COMBOS = [
