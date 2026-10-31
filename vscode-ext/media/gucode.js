@@ -2084,7 +2084,7 @@ function lgQuotaHTML(L) {
 function ledgerLimitRows() {
   const L = ledgerData(), ws = (L.windows || []).filter(w => w.pct == null); if (!ws.length) return '';
   const lim = lgLimits();
-  return `<div class="set lg-limhead"><span>周天额度上限<small>插件读不到上限的窗口，填上就能显示百分比。和「已用」同口径（全量吞吐），可写 5亿、5000万、50M 或纯数字，清空即取消</small></span></div>` +
+  return `<div class="set lg-limhead"><span>周天额度上限<small>插件读不到上限的窗口，填上就能显示百分比。和「已用」同口径（全量吞吐），可写 5亿、5000万、50M 或纯数字，清空即取消</small><small class="lg-limrule">以哪个为准：VS Code 插件设置里的 gucode.limits 填过、或插件自己算得出百分比的窗口，一律用插件的，这里不再出现；这里只给插件算不出的窗口补上限。</small></span></div>` +
     ws.map(w => `<label class="set lg-lim"><span>${lgEsc(w.label)}</span><input data-lglim="${lgEsc(w.key)}" inputmode="decimal" placeholder="例如 5亿" value="${lim[w.key] ? lgCN(lim[w.key]) : ''}"></label>`).join('');
 }
 function ledgerBindLimits(root) {

@@ -38,7 +38,7 @@
         },
         "gucode.limits": {
           "type": "object", "default": {},
-          "markdownDescription": "可选：Claude 额度的 token 上限，用来算百分比，如 `{ \"claude5h\": 20000000, \"claudeWeek\": 300000000 }`。不填时只显示用量、不显示百分比。",
+          "markdownDescription": "可选：Claude 额度的 token 上限，用来算百分比，如 `{ \"claude5h\": 20000000, \"claudeWeek\": 300000000 }`。不填时只显示用量、不显示百分比。这里填了就以这里为准，游戏设置里的「周天额度上限」不再显示该窗口。",
           "properties": { "claude5h": { "type": "number" }, "claudeWeek": { "type": "number" } }
         }
       }
