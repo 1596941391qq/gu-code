@@ -5964,7 +5964,7 @@ function showResult(root, res, opts, me, names, skipped, resolve) {
 return { playBattle };
 })();
 // ---- src/reso.js（包一层，只放出 export）
-const { daoChar, daoColor, resoInfo, resoHTML, resoGain } = (() => {
+const { daoChar, daoColor, resoInfo, resoHTML, resoGain, resoOf } = (() => {
 // 蛊码 GuCode · 道共鸣和杀招的常驻显示（洞府空窍上方、秘境队伍上方共用这一套，别各写一套）。只出 HTML 字符串，不碰 DOM。
 //   resoHTML(team, opts)  一排小签：阵上出现的每一道「力道 1/2」「炎道 2/2 · 攻 +15%」，已触发的描朱，差一只的写「再 1 只：攻 +15%」，
 //                         相冲的写明打几折；成形的杀招各一签。悬停（data-tip）写每只蛊实际加了多少，例如「赤焰蛊 攻 20 → 23（+3）」。
@@ -5974,6 +5974,7 @@ const { daoChar, daoColor, resoInfo, resoHTML, resoGain } = (() => {
 //     opts.empty  = 阵上没有蛊时的那句话（默认空串）
 //   resoInfo(team)        上面用到的数：{ daos: [...], combos: [...] }
 //   daoChar(sp)           蛊卡角上的小道字（力、炎、冰……），daoColor(sp) 它的颜色
+//   resoOf(team, g)       这只蛊身上生效的共鸣，写实际数：「力道共鸣：攻 +15%（+3）」，没有就空串（蛊卡悬停用）
 //   resoGain(team, sp)    再上阵一只 sp，哪一道会凑成或升一档共鸣：{ dao, name, tier, sum } 或 null（蛊市「凑共鸣」小签用）
 // team = 阵上的蛊（{ sp, rank, atk, hp }，召唤物不算）。数字和战斗里一样：表里写 30，乘 RES_K（0.5）和相冲倍率，玩家拿到 15%。
 
@@ -6059,7 +6060,23 @@ function resoGain(team, sp) {
   return { dao: d, name: D.n, tier: n, sum: sumOf(D['r' + n]) };
 }
 
-return { daoChar, daoColor, resoInfo, resoHTML, resoGain };
+// 这只蛊身上生效的共鸣（悬停写实际数）：「力道共鸣：攻 +15%（+3）」「冰雪道共鸣：血 +8%（+3）（与炎道相冲，打五折）」
+function resoOf(team, g) {
+  if (!g || !SP[g.sp]) return '';
+  const T = (team || []).filter(x => x && SP[x.sp]);
+  let sy; try { sy = synergyOf(T); } catch (e) { return ''; }
+  const x = sy.daos.find(d => d.dao === daoOf(g.sp) && d.tier), D = x && DAO[x.dao]; if (!x || !x.eff || !D) return '';
+  const k = x.clash || 1, r = x.eff, bits = [];
+  if (r.atk) { const p = pctOf(r.atk, k); bits.push(`攻 +${p}%（+${addOf(g.atk, p)}）`); }
+  if (r.hp) { const p = pctOf(r.hp, k); bits.push(`血 +${p}%（+${addOf(g.hp, p)}）`); }
+  if (r.sh) { const p = pctOf(r.sh, k); bits.push(`护体 ${p}%（${addOf(g.hp, p)}）`); }
+  if (r.spd) bits.push(`速 +${pctOf(r.spd, k)}%`);
+  if (r.gp) bits.push(`开战蛊力 ${Math.round(r.gp * RES_K * k)}`);
+  const extra = r.eff ? String(r.d || '').split(/[，；]/).slice(1).join('，') : '';
+  return `${D.n}共鸣（${x.tier} 只）：${bits.join('，') || r.d}${extra ? '；' + extra : ''}${k < 1 ? `（与${DAO[x.clashWith] ? DAO[x.clashWith].n : ''}相冲，${zhe(k)}）` : ''}`;
+}
+
+return { daoChar, daoColor, resoInfo, resoHTML, resoGain, resoOf };
 })();
 // ---- src/meta.js
 // 蛊码 GuCode · 成就道途（纯逻辑，不碰 DOM）。规则见 docs/design.md 第 4 节。
@@ -7856,8 +7873,9 @@ const TXT = {
   ateLine: g => `加攻血的食物 已吃 ${ateOf(g)}/${ATE_MAX}`,
   ateNo: g => `${rankName(g)}已经吃满 ${ATE_MAX} 次加攻血的食物了`,
   ateFull: `空窍里的蛊都吃满 ${ATE_MAX} 次了，这份食物喂不下`,
-  statHead: '攻血表',
-  statSub: '合成升转后攻血换成这一转的数，五转封顶；喂食物的加成另算（每只最多吃 3 次）',
+  statHead: '每一转',
+  statSub: '三只同种同转合成高一转：攻血换成那一转的数，技能跟着攻血涨，主动技每升一转再强一截；三转、五转各觉醒一次。五转封顶，喂食物的加成另算（每只最多吃 3 次）',
+  mergeAfter: (a, b) => `合成后：${a}`,
   xingAsk: g => `${rankName(g)}：传哪个蛊性？`,
   xingAskSub: '三只材料带着不同的蛊性，新蛊只能留一个，没选的就没了。关掉这一页就先留着现在亮着的那个。',
   xingSet: g => `${rankName(g)}留下了蛊性「${xingName(g.xing)}」`,
@@ -8599,15 +8617,38 @@ function sheet(html, cls = '', stack = false) {
 }
 function closeSheet() { const a = document.querySelectorAll('.sheet-bg'); if (a.length) a[a.length - 1].remove(); }
 function miniRow(t) { return `<div class="mini">${t.map(g => `<div class="mg${g.boss ? ' boss' : ''}"><span class="art">${guSVG(g.sp, { rank: rankOf(g) })}</span><span class="rk rk${rankOf(g)}">${RANK.ch[rankOf(g)]}</span><b>${SP[g.sp] ? SP[g.sp].n : ''}</b><span class="st"><i class="a">${g.atk}</i><i class="h">${g.hp}</i></span></div>`).join('')}</div>`; }
+// 技能说明（battle.js 的 skillText）：带这一转的实际数字。skNum 取「（这一转约 …）」里的话，skDmg 取第一个数（合成预览用）
+const skills = (sp, r) => { try { return skillText(sp, r) || []; } catch (e) { return []; } };
+const skNum = t => { const m = String(t || '').match(/（这一转([^（）]*)）\s*$/); return m ? m[1].trim() : ''; };
+const skDmg = t => { const m = skNum(t).match(/(\d+)/); return m ? +m[1] : 0; };
+// 蛊详情里的「每一转」：原生转数到五转，每一转的攻血和技能实际数，当前这一转描朱，三转、五转的觉醒写清多了什么，没到的灰着
+function growHTML(g) {
+  const cur = rankOf(g), rows = [];
+  for (const x of statTable(g.sp)) {
+    const sk = skills(g.sp, x.rank), act = sk.find(k => k.kind === 'active'), pas = sk.find(k => k.kind === 'passive');
+    const bits = [act && skNum(act.text) ? `主动 ${skNum(act.text)}` : '', pas && skNum(pas.text) ? `被动 ${skNum(pas.text)}` : ''].filter(Boolean);
+    rows.push(`<div class="grow${x.rank === cur ? ' on' : x.rank > cur ? ' later' : ''}"><b>${RANK.names[x.rank]}</b><span><i class="a">${x.atk}</i> <i class="h">${x.hp}</i>${x.rank === cur ? ' <small>现在</small>' : ''}</span>${bits.length ? `<small class="gsk">${esc(bits.join(' · '))}</small>` : ''}</div>`);
+    const aw = sk.find(k => k.kind === (x.rank === 3 ? 'aw3' : x.rank === 5 ? 'aw5' : ''));
+    if (aw) rows.push(`<div class="grow aw${cur >= x.rank ? ' got' : ' later'}"><b>${esc(aw.n)}</b><small class="gsk">${(aw.lines || [{ text: aw.text }]).map(l => `${l.of === 'passive' ? '被动' : l.of === 'active' ? '主动' : ''}${l.n ? `「${esc(l.n)}」` : ''}${esc(l.text)}`).join('<br>')}</small></div>`);
+  }
+  return `<div class="grows">${rows.join('')}</div>`;
+}
+// 合成预览：现在这一转 → 高一转的攻血和主动技伤害
+function mergePreview(sp, r) {
+  if (r >= RANK.max) return '';
+  const a = statFor(sp, r), b = statFor(sp, r + 1), sa = skills(sp, r).find(k => k.kind === 'active'), sb = skills(sp, r + 1).find(k => k.kind === 'active');
+  const da = sa ? skDmg(sa.text) : 0, db = sb ? skDmg(sb.text) : 0;
+  return `攻 ${a.atk}→${b.atk}，血 ${a.hp}→${b.hp}${da && db ? `，技能伤害 ${da}→${db}` : ''}${r + 1 === 3 || r + 1 === 5 ? `，${RANK.names[r + 1]}觉醒` : ''}`;
+}
 function guDetail(g, ctx = {}) {
   const s = SP[g.sp], nat = natOfG(g), team = ctx.kind === 'team' ? S.team : null, i = ctx.i | 0, c = team ? combosBy(team)[i] : null, f = g.food && FOOD[g.food];
-  const recipes = COMBOS_ALL.filter(x => x.need.includes(g.sp));
-  sheet(`<div class="detail"><div class="dart">${guSVG(g.sp, { rank: rankOf(g) })}</div><div><h3>${rankName(g)}</h3><p class="lore">${esc(s.lore)}</p><p class="dst"><i class="a">${g.atk}</i><i class="h">${g.hp}</i><i class="v">${spdG(g)}</i> <small>${DAO[daoOf(g.sp)] ? DAO[daoOf(g.sp)].n : ''} · ${reachG(g)}</small></p></div></div>
-  ${nat ? `<h4>被动技能</h4><p><b>${esc(nat.n)}</b> ${esc(nat.d)}</p>` : ''}${actOfG(g) ? `<h4>主动技能</h4><p><b>${esc(actOfG(g).n)}</b> ${esc(actOfG(g).d)}<br><small>蛊力攒满自动放</small></p>` : ''}${nat ? `<p class="sm">三转、五转各觉醒一次，强化技能${nat.aw ? `（已觉醒 ${nat.aw} 次）` : ''}</p>` : ''}
+  const recipes = COMBOS_ALL.filter(x => x.need.includes(g.sp)), sk = skills(g.sp, rankOf(g)), skP = sk.find(k => k.kind === 'passive'), skA = sk.find(k => k.kind === 'active');
+  sheet(`<div class="detail"><div class="dart">${guSVG(g.sp, { rank: rankOf(g) })}</div><div><h3>${rankName(g)}</h3><p class="lore">${esc(s.lore)}</p><p class="dst"><i class="a">${g.atk}</i><i class="h">${g.hp}</i><i class="v">${spdG(g)}</i> <small>${DAO[daoOf(g.sp)] ? DAO[daoOf(g.sp)].n : ''} · ${reachG(g)}</small></p>${team && resoOf(team, g) ? `<p class="sm rs">${esc(resoOf(team, g))}</p>` : ''}</div></div>
+  ${nat ? `<h4>被动技能</h4><p><b>${esc((skP || nat).n)}</b> ${esc(skP ? skP.text : nat.d)}</p>` : ''}${actOfG(g) ? `<h4>主动技能</h4><p><b>${esc((skA || actOfG(g)).n)}</b> ${esc(skA ? skA.text : actOfG(g).d)}<br><small>蛊力攒满自动放</small></p>` : ''}
   ${c ? `<h4>杀招</h4><div class="skill"><span class="seal">${esc(c.n)}</span><p>${esc(c.d)}<br><small>配方：${c.need.map(x => SP[x].n).join(' + ')}</small></p></div>` : ''}
   ${f ? `<h4>挂件</h4><p><b>${esc(f.n)}</b> ${esc(f.d)}</p>` : ''}
   ${g.xing ? `<h4>蛊性</h4><p><b>${esc(xingName(g.xing))}</b> ${esc(xingDesc(g.xing))}</p>` : ''}
-  <h4>${TXT.statHead}</h4><p class="sm">${esc(TXT.statSub)}</p><table class="stab"><tr>${statTable(g.sp).map(x => `<th class="${x.rank === rankOf(g) ? 'on' : ''}">${RANK.names[x.rank]}</th>`).join('')}</tr><tr>${statTable(g.sp).map(x => `<td class="${x.rank === rankOf(g) ? 'on' : ''}"><i class="a">${x.atk}</i> <i class="h">${x.hp}</i></td>`).join('')}</tr></table><p class="sm">${esc(TXT.ateLine(g))}${g.bonusA || g.bonusH ? `（已加攻 ${g.bonusA || 0}、血 ${g.bonusH || 0}）` : ''}</p>
+  <h4>${TXT.statHead}</h4><p class="sm">${esc(TXT.statSub)}</p>${growHTML(g)}<p class="sm">${esc(TXT.ateLine(g))}${g.bonusA || g.bonusH ? `（已加攻 ${g.bonusA || 0}、血 ${g.bonusH || 0}）` : ''}</p>
   ${recipes.length ? `<h4>能凑的杀招</h4><ul>${recipes.map(x => `<li><b>${esc(x.n)}</b> ${x.need.map(y => SP[y].n).join(' + ')}${unlocked(x.id, 'combo') ? '' : ' <small>道途解锁</small>'}</li>`).join('')}</ul>` : ''}
   ${ctx.kind === 'team' || ctx.kind === 'bag' ? `<div class="row2">${ctx.kind === 'team' ? `<button data-act="toBag" data-k="${cellOf(g)}"${S.bag.length < BC() && !tripOn() ? '' : ' disabled'}>收进蛊囊</button>` : `<button class="zhu" data-act="fromBag" data-i="${i}"${S.team.length < SLOTS && rankOf(g) <= driveCap(S.realm) && !tripOn() ? '' : ' disabled'}>上阵</button>`}<button data-act="sell" data-k="${ctx.kind}" data-i="${i}"${tripOn() ? ' disabled' : ''}>卖出 · 退回 ${fmtTok(price(sellValue(g)))}</button></div>` : ''}`);
 }
@@ -8642,9 +8683,9 @@ function openSettings() {
 function guTip(g, team, i) {
   if (!g) return '';
   const nat = natOfG(g), c = team ? combosBy(team)[i] : null, f = g.food && FOOD[g.food];
-  const act = actOfG(g), p = g.pos;
+  const act = actOfG(g), p = g.pos, sk = skills(g.sp, rankOf(g)), skP = sk.find(k => k.kind === 'passive'), skA = sk.find(k => k.kind === 'active'), rs = team ? resoOf(team, g) : '';
   return `<b>${rankName(g)}</b> <i class="a">${g.atk}</i> <i class="h">${g.hp}</i> <i class="v">${spdG(g)}</i><br><small>${esc(SP[g.sp].lore)}${team && p ? ` · 第 ${p.r + 1} 行${COL_NAMES[p.c]}列` : ''} · ${reachG(g)} · 攻 / 血 / 速</small>`
-    + (rankOf(g) > driveCap(S.realm) ? `<p class="warn">${esc(TXT.overDrive)}</p>` : '') + (nat ? `<p><b>被动·${esc(nat.n)}</b> ${esc(nat.d)}</p>` : '') + (act ? `<p><b>主动·${esc(act.n)}</b> ${esc(act.d)}<br><small>蛊力攒满自动放</small></p>` : '') + (c ? `<p><b>杀招·${esc(c.n)}</b> ${esc(c.d)}<br><small>配方：${c.need.map(x => SP[x].n).join(' + ')}</small></p>` : '')
+    + (rankOf(g) > driveCap(S.realm) ? `<p class="warn">${esc(TXT.overDrive)}</p>` : '') + (rs ? `<p class="rs"><b>${esc(rs.split('：')[0])}</b> ${esc(rs.slice(rs.indexOf('：') + 1))}</p>` : '') + (nat ? `<p><b>被动·${esc((skP || nat).n)}</b> ${esc(skP ? skP.text : nat.d)}</p>` : '') + (act ? `<p><b>主动·${esc((skA || act).n)}</b> ${esc(skA ? skA.text : act.d)}<br><small>蛊力攒满自动放</small></p>` : '') + (c ? `<p><b>杀招·${esc(c.n)}</b> ${esc(c.d)}<br><small>配方：${c.need.map(x => SP[x].n).join(' + ')}</small></p>` : '')
     + (f ? `<p><b>挂件·${esc(f.n)}</b> ${esc(f.d)}</p>` : '') + (g.xing ? `<p><b>蛊性·${esc(xingName(g.xing))}</b> ${esc(xingDesc(g.xing))}</p>` : '') + `<small>${esc(TXT.ateLine(g))} · 点开看完整详情</small>`;
 }
 const TIPS = {
@@ -8652,7 +8693,7 @@ const TIPS = {
   gu: t => { const i = S.team.findIndex(g => g.uid === t.dataset.uid); return guTip(S.team[i], S.team, i); },
   bag: () => esc(TXT.bagTip()),
   bg: t => { const g = S.bag[+t.dataset.i]; return g ? guTip(g) + '<small>在蛊囊里：不上场、不跟去渡劫，拖进空窍才上场</small>' : ''; },
-  ware: t => { const w = S.shop[+t.dataset.i]; if (!w) return ''; if (w.kind === 'food') { const f = FOOD[w.id]; return `<b>${esc(f.n)}</b> · ${FOOD_KIND[f.kind]}<br>${esc(f.d)}<br><small>价格 ${fmtTok(price(foodCost(w.id)))} 元气</small>`; } const n = owned(w.sp); return guTip(newGu(w.sp)).replace('<small>点开看完整详情</small>', '') + `<small>价格 ${fmtTok(price(PRICE.gu))} 元气 · 点开看完整详情</small>` + (n >= 2 ? `<p>你已有 ${n} 只${RANK.names[baseRank(w.sp)]}${SP[w.sp].n}，买下当场合成${RANK.names[baseRank(w.sp) + 1]}</p>` : '' + (n < 2 && resoGain(S.team, w.sp) ? `<p>${esc(TXT.resoGainTip(resoGain(S.team, w.sp)))}</p>` : '')); },
+  ware: t => { const w = S.shop[+t.dataset.i]; if (!w) return ''; if (w.kind === 'food') { const f = FOOD[w.id]; return `<b>${esc(f.n)}</b> · ${FOOD_KIND[f.kind]}<br>${esc(f.d)}<br><small>价格 ${fmtTok(price(foodCost(w.id)))} 元气</small>`; } const n = owned(w.sp); return guTip(newGu(w.sp)).replace('<small>点开看完整详情</small>', '') + `<small>价格 ${fmtTok(price(PRICE.gu))} 元气 · 点开看完整详情</small>` + (n >= 2 ? `<p>你已有 ${n} 只${RANK.names[baseRank(w.sp)]}${SP[w.sp].n}，买下当场合成${RANK.names[baseRank(w.sp) + 1]}</p><p>${esc(TXT.mergeAfter(mergePreview(w.sp, baseRank(w.sp))))}</p>` : '' + (n < 2 && resoGain(S.team, w.sp) ? `<p>${esc(TXT.resoGainTip(resoGain(S.team, w.sp)))}</p>` : '')); },
 };
 let tipT = 0, tipEl = null, tipFor = null, tipLongT = 0, tipLongAt = -1e9;
 function tipShow(t) {

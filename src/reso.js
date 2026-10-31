@@ -7,6 +7,7 @@
 //     opts.empty  = 阵上没有蛊时的那句话（默认空串）
 //   resoInfo(team)        上面用到的数：{ daos: [...], combos: [...] }
 //   daoChar(sp)           蛊卡角上的小道字（力、炎、冰……），daoColor(sp) 它的颜色
+//   resoOf(team, g)       这只蛊身上生效的共鸣，写实际数：「力道共鸣：攻 +15%（+3）」，没有就空串（蛊卡悬停用）
 //   resoGain(team, sp)    再上阵一只 sp，哪一道会凑成或升一档共鸣：{ dao, name, tier, sum } 或 null（蛊市「凑共鸣」小签用）
 // team = 阵上的蛊（{ sp, rank, atk, hp }，召唤物不算）。数字和战斗里一样：表里写 30，乘 RES_K（0.5）和相冲倍率，玩家拿到 15%。
 import { SP, daoOf, RANK } from './core.js';
@@ -90,4 +91,20 @@ export function resoGain(team, sp) {
   const n = (team || []).filter(g => g && SP[g.sp] && daoOf(g.sp) === d).length + 1;
   if (!DAO_TIERS.includes(n) || !D['r' + n]) return null;
   return { dao: d, name: D.n, tier: n, sum: sumOf(D['r' + n]) };
+}
+
+// 这只蛊身上生效的共鸣（悬停写实际数）：「力道共鸣：攻 +15%（+3）」「冰雪道共鸣：血 +8%（+3）（与炎道相冲，打五折）」
+export function resoOf(team, g) {
+  if (!g || !SP[g.sp]) return '';
+  const T = (team || []).filter(x => x && SP[x.sp]);
+  let sy; try { sy = synergyOf(T); } catch (e) { return ''; }
+  const x = sy.daos.find(d => d.dao === daoOf(g.sp) && d.tier), D = x && DAO[x.dao]; if (!x || !x.eff || !D) return '';
+  const k = x.clash || 1, r = x.eff, bits = [];
+  if (r.atk) { const p = pctOf(r.atk, k); bits.push(`攻 +${p}%（+${addOf(g.atk, p)}）`); }
+  if (r.hp) { const p = pctOf(r.hp, k); bits.push(`血 +${p}%（+${addOf(g.hp, p)}）`); }
+  if (r.sh) { const p = pctOf(r.sh, k); bits.push(`护体 ${p}%（${addOf(g.hp, p)}）`); }
+  if (r.spd) bits.push(`速 +${pctOf(r.spd, k)}%`);
+  if (r.gp) bits.push(`开战蛊力 ${Math.round(r.gp * RES_K * k)}`);
+  const extra = r.eff ? String(r.d || '').split(/[，；]/).slice(1).join('，') : '';
+  return `${D.n}共鸣（${x.tier} 只）：${bits.join('，') || r.d}${extra ? '；' + extra : ''}${k < 1 ? `（与${DAO[x.clashWith] ? DAO[x.clashWith].n : ''}相冲，${zhe(k)}）` : ''}`;
 }
