@@ -5964,7 +5964,7 @@ function showResult(root, res, opts, me, names, skipped, resolve) {
 return { playBattle };
 })();
 // ---- src/reso.js（包一层，只放出 export）
-const { daoChar, daoColor, resoInfo, resoHTML, resoGain } = (() => {
+const { daoChar, daoColor, resoInfo, resoHTML, resoGain, resoOf } = (() => {
 // 蛊码 GuCode · 道共鸣和杀招的常驻显示（洞府空窍上方、秘境队伍上方共用这一套，别各写一套）。只出 HTML 字符串，不碰 DOM。
 //   resoHTML(team, opts)  一排小签：阵上出现的每一道「力道 1/2」「炎道 2/2 · 攻 +15%」，已触发的描朱，差一只的写「再 1 只：攻 +15%」，
 //                         相冲的写明打几折；成形的杀招各一签。悬停（data-tip）写每只蛊实际加了多少，例如「赤焰蛊 攻 20 → 23（+3）」。
@@ -5974,6 +5974,7 @@ const { daoChar, daoColor, resoInfo, resoHTML, resoGain } = (() => {
 //     opts.empty  = 阵上没有蛊时的那句话（默认空串）
 //   resoInfo(team)        上面用到的数：{ daos: [...], combos: [...] }
 //   daoChar(sp)           蛊卡角上的小道字（力、炎、冰……），daoColor(sp) 它的颜色
+//   resoOf(team, g)       这只蛊身上生效的共鸣，写实际数：「力道共鸣：攻 +15%（+3）」，没有就空串（蛊卡悬停用）
 //   resoGain(team, sp)    再上阵一只 sp，哪一道会凑成或升一档共鸣：{ dao, name, tier, sum } 或 null（蛊市「凑共鸣」小签用）
 // team = 阵上的蛊（{ sp, rank, atk, hp }，召唤物不算）。数字和战斗里一样：表里写 30，乘 RES_K（0.5）和相冲倍率，玩家拿到 15%。
 
@@ -6059,7 +6060,23 @@ function resoGain(team, sp) {
   return { dao: d, name: D.n, tier: n, sum: sumOf(D['r' + n]) };
 }
 
-return { daoChar, daoColor, resoInfo, resoHTML, resoGain };
+// 这只蛊身上生效的共鸣（悬停写实际数）：「力道共鸣：攻 +15%（+3）」「冰雪道共鸣：血 +8%（+3）（与炎道相冲，打五折）」
+function resoOf(team, g) {
+  if (!g || !SP[g.sp]) return '';
+  const T = (team || []).filter(x => x && SP[x.sp]);
+  let sy; try { sy = synergyOf(T); } catch (e) { return ''; }
+  const x = sy.daos.find(d => d.dao === daoOf(g.sp) && d.tier), D = x && DAO[x.dao]; if (!x || !x.eff || !D) return '';
+  const k = x.clash || 1, r = x.eff, bits = [];
+  if (r.atk) { const p = pctOf(r.atk, k); bits.push(`攻 +${p}%（+${addOf(g.atk, p)}）`); }
+  if (r.hp) { const p = pctOf(r.hp, k); bits.push(`血 +${p}%（+${addOf(g.hp, p)}）`); }
+  if (r.sh) { const p = pctOf(r.sh, k); bits.push(`护体 ${p}%（${addOf(g.hp, p)}）`); }
+  if (r.spd) bits.push(`速 +${pctOf(r.spd, k)}%`);
+  if (r.gp) bits.push(`开战蛊力 ${Math.round(r.gp * RES_K * k)}`);
+  const extra = r.eff ? String(r.d || '').split(/[，；]/).slice(1).join('，') : '';
+  return `${D.n}共鸣（${x.tier} 只）：${bits.join('，') || r.d}${extra ? '；' + extra : ''}${k < 1 ? `（与${DAO[x.clashWith] ? DAO[x.clashWith].n : ''}相冲，${zhe(k)}）` : ''}`;
+}
+
+return { daoChar, daoColor, resoInfo, resoHTML, resoGain, resoOf };
 })();
 // ---- src/meta.js
 // 蛊码 GuCode · 成就道途（纯逻辑，不碰 DOM）。规则见 docs/design.md 第 4 节。
@@ -8626,7 +8643,7 @@ function mergePreview(sp, r) {
 function guDetail(g, ctx = {}) {
   const s = SP[g.sp], nat = natOfG(g), team = ctx.kind === 'team' ? S.team : null, i = ctx.i | 0, c = team ? combosBy(team)[i] : null, f = g.food && FOOD[g.food];
   const recipes = COMBOS_ALL.filter(x => x.need.includes(g.sp)), sk = skills(g.sp, rankOf(g)), skP = sk.find(k => k.kind === 'passive'), skA = sk.find(k => k.kind === 'active');
-  sheet(`<div class="detail"><div class="dart">${guSVG(g.sp, { rank: rankOf(g) })}</div><div><h3>${rankName(g)}</h3><p class="lore">${esc(s.lore)}</p><p class="dst"><i class="a">${g.atk}</i><i class="h">${g.hp}</i><i class="v">${spdG(g)}</i> <small>${DAO[daoOf(g.sp)] ? DAO[daoOf(g.sp)].n : ''} · ${reachG(g)}</small></p></div></div>
+  sheet(`<div class="detail"><div class="dart">${guSVG(g.sp, { rank: rankOf(g) })}</div><div><h3>${rankName(g)}</h3><p class="lore">${esc(s.lore)}</p><p class="dst"><i class="a">${g.atk}</i><i class="h">${g.hp}</i><i class="v">${spdG(g)}</i> <small>${DAO[daoOf(g.sp)] ? DAO[daoOf(g.sp)].n : ''} · ${reachG(g)}</small></p>${team && resoOf(team, g) ? `<p class="sm rs">${esc(resoOf(team, g))}</p>` : ''}</div></div>
   ${nat ? `<h4>被动技能</h4><p><b>${esc((skP || nat).n)}</b> ${esc(skP ? skP.text : nat.d)}</p>` : ''}${actOfG(g) ? `<h4>主动技能</h4><p><b>${esc((skA || actOfG(g)).n)}</b> ${esc(skA ? skA.text : actOfG(g).d)}<br><small>蛊力攒满自动放</small></p>` : ''}
   ${c ? `<h4>杀招</h4><div class="skill"><span class="seal">${esc(c.n)}</span><p>${esc(c.d)}<br><small>配方：${c.need.map(x => SP[x].n).join(' + ')}</small></p></div>` : ''}
   ${f ? `<h4>挂件</h4><p><b>${esc(f.n)}</b> ${esc(f.d)}</p>` : ''}
@@ -8666,9 +8683,9 @@ function openSettings() {
 function guTip(g, team, i) {
   if (!g) return '';
   const nat = natOfG(g), c = team ? combosBy(team)[i] : null, f = g.food && FOOD[g.food];
-  const act = actOfG(g), p = g.pos;
+  const act = actOfG(g), p = g.pos, sk = skills(g.sp, rankOf(g)), skP = sk.find(k => k.kind === 'passive'), skA = sk.find(k => k.kind === 'active'), rs = team ? resoOf(team, g) : '';
   return `<b>${rankName(g)}</b> <i class="a">${g.atk}</i> <i class="h">${g.hp}</i> <i class="v">${spdG(g)}</i><br><small>${esc(SP[g.sp].lore)}${team && p ? ` · 第 ${p.r + 1} 行${COL_NAMES[p.c]}列` : ''} · ${reachG(g)} · 攻 / 血 / 速</small>`
-    + (rankOf(g) > driveCap(S.realm) ? `<p class="warn">${esc(TXT.overDrive)}</p>` : '') + (nat ? `<p><b>被动·${esc(nat.n)}</b> ${esc(nat.d)}</p>` : '') + (act ? `<p><b>主动·${esc(act.n)}</b> ${esc(act.d)}<br><small>蛊力攒满自动放</small></p>` : '') + (c ? `<p><b>杀招·${esc(c.n)}</b> ${esc(c.d)}<br><small>配方：${c.need.map(x => SP[x].n).join(' + ')}</small></p>` : '')
+    + (rankOf(g) > driveCap(S.realm) ? `<p class="warn">${esc(TXT.overDrive)}</p>` : '') + (rs ? `<p class="rs"><b>${esc(rs.split('：')[0])}</b> ${esc(rs.slice(rs.indexOf('：') + 1))}</p>` : '') + (nat ? `<p><b>被动·${esc((skP || nat).n)}</b> ${esc(skP ? skP.text : nat.d)}</p>` : '') + (act ? `<p><b>主动·${esc((skA || act).n)}</b> ${esc(skA ? skA.text : act.d)}<br><small>蛊力攒满自动放</small></p>` : '') + (c ? `<p><b>杀招·${esc(c.n)}</b> ${esc(c.d)}<br><small>配方：${c.need.map(x => SP[x].n).join(' + ')}</small></p>` : '')
     + (f ? `<p><b>挂件·${esc(f.n)}</b> ${esc(f.d)}</p>` : '') + (g.xing ? `<p><b>蛊性·${esc(xingName(g.xing))}</b> ${esc(xingDesc(g.xing))}</p>` : '') + `<small>${esc(TXT.ateLine(g))} · 点开看完整详情</small>`;
 }
 const TIPS = {

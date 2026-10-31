@@ -254,6 +254,7 @@ body:has(#tut-layer) .sheet-bg{z-index:1001}   /* 引导进行中打开的面板
 .land details,.sheet details{margin:6px 0}.land summary,.sheet summary{cursor:pointer;font-size:13px;color:var(--mu)}
 .land > button{width:100%;padding:8px;border-radius:3px;font:15px var(--kai);margin-top:6px}
 .tip .warn{color:#9a2f22}
+.tip .rs b,.detail .rs{color:var(--zhu2)}
 /* 详情里的攻血表：当前这一转描朱 */
 .stab{width:100%;border-collapse:collapse;font-size:12px;text-align:center;margin:4px 0}
 .stab th{font:400 13px var(--kai);color:var(--mu);padding:2px 0}.stab td{padding:3px 0;border-top:1px solid var(--line)}
