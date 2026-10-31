@@ -8,7 +8,10 @@ import { BX, NEW_TRAITS } from './bestiary.js';   // 现有 64 种本命技（�
 
 // HPK：战斗血量 = 卡面血 × HPK；DIST：行动条长度（速 100 的蛊每 DIST 个时间单位出手一次 = 一轮）
 // SPD_K：速对出手间隔的影响系数（速 120 的蛊出手频率 = 1 + 0.2 × SPD_K 倍），让速度有意义又不一边倒
-export const HPK = 4, DIST = 100, SPD_K = 0.18, MAXROUND = 30;
+export const HPK = 4;
+export const DIST = 100;
+export const SPD_K = 0.18;
+export const MAXROUND = 30;
 const ROWS = 3, COLS = 3;
 // RES_K：道共鸣数值整体折算（design.md 2.6：道共鸣只给轻量加成，配合比堆道重要）
 export const RES_K = 0.5;
