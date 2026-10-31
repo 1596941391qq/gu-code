@@ -1,5 +1,5 @@
 // 蛊码 GuCode · 界面与流程：洞府（养成）、斗幽灵与战帖（切磋）、战斗回放、秘境接口。规则只认 docs/design.md
-import { SPECIES, SP, TRAITS, REALMS, SLOTS, RANK, COMBOS, COMBO, makeRng, hashStr, newGu, starterTeam, baseRank, rankOf, rankName, statFor, natOf, natMulFor, awOf, QUOTA, quotaOf, driveCap, quotaTeam, poolFor, BAG, bagCap, canBuy, placeGu, mergeAll, sellValue, comboMissing, COL_NAMES, cellOf, cellPos, freeCell, autoPlace, sortTeam, daoOf, rollShop, foodCost, feedStat, PRICE, genTeam, ghostTrio, posLinks, encodeTeam, decodeTeam, EV_MS, playMs, tempoFor, fmtNum, fmtTok } from './core.js';
+import { SPECIES, SP, TRAITS, REALMS, SLOTS, RANK, COMBOS, COMBO, makeRng, hashStr, newGu, starterTeam, baseRank, rankOf, rankName, statFor, natOf, natMulFor, awOf, QUOTA, quotaOf, ATE_MAX, ateOf, canEat, statTable, XING, driveCap, quotaTeam, poolFor, BAG, bagCap, canBuy, placeGu, mergeAll, sellValue, comboMissing, COL_NAMES, cellOf, cellPos, freeCell, autoPlace, sortTeam, daoOf, rollShop, foodCost, feedStat, PRICE, genTeam, ghostTrio, posLinks, encodeTeam, decodeTeam, EV_MS, playMs, tempoFor, fmtNum, fmtTok } from './core.js';
 import { battle, synergyOf, battleProfile } from './battle.js';
 import { guSVG, ART_DEFS } from './art.js';
 import { TokenSource, VSC } from './tokens.js';
@@ -51,6 +51,14 @@ const TXT = {
   whyDrive: g => `${rankName(g)}要${REALMS[rankOf(g) - 1]}境界才能驱使：先收进蛊囊`,
   driveNo: g => `${REALMS[S.realm]}境界只能驱使${RANK.names[driveCap(S.realm)]}及以下的蛊，${rankName(g)}先留在蛊囊`,
   overDrive: '境界不够，驱使不了：出征前收进蛊囊',
+  ateLine: g => `加攻血的食物 已吃 ${ateOf(g)}/${ATE_MAX}`,
+  ateNo: g => `${rankName(g)}已经吃满 ${ATE_MAX} 次加攻血的食物了`,
+  ateFull: `空窍里的蛊都吃满 ${ATE_MAX} 次了，这份食物喂不下`,
+  statHead: '攻血表',
+  statSub: '合成升转后攻血换成这一转的数，五转封顶；喂食物的加成另算（每只最多吃 3 次）',
+  xingAsk: g => `${rankName(g)}：传哪个蛊性？`,
+  xingAskSub: '三只材料带着不同的蛊性，新蛊只能留一个，没选的就没了。关掉这一页就先留着现在亮着的那个。',
+  xingSet: g => `${rankName(g)}留下了蛊性「${xingName(g.xing)}」`,
   goWarn: '在秘境战斗中倒下的蛊会永远消失。蛊囊里的蛊留在洞府，绝对安全。可以随时撤退，带回战利品和活着的蛊；全员倒下就是全灭，这次的战利品全部丢失。',
   goSoon: '秘境还在开凿，出征下一版就来。先在洞府里买蛊、合成、排阵。',
   inTrip: '队伍正在秘境里。出征中不能逛蛊市、不能换阵。',
@@ -229,6 +237,8 @@ const actOfG = g => { const a = profOf(g).act; return a && a.n ? { n: a.n, ch: a
 // 羁绊以战斗引擎的 synergyOf 为准：line 写在空窍上方；combos[k].idx 是队伍下标，配方从 COMBO 补
 const synOf = team => { try { return synergyOf(team); } catch (e) { return { daos: [], combos: [], line: '' }; } };
 const combosBy = team => { const m = {}; synOf(team).combos.forEach(c => { m[c.idx] = { ...(COMBO[c.id] || {}), ...c, need: (COMBO[c.id] || {}).need || [c.core] }; }); return m; };
+const xingName = k => (XING[k] ? XING[k].n : String(k || ''));
+const xingDesc = k => (XING[k] ? XING[k].d : '');
 const natOfG = g => { const k = natOf(g.sp); return k && TRAITS[k] ? { n: TRAITS[k].n, ch: TRAITS[k].ch, d: TRAITS[k].d(1, natMulFor(rankOf(g))), aw: awOf(g) } : null; };
 function mainHTML() {
   return `<header class="top"><div class="brand"><b class="logo">蛊码</b><span class="sub">烧 Token · 养蛊 · 闯秘境</span></div>
@@ -323,6 +333,14 @@ function afterChange(merged = []) {
   Object.entries(combos).forEach(([i, c]) => { if (!seen.includes(c.id)) { seen.push(c.id); big('combo', TXT.comboFirst(c), TXT.comboLines(c, S.team[i])); achieve('combos', 1); } });
   merged.forEach(x => { const n = document.querySelector(`.gu[data-uid="${x.uid}"]`); if (n) { try { fuseRankUp(n, { sp: x.sp, from: rankOf(x) - 1, to: rankOf(x), calm: !!S.calm }); } catch (e) {} } });
   floorCheck();
+  if ([...S.team, ...S.bag].some(x => x.xingAsk)) setTimeout(askXing, merged.length ? 900 : 0);
+}
+// 合成时三只材料带着不同的蛊性：挑一个传给新蛊（没挑之前先带着第一个；关掉不选就留着它）
+function askXing() {
+  const g = [...S.team, ...S.bag].find(x => x.xingAsk && x.xingAsk.length > 1); if (!g || tripOn()) return;
+  if (document.querySelector('.bigmo, .sheet-bg, #battle')) { setTimeout(askXing, 800); return; }
+  sheet(`<h3>${esc(TXT.xingAsk(g))}</h3><p class="sm">${esc(TXT.xingAskSub)}</p><div class="xpick">${g.xingAsk.map(k => `<button class="${k === g.xing ? 'zhu' : ''}" data-act="xingPick" data-uid="${g.uid}" data-k="${esc(k)}"><b>${esc(xingName(k))}</b><small>${esc(xingDesc(k))}</small></button>`).join('')}</div>`, 'xask');
+  delete g.xingAsk; save();   // 只问一次：关掉就留着现在这个
 }
 // 保底：洞府里一只蛊都没有时，免费领一只一转蛊
 function floorCheck() {
@@ -336,16 +354,17 @@ function useFood(id, from, i) {
   const f = FOOD[id]; if (!f) return false;
   if (f.kind === 'trip') { S.tripFood.push(id); note(TXT.tripFood(f)); achieve('feeds', 1); return true; }
   if (f.kind === 'stat' && f.to !== 'one') {
-    if (!S.team.length) return false;
-    const r = R(), tg = f.to === 'all' ? S.team.slice() : S.team.slice().sort(() => r() - 0.5).slice(0, 2);
+    const can = S.team.filter(canEat); if (!can.length) { note(TXT.ateFull); return false; }
+    const r = R(), tg = f.to === 'all' ? can : can.sort(() => r() - 0.5).slice(0, 2);
     feedStat(id, tg); note(TXT.fed(f, tg)); tg.forEach(g => fxFloat(g.uid, `+${f.atk || 0}/+${f.hp || 0}`, 'buff')); achieve('feeds', 1); return true;
   }
   FEED = { id, from, i };
-  sheet(`<h3>${esc(f.kind === 'gear' ? TXT.gearPick(f) : TXT.foodPick(f))}</h3><p class="sm">${esc(f.d)}</p><div class="mini pick">${[...S.team, ...S.bag].map((g, k) => `<button class="mg" data-act="feedTo" data-k="${k}"><span class="art">${guSVG(g.sp, { rank: rankOf(g) })}</span><b>${SP[g.sp].n}</b><span class="st"><i class="a">${g.atk}</i><i class="h">${g.hp}</i></span>${g.food ? `<small>挂着${esc(FOOD[g.food] ? FOOD[g.food].n : '')}</small>` : ''}</button>`).join('')}</div>`);
+  sheet(`<h3>${esc(f.kind === 'gear' ? TXT.gearPick(f) : TXT.foodPick(f))}</h3><p class="sm">${esc(f.d)}</p><div class="mini pick">${[...S.team, ...S.bag].map((g, k) => `<button class="mg" data-act="feedTo" data-k="${k}"${f.kind === 'stat' && !canEat(g) ? ' disabled' : ''}><span class="art">${guSVG(g.sp, { rank: rankOf(g) })}</span><b>${SP[g.sp].n}</b><span class="st"><i class="a">${g.atk}</i><i class="h">${g.hp}</i></span>${f.kind === 'stat' ? `<small>${canEat(g) ? `已吃 ${ateOf(g)}/${ATE_MAX}` : '吃满了'}</small>` : g.food ? `<small>挂着${esc(FOOD[g.food] ? FOOD[g.food].n : '')}</small>` : ''}</button>`).join('')}</div>`);
   return null;   // 等玩家挑
 }
 function feedTo(g) {
   const f = FEED && FOOD[FEED.id]; if (!f || !g) return;
+  if (f.kind === 'stat' && !canEat(g)) { note(TXT.ateNo(g)); return; }
   const fr = FEED; FEED = null;
   if (fr.from === 'shop') { const w = S.shop[fr.i]; if (!w || w.sold || !pay(foodCost(w.id))) { closeSheet(); return; } w.sold = true; w.frozen = false; }
   else S.pantry.splice(fr.i, 1);
@@ -674,7 +693,8 @@ function guDetail(g, ctx = {}) {
   ${nat ? `<h4>被动技能</h4><p><b>${esc(nat.n)}</b> ${esc(nat.d)}</p>` : ''}${actOfG(g) ? `<h4>主动技能</h4><p><b>${esc(actOfG(g).n)}</b> ${esc(actOfG(g).d)}<br><small>蛊力攒满自动放</small></p>` : ''}${nat ? `<p class="sm">三转、五转各觉醒一次，强化技能${nat.aw ? `（已觉醒 ${nat.aw} 次）` : ''}</p>` : ''}
   ${c ? `<h4>杀招</h4><div class="skill"><span class="seal">${esc(c.n)}</span><p>${esc(c.d)}<br><small>配方：${c.need.map(x => SP[x].n).join(' + ')}</small></p></div>` : ''}
   ${f ? `<h4>挂件</h4><p><b>${esc(f.n)}</b> ${esc(f.d)}</p>` : ''}
-  ${g.xing ? `<h4>蛊性</h4><p>${esc(String(g.xing))}</p>` : ''}
+  ${g.xing ? `<h4>蛊性</h4><p><b>${esc(xingName(g.xing))}</b> ${esc(xingDesc(g.xing))}</p>` : ''}
+  <h4>${TXT.statHead}</h4><p class="sm">${esc(TXT.statSub)}</p><table class="stab"><tr>${statTable(g.sp).map(x => `<th class="${x.rank === rankOf(g) ? 'on' : ''}">${RANK.names[x.rank]}</th>`).join('')}</tr><tr>${statTable(g.sp).map(x => `<td class="${x.rank === rankOf(g) ? 'on' : ''}"><i class="a">${x.atk}</i> <i class="h">${x.hp}</i></td>`).join('')}</tr></table><p class="sm">${esc(TXT.ateLine(g))}${g.bonusA || g.bonusH ? `（已加攻 ${g.bonusA || 0}、血 ${g.bonusH || 0}）` : ''}</p>
   ${recipes.length ? `<h4>能凑的杀招</h4><ul>${recipes.map(x => `<li><b>${esc(x.n)}</b> ${x.need.map(y => SP[y].n).join(' + ')}</li>`).join('')}</ul>` : ''}
   ${ctx.kind === 'team' || ctx.kind === 'bag' ? `<div class="row2">${ctx.kind === 'team' ? `<button data-act="toBag" data-k="${cellOf(g)}"${S.bag.length < BC() && !tripOn() ? '' : ' disabled'}>收进蛊囊</button>` : `<button class="zhu" data-act="fromBag" data-i="${i}"${S.team.length < SLOTS && rankOf(g) <= driveCap(S.realm) && !tripOn() ? '' : ' disabled'}>上阵</button>`}<button data-act="sell" data-k="${ctx.kind}" data-i="${i}"${tripOn() ? ' disabled' : ''}>卖出 · 退回 ${fmtTok(price(sellValue(g)))}</button></div>` : ''}`);
 }
@@ -709,7 +729,7 @@ function guTip(g, team, i) {
   const act = actOfG(g), p = g.pos;
   return `<b>${rankName(g)}</b> <i class="a">${g.atk}</i> <i class="h">${g.hp}</i> <i class="v">${spdG(g)}</i><br><small>${esc(SP[g.sp].lore)}${team && p ? ` · 第 ${p.r + 1} 行${COL_NAMES[p.c]}列` : ''} · ${reachG(g)} · 攻 / 血 / 速</small>`
     + (rankOf(g) > driveCap(S.realm) ? `<p class="warn">${esc(TXT.overDrive)}</p>` : '') + (nat ? `<p><b>被动·${esc(nat.n)}</b> ${esc(nat.d)}</p>` : '') + (act ? `<p><b>主动·${esc(act.n)}</b> ${esc(act.d)}<br><small>蛊力攒满自动放</small></p>` : '') + (c ? `<p><b>杀招·${esc(c.n)}</b> ${esc(c.d)}<br><small>配方：${c.need.map(x => SP[x].n).join(' + ')}</small></p>` : '')
-    + (f ? `<p><b>挂件·${esc(f.n)}</b> ${esc(f.d)}</p>` : '') + `<small>点开看完整详情</small>`;
+    + (f ? `<p><b>挂件·${esc(f.n)}</b> ${esc(f.d)}</p>` : '') + (g.xing ? `<p><b>蛊性·${esc(xingName(g.xing))}</b> ${esc(xingDesc(g.xing))}</p>` : '') + `<small>${esc(TXT.ateLine(g))} · 点开看完整详情</small>`;
 }
 const TIPS = {
   qi: () => `<b>元气 ${fmtTok(S.bank)}</b><br><small>${esc(TXT.qiTip)}${VSC ? '' : esc(TXT.qiTrial)}</small>`,
@@ -797,7 +817,8 @@ function buyWare(i) {
   const w = S.shop[i]; if (!w || w.sold || tripOn()) return;
   if (w.kind === 'food') {
     const f = FOOD[w.id]; if (!canPay(foodCost(w.id))) { note(TXT.poor(price(foodCost(w.id)) - S.bank)); return; }
-    if (f.kind === 'trip' || (f.kind === 'stat' && f.to !== 'one')) { if ((f.kind === 'stat' && !S.team.length) || !pay(foodCost(w.id))) return; w.sold = true; w.frozen = false; useFood(w.id, 'shop', i); closeSheet(); renderHome(); save(); return; }
+    if (f.kind === 'trip' || (f.kind === 'stat' && f.to !== 'one')) { if (f.kind === 'stat' && !S.team.some(canEat)) { note(TXT.ateFull); return; }
+      if (!pay(foodCost(w.id))) return; w.sold = true; w.frozen = false; useFood(w.id, 'shop', i); closeSheet(); renderHome(); save(); return; }
     useFood(w.id, 'shop', i); return;
   }
   if (!canBuy(S.team, w.sp, curCap(), S.bag, BC())) { note(TXT.bagFull); return; }
@@ -825,6 +846,7 @@ const ACT = {
   refresh() { if (tripOn() || !pay(PRICE.refresh)) return; newShop(); renderShop(); meters(); save(); snd('tick'); },
   pantry(a) { const i = +a.dataset.i, id = S.pantry[i], f = FOOD[id]; if (!f) return; if (f.kind === 'gear' || (f.kind === 'stat' && f.to === 'one')) { useFood(id, 'pantry', i); return; } if (useFood(id, 'pantry', i)) { S.pantry.splice(i, 1); renderHome(); save(); } },
   feedTo(a) { const all = [...S.team, ...S.bag]; feedTo(all[+a.dataset.k]); },
+  xingPick(a) { const g = [...S.team, ...S.bag].find(x => x.uid === a.dataset.uid); if (!g) return; g.xing = a.dataset.k; closeSheet(); note(TXT.xingSet(g)); renderHome(); save(); askXing(); },
   gu(a) { const i = S.team.findIndex(g => g.uid === a.dataset.uid); if (i >= 0) guDetail(S.team[i], { kind: 'team', i }); },
   bagGu(a) { const i = +a.dataset.i; if (S.bag[i]) guDetail(S.bag[i], { kind: 'bag', i }); },
   toBag(a) { if (moveGu('team', +a.dataset.k, 'bag', S.bag.length)) { closeSheet(); afterChange(); } },
@@ -888,6 +910,7 @@ function boot(saved, pending) {
   if (pending && pending.tokens > 0 && S.started) { countTok(pending.tokens); feed(pending.tokens); note(`你不在的时候，攒下了 ${fmtTok(pending.tokens)} 元气`); meters(); }
   if (S.started && !S.compass && !S.dao) rollCompass();
   floorCheck(); checkHash();
+  if (S.started) setTimeout(askXing, 600);
 }
 if (VSC) {
   window.addEventListener('message', e => {

@@ -250,6 +250,14 @@ body:has(#tut-layer) .sheet-bg{z-index:1001}   /* 引导进行中打开的面板
 .land details,.sheet details{margin:6px 0}.land summary,.sheet summary{cursor:pointer;font-size:13px;color:var(--mu)}
 .land > button{width:100%;padding:8px;border-radius:3px;font:15px var(--kai);margin-top:6px}
 .tip .warn{color:#9a2f22}
+/* 详情里的攻血表：当前这一转描朱 */
+.stab{width:100%;border-collapse:collapse;font-size:12px;text-align:center;margin:4px 0}
+.stab th{font:400 13px var(--kai);color:var(--mu);padding:2px 0}.stab td{padding:3px 0;border-top:1px solid var(--line)}
+.stab .on{color:var(--zhu2)}.stab td.on{box-shadow:inset 0 -2px 0 var(--zhu2)}
+/* 合成时挑蛊性 */
+.xpick{display:grid;gap:8px;margin-top:8px}.xpick button{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:10px;border-radius:3px;text-align:left}
+.xpick b{font:400 16px var(--kai)}.xpick small{font-size:12px;opacity:.85}
+.mini.pick .mg:disabled{opacity:.45}
 .slots.board .gu.empty{background:transparent;border:1px dashed var(--faint);box-shadow:none;display:grid;place-items:center;color:var(--mu);font:12px var(--kai)}
 .slots.board .gu .st{gap:5px;font-size:11px}
 .tc.act{color:var(--zhu2);border-color:var(--zhu2)}

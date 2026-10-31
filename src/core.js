@@ -40,7 +40,13 @@ export const BAG = { cap: 8 };
 export const bagCap = () => BAG.cap;
 // 攻血成长表：同一种蛊每一转的攻血固定。G[r] = 该转相对一转的倍数；物种的 atk/hp 是它基础转数时的数值。
 // 物种可带 st: [[攻,血] × 6]（下标 = 转数）直接覆盖这张表。
+// 单只蛊封顶（design 第 0 节）：攻血按「每种蛊每一转」的固定表，五转封顶；加攻血的食物每只最多吃 ATE_MAX 次
 export const RANK_GROW = [0, 1, 1.8, 3, 4.6, 6.8, 9.6];
+export const ATE_MAX = 3;
+export const ateOf = g => (g && g.ate) || 0;
+export const canEat = g => !!g && ateOf(g) < ATE_MAX;
+// 这种蛊从原生转数到五转的攻血表：[{ rank, atk, hp }]
+export const statTable = sp => { const out = []; for (let r = baseRank(sp); r <= RANK.max; r++) out.push({ rank: r, ...statFor(sp, r) }); return out; };
 export function statFor(sp, rank) {
   const s = SP[sp]; if (!s) return { atk: 1, hp: 1 };
   const r = Math.max(1, Math.min(6, rank | 0)); if (s.st && s.st[r]) return { atk: s.st[r][0], hp: s.st[r][1] };
@@ -188,15 +194,21 @@ export function placeGu(team, bag, g, cap, bc = BAG.cap, mode = 'shop', pick) {
 }
 // 同种同转三只合成高一转：空窍和蛊囊一起算，结果留在第一只的位置（空窍优先）。攻血直接换成新一转的表值；
 // 挂件食物保留第一只的；蛊性从三只里挑一个：pick(候选蛊性数组) → 选中的那个（不给 pick 就取第一个）。返回合成出的蛊
+// 三只同种同转合成高一转：攻血换成新一转的表值，再加上三只里吃得最多的那只的食物加成（吃的次数一并继承，所以不会超过 ATE_MAX 次）。
+// 蛊性：三只材料里有不同的蛊性时，pick(候选) 同步选一个；没给 pick 就先传第一个，并在新蛊上留 xingAsk = 候选，等界面问玩家。
 export function mergeAll(team, bag = [], pick) {
   const done = [], rm = x => { const l = team.includes(x) ? team : bag; l.splice(l.indexOf(x), 1); };
   for (let guard = 0; guard < 12; guard++) {
     let grp = null; const all = [...team, ...bag];
     for (const g of all) { const rk = rankOf(g), same = all.filter(x => x.sp === g.sp && rankOf(x) === rk); if (same.length >= 3 && rk < RANK.max && !(SP[g.sp] || {}).immortal) { grp = same.slice(0, 3); break; } }
     if (!grp) break;
-    const [a, b, c] = grp, xs = grp.map(x => x.xing).filter(Boolean);
-    a.rank = rankOf(a) + 1; const st = statFor(a.sp, a.rank); a.atk = st.atk + (a.bonusA || 0); a.hp = st.hp + (a.bonusH || 0);
-    a.xing = xs.length ? (pick && xs.length > 1 ? pick(xs) : xs[0]) : null;
+    const [a, b, c] = grp, xs = [...new Set(grp.map(x => x.xing).filter(Boolean))];
+    const fed = grp.reduce((m, x) => (ateOf(x) > ateOf(m) ? x : m), a);
+    const bA = fed.bonusA || 0, bH = fed.bonusH || 0, ate = ateOf(fed);
+    a.rank = rankOf(a) + 1; const st = statFor(a.sp, a.rank);
+    a.bonusA = bA; a.bonusH = bH; a.ate = ate; a.atk = st.atk + bA; a.hp = st.hp + bH;
+    delete a.xingAsk;
+    if (xs.length > 1 && pick) a.xing = pick(xs); else { a.xing = xs[0] || null; if (xs.length > 1) a.xingAsk = xs; }
     a.food = a.food || b.food || c.food || null;
     [b, c].forEach(rm);
     done.push(a);
@@ -206,11 +218,12 @@ export function mergeAll(team, bag = [], pick) {
 export const sellValue = g => PRICE.sell * Math.pow(3, fuseLv(g));   // 单位同 PRICE
 
 // ---------- 食物 ----------
-// 喂一个直接加攻血的食物：targets = 要加的蛊。永久加成记在 bonusA/bonusH（合成换表值时保留）
+// 喂加攻血的食物：只喂还没吃满 ATE_MAX 次的，返回真正吃到的。永久加成记在 bonusA/bonusH（合成换表值时保留）
 export function feedStat(food, targets) {
   const f = FOOD[food]; if (!f || f.kind !== 'stat') return [];
-  targets.forEach(g => { g.bonusA = (g.bonusA || 0) + (f.atk || 0); g.bonusH = (g.bonusH || 0) + (f.hp || 0); g.atk += f.atk || 0; g.hp += f.hp || 0; });
-  return targets;
+  const ok = targets.filter(canEat);
+  ok.forEach(g => { g.ate = ateOf(g) + 1; g.bonusA = (g.bonusA || 0) + (f.atk || 0); g.bonusH = (g.bonusH || 0) + (f.hp || 0); g.atk += f.atk || 0; g.hp += f.hp || 0; });
+  return ok;
 }
 
 // ---------- 程序生成阵容（幽灵、秘境的对手） ----------
