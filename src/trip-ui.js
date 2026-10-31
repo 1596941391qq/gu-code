@@ -1,6 +1,6 @@
 // 蛊码 GuCode · 秘境界面。只通过 hooks.js 的 TRIP 和洞府打交道（不 import ui.js）。逻辑全在 trip.js。
 // 一屏只有一个主按钮；「撤退」一直在右上角但不是主按钮；精英和首领开打前先给看阵容并写明「这一场可能会死蛊」。
-// 倒下的蛊先停在原地送别（点了才过去），整次出征结束再列一遍带回了什么、谁没回来，然后交给洞府（api.onTripEnd）。
+// 规则「赢了救回，输了全死」：打赢的那一场倒下的救回、剩 1 血；打输就全队永久死亡，直接进结算，结算页停住，列出每只死去的蛊和告别词，点了才回洞府（api.onTripEnd）。
 import { TRIP } from './hooks.js';
 import { SP, RANK, XING, fmtTok } from './core.js';
 import { guSVG } from './art.js';
@@ -21,11 +21,11 @@ function tuInit(api) {
   const S = api.S(), at = (S.trip && S.trip.at) || Date.now();
   const land = (S.trip && S.trip.land) || S.realm;   // 洞府选好的秘境 id（没选时取本境界第一个）
   const t = tripStart(tripSeed(S.seed, at), land, S.team, { trip: S.tripFood || [] });
-  S.trip = Object.assign({ at }, t, { ui: { msg: [], fare: [], offers: [], ask: null } });
+  S.trip = Object.assign({ at }, t, { ui: { msg: [], offers: [], ask: null } });
   api.save();
   return S.trip;
 }
-const tuUI = t => t.ui || (t.ui = { msg: [], fare: [], offers: [], ask: null });
+const tuUI = t => t.ui || (t.ui = { msg: [], offers: [], ask: null });
 
 // ───────────── 画面 ─────────────
 function tuDraw(api) {
@@ -35,8 +35,7 @@ function tuDraw(api) {
   if (!t) { box.innerHTML = ''; return; }
   const ui = tuUI(t), by = Object.fromEntries(S.team.map(g => [g.uid, g]));
   let body;
-  if (ui.fare.length) body = tuFare(t, ui.fare[0]);
-  else if (ui.offers.length) body = tuOffer(t, by, ui.offers[0]);
+  if (ui.offers.length) body = tuOffer(t, by, ui.offers[0]);
   else if (t.end) body = tuEnd(t, by, S);
   else if (ui.ask === 'flee') body = tuAsk(t);
   else if (t.room && !t.room.done) body = tuRoom(t, S);
@@ -55,7 +54,7 @@ function tuTeam(t, by) {
     const g = by[u], f = t.fallen.find(x => x.uid === u), sp = g ? g.sp : f && f.sp, rank = g ? g.rank : f && f.rank; if (!sp) return '';
     const dead = t.dead.includes(u), hp = t.hp[u] || 0, mx = t.mx[u] || 1, pc = Math.max(0, Math.min(100, Math.round(hp / mx * 100)));
     const xg = g && g.xing && XING[g.xing];
-    return `<div class="tu-g${dead ? ' dead' : pc <= 30 ? ' low' : ''}" title="${tuEsc(xg ? `蛊性「${xg.n}」：${xg.d}` : '')}"><span class="tu-art">${guSVG(sp, { rank })}</span><span class="tu-gi"><b>${tuEsc(SP[sp] ? SP[sp].n : sp)}${xg ? `<em class="tu-xg">${tuEsc(xg.n[0])}</em>` : ''}</b>${dead ? '<small>倒下</small>' : `<span class="tu-hp"><i style="width:${pc}%"></i></span><small>${hp}/${mx}</small>`}</span></div>`;
+    return `<div class="tu-g${dead ? ' dead' : pc <= 30 ? ' low' : ''}" title="${tuEsc(xg ? `蛊性「${xg.n}」：${xg.d}` : '')}"><span class="tu-art">${guSVG(sp, { rank })}</span><span class="tu-gi"><b>${tuEsc(SP[sp] ? SP[sp].n : sp)}${xg ? `<em class="tu-xg">${tuEsc(xg.n[0])}</em>` : ''}</b>${dead ? '<small>永久死亡</small>' : `<span class="tu-hp"><i style="width:${pc}%"></i></span><small>${hp}/${mx}</small>`}</span></div>`;
   }).join('')}</div>`;
 }
 function tuBag(t) {
@@ -91,7 +90,7 @@ function tuRoom(t, S) {
   const room = t.room, R = ROOMS[room.type], title = `<p class="tu-eyebrow">第 ${room.d + 1} 层</p><h3><b class="tu-seal">${R.ch}</b>${R.n}</h3>`;
   if (room.foe) {
     const foe = roomFoe(t) || [], risky = room.type === 'elite' || room.type === 'boss';
-    return `<div class="tu-panel t-${room.type}">${title}<p>${tuEsc(R.d)}</p>${risky ? '<p class="tu-warn">这一场可能会死蛊。倒下的蛊永远回不来；不想冒险，现在撤退，战利品都能带走。</p>' : ''}
+    return `<div class="tu-panel t-${room.type}">${title}<p>${tuEsc(R.d)}</p>${risky ? '<p class="tu-warn">输了全队永久死亡；不想冒险，现在撤退，战利品都能带走。</p>' : ''}
       <p class="tu-cap">对面</p>${tuFoes(foe)}${t.pre ? `<p class="tu-hint">回春茶：开打前全队回 ${Math.round(t.pre * 100)}% 血。</p>` : ''}
       <div class="tu-main"><button class="zhu big" data-trip="fight">${room.type === 'boss' && t.realm === S.realm ? '渡劫' : '开打'}</button></div></div>`;
   }
@@ -115,25 +114,20 @@ function tuOffer(t, by, o) {
     <ul class="tu-xl"><li><b>新的「${tuEsc(nw.n)}」</b>${tuEsc(nw.d)}</li><li><b>现在的「${tuEsc(old.n)}」</b>${tuEsc(old.d)}</li></ul>
     <div class="tu-main"><button class="zhu big" data-trip="xing" data-y="1">换成「${tuEsc(nw.n)}」</button><button class="tu-sec" data-trip="xing" data-y="0">留着「${tuEsc(old.n)}」</button></div></div>`;
 }
-function tuFare(t, uid) {
-  const f = t.fallen.find(x => x.uid === uid); if (!f) return '';
-  return `<div class="tu-panel tu-fare"><span class="tu-art gone">${guSVG(f.sp, { rank: f.rank })}</span><p class="tu-eyebrow">永远留在了秘境里</p><h3>${tuEsc(tuGuN(f))}</h3><p>${tuEsc(epitaph(f))}</p><p class="tu-hint">倒下的蛊不会再回来。</p>
-    <div class="tu-main"><button class="zhu big" data-trip="fare">送它走</button></div></div>`;
-}
 function tuAsk(t) {
   const l = t.loot, items = [...l.gu.map(tuGuN), ...l.foods.map(tuFood)];
   return `<div class="tu-panel"><h3>撤退回洞府？</h3><p>${items.length ? `战利品袋里的全部带回：${tuEsc(items.join('、'))}。` : '战利品袋是空的。'}活着的蛊回洞府就养好伤。</p>
     <div class="tu-main"><button class="zhu big" data-trip="fleeYes">撤退</button><button class="tu-sec" data-trip="fleeNo">继续走</button></div></div>`;
 }
 function tuEnd(t, by, S) {
-  const e = t.end, trib = t.realm === S.realm, head = { clear: trib ? ['渡劫成功', '闯到了最深处，赢了首领，境界加一'] : ['通关', '闯到了最深处，赢了首领'], wipe: ['全灭', '出征的蛊全部倒下了'], retreat: ['撤退', '带着战利品回洞府'] }[e.why] || ['回洞府', ''];
+  const e = t.end, trib = t.realm === S.realm, head = { clear: trib ? ['渡劫成功', '闯到了最深处，赢了首领，境界加一'] : ['通关', '闯到了最深处，赢了首领'], wipe: ['全灭', '打输了一场，全队永久死亡'], retreat: ['撤退', '带着战利品回洞府'] }[e.why] || ['回洞府', ''];
   const N = tripMapOf(t).length, deep = Math.min(N, e.why === 'clear' ? N : e.depth + (t.rooms > e.depth ? 1 : 0));
   const got = [...e.loot.gu.map(g => `<li><span class="tu-art">${guSVG(g.sp, { rank: g.rank })}</span>${tuEsc(tuGuN(g))}<small>放进蛊囊</small></li>`), ...e.loot.foods.map(id => `<li><b class="tu-seal">食</b>${tuEsc(tuFood(id))}<small>放进食物架</small></li>`)];
   const lost = e.lost && !lootEmpty(e.lost) ? `<p class="tu-hint">丢在秘境里的：${tuEsc([...e.lost.gu.map(tuGuN), ...e.lost.foods.map(tuFood)].join('、'))}</p>` : '';
-  const back = e.survivors.map(u => by[u]).filter(Boolean).map(g => tuEsc(SP[g.sp].n));
-  return `<div class="tu-panel tu-end w-${e.why}"><p class="tu-eyebrow">${head[0]}</p><h3>${head[1]}</h3><p>这一趟走了 ${t.rooms} 个房间，最深到第 ${deep} 层。${back.length ? `回来的：${back.join('、')}，回洞府就养好伤。` : ''}</p>
+  const back = e.survivors.map(u => by[u]).filter(Boolean).map(g => tuEsc(SP[g.sp].n)), saved = (e.saved || []).map(u => by[u]).filter(Boolean).map(g => tuEsc(SP[g.sp].n));
+  return `<div class="tu-panel tu-end w-${e.why}"><p class="tu-eyebrow">${head[0]}</p><h3>${head[1]}</h3><p>这一趟走了 ${t.rooms} 个房间，最深到第 ${deep} 层。${back.length ? `回来的：${back.join('、')}，回洞府就养好伤。` : ''}</p>${e.wiped ? '' : `<p class="tu-saved">${saved.length ? `救回 ${saved.length} 只：${saved.join('、')}（倒下过，但那一场打赢了）` : '这一趟没有蛊倒下过。'}</p>`}
     <p class="tu-cap">带回洞府</p>${got.length ? `<ul class="tu-got">${got.join('')}</ul>` : '<p class="tu-hint">什么也没带回。</p>'}${lost}
-    ${e.fallen.length ? `<p class="tu-cap">没有回来的</p><ul class="tu-gone">${e.fallen.map(f => `<li><span class="tu-art gone">${guSVG(f.sp, { rank: f.rank })}</span><span><b>${tuEsc(tuGuN(f))}</b><small>${tuEsc(epitaph(f))}</small></span></li>`).join('')}</ul>` : ''}
+    ${e.fallen.length ? `<p class="tu-cap">全队永久死亡</p><ul class="tu-gone">${e.fallen.map(f => `<li><span class="tu-art gone">${guSVG(f.sp, { rank: f.rank })}</span><span><b>${tuEsc(tuGuN(f))}</b><small>${tuEsc(epitaph(f))}</small></span></li>`).join('')}</ul>` : ''}
     <div class="tu-main"><button class="zhu big" data-trip="home">回洞府</button></div></div>`;
 }
 
@@ -149,9 +143,11 @@ async function tuFight(api, t) {
   } finally { tuBusy = false; }
   const r = tripFight(t, S.team, fielded, out.res); if (!r) return;
   const nm = u => { const g = S.team.find(x => x.uid === u); return g ? SP[g.sp].n : ''; };
-  ui.msg = [`${r.win ? '胜' : out.res.winner === 'draw' ? '僵持不下，各自退开' : '败'}${healed ? `（开打前回春茶回了 ${healed} 血）` : ''}${r.loot && !lootEmpty(r.loot) ? '。进战利品袋：' + [...r.loot.gu.map(tuGuN), ...r.loot.foods.map(tuFood)].join('、') : ''}`];
+  if (r.wiped) { ui.msg = []; ui.offers = []; return; }   // 打输：全队永久死亡，直接进结算
+  ui.msg = [`${r.win ? '胜' : '僵持不下，各自退开（这个房间没有战利品）'}${healed ? `（开打前回春茶回了 ${healed} 血）` : ''}${r.loot && !lootEmpty(r.loot) ? '。进战利品袋：' + [...r.loot.gu.map(tuGuN), ...r.loot.foods.map(tuFood)].join('、') : ''}`];
+  if (r.saved.length) ui.msg.push(`倒下的 ${r.saved.map(nm).join('、')} 救回来了，剩 1 血`);
   r.offers.filter(o => o.auto).forEach(o => ui.msg.push(`${nm(o.uid)} 打出了蛊性「${XING[o.xing].n}」：${XING[o.xing].d}`));
-  ui.fare = r.dead.slice(); ui.offers = r.offers.filter(o => !o.auto);
+  ui.offers = r.offers.filter(o => !o.auto);
 }
 const TU_ACT = {
   pick(api, t, a) { tuUI(t).msg = []; tripPick(t, +a.dataset.lane, tuUnit(), api.S()); },
@@ -168,7 +164,6 @@ const TU_ACT = {
     const ui = tuUI(t), o = ui.offers.shift(); if (!o) return;
     if (a.dataset.y === '1') { acceptXing(api.S().team, o.uid, o.xing); ui.msg = [`换上了蛊性「${XING[o.xing].n}」`]; }
   },
-  fare(api, t) { tuUI(t).fare.shift(); },
   flee(api, t) { tuUI(t).ask = 'flee'; },
   fleeNo(api, t) { tuUI(t).ask = null; },
   fleeYes(api, t) { const ui = tuUI(t); ui.ask = null; ui.msg = []; tripEnd(t, 'retreat'); },
