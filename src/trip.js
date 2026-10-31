@@ -2,7 +2,7 @@
 // 规则正本：docs/design.md 第 2 节。界面在 trip-ui.js。战斗引擎归战斗一侧：秘境给出场蛊带 hpNow，读回 res.hpEnd（每只剩血，0 = 倒下）
 // 和 res.statA（每只这一场的经历，判蛊性用）；引擎还没给 hpEnd 时，用最后一帧快照兜底（hpFromLog）。
 // 资源只有元气（= 消耗的 token）：房间路程、坊市、奇遇里要花的都按元气算，先花洞府攒着的（purse.bank），不够就等实时 token。
-import { makeRng, hashStr, SP, poolFor, baseRank, RANK, SLOTS, XING, fmtTok, statFor, daoOf, NORMAL_SPECIES, autoPlace, arrangeTeam, QUOTA, REALMS, driveCap } from './core.js';   // QUOTA（各境界额度）定义在 core，洞府也用
+import { makeRng, hashStr, SP, poolFor, baseRank, RANK, SLOTS, XING, fmtTok, statFor, daoOf, NORMAL_SPECIES, autoPlace, arrangeTeam, QUOTA, REALMS, driveCap, PRICE } from './core.js';   // QUOTA（各境界额度）定义在 core，洞府也用
 import { FOODS, FOOD } from './foods.js';
 import { DAO } from './daos.js';
 import { SKIES, SKY, MECHS, MECH, BLESSES, BLESS, blessLast, JIE, JIE_MAX, JIE_NAMES, jieRules, skyEff, blessRules } from './trip-mods.js';
@@ -51,8 +51,10 @@ export const TRIP_CFG = {
     boss: { food: [1, 0], gu: [0, 0] },        // 首领另有「渡劫成功必掉」二选一（bossReward）
     up: [0.05, 0.05], rare: 5,
   },
-  market: { heal: 0.4, price: { heal: 35, food: 45, gu: 70 }, realm: 0.25 },   // 坊市价格（千，乘 unit 得元气），每高一境 +25%
-  pay: { realm: 0.25 },                        // 奇遇里要花的元气，每高一境 +25%
+  // 坊市价格（千，乘 unit 得元气）。蛊和食物按洞府蛊市的价钱（core.PRICE）再加秘境溢价，免得坊市成了便宜货源：
+  //   蛊 = 20 × 3^(这只的转数 − 1) × gu；食物 = 价格档 × 7 × food；药汤 = heal 价 × (1 + 境界 × realm)。劫数涨价、祝福「熟客」半价另乘
+  market: { heal: 0.4, price: { heal: 35 }, prem: { gu: 1.25, food: 2 }, realm: 0.25 },
+  pay: { realm: 0.25, gu: 0.75 },              // 奇遇里要花的元气，每高一境 +25%；拿元气换蛊的（payGu）= 这个境界最高转数的蛊在蛊市的价钱 × gu
   bless: 3,                                    // 祝福一次给几个选（灵台房间、打赢精英后）
 };
 // n 名字、ch 地图上的单字、k 图例里的一句用途、tip 地图格子悬停的一句话（是什么、能得到什么）、d 进房间后的说明
@@ -238,7 +240,7 @@ export const EVENTS = [
   { id: 'xuechi', n: '赤水潭', s: '一潭暗红的水冒着热气。泡进去伤口发烫，出来却像换了一身筋骨。',
     o: [{ t: '让伤得最重的蛊泡进去', fx: { healLow: 0.6 } }, { t: '让最前的蛊泡到发烫', fx: { xing: 'yuxue', hurtFront: 0.25 } }] },
   { id: 'luonan', n: '落难修士', s: '一个修士靠着石头喘气，元气耗尽了，身边一只蛊守着他不肯走。',
-    o: [{ t: '分他一些元气', fx: { pay: 30, gu: 1, bump: 1 } }, { t: '问他前面的路', fx: { shortcut: 0.7 } }] },
+    o: [{ t: '分他一些元气', fx: { pay: 30, payGu: 1, gu: 1, bump: 1 } }, { t: '问他前面的路', fx: { shortcut: 0.7 } }] },
 ];
 export const EVENT = Object.fromEntries(EVENTS.map(e => [e.id, e]));
 export function pickEvent(seed, d, lane, seen = []) {
@@ -246,7 +248,8 @@ export function pickEvent(seed, d, lane, seen = []) {
   return rng.pick(pool.length ? pool : EVENTS).id;
 }
 // 一个选项写成人话：结果是什么、放到哪
-export const evPay = (t, fx, unit) => fx && fx.pay ? Math.round(fx.pay * unit * (1 + (t ? t.realm : 0) * TRIP_CFG.pay.realm)) : 0;
+export const guPrice = rank => PRICE.gu * Math.pow(PRICE.rankK, Math.max(1, rank | 0) - 1);   // 一只 rank 转的蛊在蛊市值多少（千）：买原生的或三合一升上来都是这个价
+export const evPay = (t, fx, unit) => !fx || !fx.pay ? 0 : Math.round(unit * (fx.payGu ? guPrice(driveCap(t ? t.realm : 0)) * TRIP_CFG.pay.gu : fx.pay * (1 + (t ? t.realm : 0) * TRIP_CFG.pay.realm)));
 export function fxText(fx, pay = 0) {
   const out = [], pc = p => Math.round(p * 100) + '%';
   if (fx.pay) out.push(`花 ${fmtTok(pay || fx.pay)} 元气`);
@@ -531,8 +534,11 @@ export function tripCamp(t) {
 }
 // 坊市：三样货，花元气（先花攒着的）
 function marketWares(t, r) {   // 价格：每高一境 +25%；劫数涨价、祝福「熟客」半价
-  const M = TRIP_CFG.market, rng = makeRng(`trip:${t.seed}:mk:${t.d}:${r.lane}`), m = (1 + t.realm * M.realm) * jieRules(t.kalpa).price * blessRules(t.bless).price;
-  return [{ k: 'heal', p: M.heal, price: Math.round(M.price.heal * m) }, { k: 'food', id: foodPick(rng, foodPoolOf(t), t.d), price: Math.round(M.price.food * m) }, { k: 'gu', g: lootGu(rng, t.realm, t.d, 0, t.spPool), price: Math.round(M.price.gu * m) }];
+  const M = TRIP_CFG.market, rng = makeRng(`trip:${t.seed}:mk:${t.d}:${r.lane}`), k = jieRules(t.kalpa).price * blessRules(t.bless).price;
+  const fd = foodPick(rng, foodPoolOf(t), t.d), g = lootGu(rng, t.realm, t.d, 0, t.spPool);
+  return [{ k: 'heal', p: M.heal, price: Math.round(M.price.heal * (1 + t.realm * M.realm) * k) },
+    { k: 'food', id: fd, price: Math.round(((FOOD[fd] && FOOD[fd].cost) || 3) * PRICE.food * M.prem.food * k) },
+    { k: 'gu', g, price: Math.round(guPrice(g.rank) * M.prem.gu * k) }];
 }
 export const wareTok = (w, unit) => w.price * unit;
 export function tripBuy(t, i, unit, purse) {
