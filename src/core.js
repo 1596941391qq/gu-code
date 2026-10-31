@@ -164,6 +164,7 @@ export function teamCombos(team) {
   const out = {}, sps = new Set(team.map(g => g.sp));
   for (const c of COMBOS) {
     if (!c.need.every(x => sps.has(x))) continue;
+    if (c.low && !Object.entries(c.low).every(([sp, mx]) => team.some(g => g.sp === sp && guRank(g) <= mx))) continue;   // 低转杀招：那几只得停在所写转数以内
     const i = team.findIndex((g, k) => g.sp === c.need[0] && !out[k]); if (i >= 0) out[i] = c;
   }
   return out;

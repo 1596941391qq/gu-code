@@ -28,6 +28,7 @@ function pts(S, k) {
     case 'mid': return [{ x: S.w / 2, y: S.h * 0.52 }];
     case 'front': return byFront().slice(0, 1);
     case 'front2': return byFront().slice(0, 2);
+    case 'frontCol': { const f = byFront()[0]; return f ? S.foes.filter(t => Math.abs(t.x - f.x) < S.u * 0.3) : []; }   // 敌方最前那一列
     case 'foeBack': return byFront().slice(-1);
     case 'ally': return [S.allies.find(a => a !== S.from && (a.x !== S.from.x || a.y !== S.from.y)) || S.from];
     default: return [S.from];
@@ -258,9 +259,13 @@ const PR = {
       g.beginPath(); g.moveTo(t.x - w / 2, b); g.lineTo(t.x - w * 0.42, b - h * 0.85); g.lineTo(t.x - w * 0.1, b - h); g.lineTo(t.x + w * 0.3, b - h * 0.92); g.lineTo(t.x + w / 2, b); g.closePath(); g.fill(); g.strokeStyle = rgba('#ffffff', 0.9 * a); g.lineWidth = 1.2; g.stroke();
     });
   },
+  // at：只落在这几只头顶（±0.7 格）；rain：画成斜的雨丝
   snow(g, p, P, S, R, r) {
-    const a = env(p, 0.2, 0.25); g.fillStyle = rgba(P.c || '#ffffff', 0.85 * a);
-    for (let i = 0, n = P.n || 40; i < n; i++) { const x0 = r() * S.w, sp = 0.4 + r() * 0.6, ph = r() * TAU, sz = 1 + r() * 2, y0 = r(); g.beginPath(); g.arc(x0 + Math.sin(p * 6 + ph) * 8, ((y0 + p * sp * 1.2) % 1) * (S.h + 20) - 10, sz, 0, TAU); g.fill(); }
+    const a = env(p, 0.2, 0.25), col = rgba(typeof P.c === 'number' ? C(R, P.c) : P.c || '#ffffff', 0.85 * a), L = P.at ? pts(S, P.at) : null; g.fillStyle = col; g.strokeStyle = col; g.lineWidth = 1;
+    for (let i = 0, n = P.n || 40; i < n; i++) {
+      const x0 = L && L.length ? L[i % L.length].x + (r() - 0.5) * S.u * 1.4 : r() * S.w, sp = 0.4 + r() * 0.6, ph = r() * TAU, sz = 1 + r() * 2, y0 = r(), y = ((y0 + p * sp * (P.rain ? 3 : 1.2)) % 1) * (S.h + 20) - 10;
+      if (P.rain) { g.beginPath(); g.moveTo(x0 + y * 0.12, y); g.lineTo(x0 + y * 0.12 - 3, y - 9); g.stroke(); } else { g.beginPath(); g.arc(x0 + Math.sin(p * 6 + ph) * 8, y, sz, 0, TAU); g.fill(); }
+    }
   },
   lake(g, p, P, S, R) {
     const c = cen(S.foes, S), q = eo(cl((p - (P.d ?? 0.2)) / 0.3)), a = env(p, 0, 0.2), rx = S.u * 2.6 * q, ry = S.u * 1.0 * q; if (q <= 0) return;
@@ -382,7 +387,7 @@ Object.assign(PR, {
   },
   rock(g, p, P, S, R) {
     const a0 = pt1(S, P.at || 'front'), b0 = pt1(S, P.to || 'foeBack'), col = C(R, P.c, 1), fly = cl((p - 0.3) / 0.4); let x, y;
-    if (fly <= 0) { x = a0.x; y = a0.y + S.u * 0.5 - eo(cl(p / 0.25)) * S.u * 0.5; } else { x = lerp(a0.x, b0.x + S.dir * S.u * 0.5, fly); y = lerp(a0.y, b0.y, fly) - S.u * 2.2 * 4 * fly * (1 - fly); }
+    if (fly <= 0) { x = a0.x; y = a0.y + S.u * 0.5 - eo(cl(p / 0.25)) * S.u * 0.5; } else { x = lerp(a0.x, b0.x + S.dir * S.u * 0.5, fly); y = lerp(a0.y, b0.y, fly) - S.u * (P.arc ?? 2.2) * 4 * fly * (1 - fly); }   // arc：抛起的高度（格），小就是贴地滚
     if (fly < 1) { const s = S.u * 0.55; g.save(); g.translate(x, y); g.rotate(fly * 4); g.fillStyle = col; g.strokeStyle = '#1c1915'; g.lineWidth = 2; g.beginPath(); [[-1, 0.2], [-0.6, -0.8], [0.3, -0.9], [1, -0.2], [0.7, 0.7], [-0.4, 0.8]].forEach(([u, v], i) => i ? g.lineTo(u * s, v * s * 0.8) : g.moveTo(u * s, v * s * 0.8)); g.closePath(); g.fill(); g.stroke(); bug(g, 0, -s * 0.9, S.u * 0.6, '#1c1915', fly > 0 ? 0.7 : 0, S.dir); g.restore(); }
     const land = cl((p - 0.7) / 0.3); if (land > 0) { g.strokeStyle = rgba(col, 0.9 * (1 - land)); g.lineWidth = 4 * (1 - land) + 1; g.beginPath(); g.ellipse(b0.x + S.dir * S.u * 0.5, b0.y + S.u * 0.45, S.u * (0.3 + land * 1.4), S.u * (0.1 + land * 0.45), 0, 0, TAU); g.stroke(); }
   },
@@ -698,6 +703,13 @@ export const COMBO_FX = Object.fromEntries([
   X('baichong', '百虫入瓮', '奴', ['#7a5a3a', '#3a2a1a'], 2000, 1300, [D(0.35), ['urn', 0, 2000, {}], ['vortex', 300, 1800, { at: 'mid', n: 80, R: 2.4, c: 1, c2: 0 }]], [['zoom', 0, 2000, 1.08, 'mid']]),
   X('yixing', '移形换影', '宇', ['#6a8aa0', '#e0e8f0'], 1800, 1150, [D(0.35), ['swap', 0, 1600, {}], ['wind', 200, 1400, { n: 8, to: 'allies' }]], [['pan', 0, 1600, 12]]),
   X('tuibao', '金蟾吐宝', '金', ['#d9a441', '#7a9a5a'], 2000, 1300, [D(0.3), ['coins', 0, 1900, { n: 16 }], ['glow', 1200, 2000, { at: 'allies' }]], [['pan', 0, 1800, -10]]),
+  // 低转杀招（combos2 里 low 的那几个）
+  X('yingxue', '萤雪映书', '光', ['#e8e0a0', '#a8c8e0'], 2300, 1500, [D(0.55, '#05060c'), ['motes', 0, 1300, { at: 'foeC', src: 'allyC', n: 9, fly: 0.75, c: 0 }], ['glow', 900, 2300, { at: 'foeC', c: 0 }], ['marks', 1000, 2200, { at: 'foes', d: 0.05, step: 0.05, ch: '照', c: 0 }], ['snow', 1100, 2300, { at: 'frontCol', n: 36, c: 1 }]], [['zoom', 0, 2300, 1.04, 'foeC']]),
+  X('zhuma', '竹马之交', '木', ['#7a9a4a', '#e8d8c0'], 2000, 1300, [D(0.28), ['flit', 0, 1800, { at: 'allyC', loops: 1, c: 0, c2: 1 }], ['sprouts', 500, 1900, { at: 'allies', n: 5, wide: 1.2 }], ['glow', 1100, 2000, { at: 'allies', c: 0 }]], [['pan', 0, 1800, 10]]),
+  X('maodu', '毛蜱吮毒', '血', ['#8a1f2b', '#6a8a3a'], 1800, 1150, [D(0.4, '#0e0406'), ['bubbles', 0, 1100, { at: 'tg', n: 3, c: 1 }], ['stream', 400, 1700, { at: 'tg', to: 'from', n: 30, c: 0, c2: 1 }], ['glow', 1200, 1800, { at: 'from', c: 0 }]], [['push', 0, 600, 1.12, 'tg'], ['zoom', 900, 1800, 1.1, 'from']]),
+  X('jingyu', '惊雷细雨', '雷', ['#5a7ab0', '#a0c0d0'], 1900, 1250, [D(0.5, '#05070d'), ['snow', 0, 1900, { n: 70, c: 1, rain: 1 }], ['rings', 0, 900, { at: 'from', ts: [0.1, 0.32], R: 1.6, c: 1 }], ['bolts', 650, 1300, { at: 'tgs', n: 2, gap: 0.22, life: 0.45, c: 0 }], ['flash', 700, 800, { a: 0.35 }], ['flash', 880, 980, { a: 0.35 }]], [['shake', 700, 830, 3], ['shake', 880, 1010, 3]]),
+  X('guihuo', '鬼火引路', '魂', ['#6ac0a0', '#3a3a4a'], 2000, 1300, [D(0.5, '#06080a'), ['embers', 0, 900, { at: 'from', n: 16, c: 0, up: 1 }], ['motes', 300, 1100, { at: 'tgs', n: 6, fly: 0.6, c: 0 }], ['web', 900, 2000, { R: 2.2, c: 0 }], ['embers', 1300, 2000, { at: 'tgs', n: 24, c: 0, up: 1 }]], [['tilt', 0, 1000, -8]]),
+  X('xiaobing', '小卒推山', '奴', ['#8a6a3a', '#5a4a3a'], 1900, 1250, [D(0.3), ['glow', 0, 800, { at: 'from', c: 0 }], ['rock', 0, 1500, { at: 'from', to: 'front', arc: 0.12, c: 0 }], ['dust', 900, 1900, { at: 'front', n: 14, wide: 1.4 }]], [['tilt', 0, 1900, 8], ['push', 300, 1150, 1.12, 'front'], ['shake', 1000, 1150, 5]]),
   X('shousui', '守岁', '宙', ['#b5301f', '#d9a441'], 2100, 1400, [D(0.35), ['clock', 0, 2000, { c: 1 }], ['dome', 900, 2100, {}]], [['zoom', 0, 2100, 1.08, 'from']]),
 ].map(r => [r.id, r]));
 
