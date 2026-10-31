@@ -1,0 +1,1 @@
+{"messages":[{"id":"m1","role":"user","content":"(synthetic)"},{"id":"m2","role":"assistant","metrics":{"inputTokens":3000,"outputTokens":100,"cacheReadTokens":2500,"cacheWriteTokens":300,"cost":0.01}}]}

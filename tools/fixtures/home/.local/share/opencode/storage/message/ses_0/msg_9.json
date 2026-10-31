@@ -1,0 +1,18 @@
+{
+  "id": "msg_9",
+  "sessionID": "ses_0",
+  "role": "assistant",
+  "modelID": "claude-sonnet-4-5",
+  "time": {
+    "created": __TSN__
+  },
+  "tokens": {
+    "input": 30,
+    "output": 20,
+    "reasoning": 0,
+    "cache": {
+      "read": 100,
+      "write": 50
+    }
+  }
+}

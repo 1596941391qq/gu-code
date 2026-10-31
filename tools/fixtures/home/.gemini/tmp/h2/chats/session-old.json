@@ -1,0 +1,25 @@
+{
+  "sessionId": "x",
+  "startTime": "__TS__",
+  "messages": [
+    {
+      "id": "m1",
+      "type": "user",
+      "content": "(synthetic)"
+    },
+    {
+      "id": "m2",
+      "type": "gemini",
+      "content": "(synthetic)",
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 50,
+        "output": 10,
+        "cached": 0,
+        "thoughts": 0,
+        "tool": 0,
+        "total": 60
+      }
+    }
+  ]
+}
