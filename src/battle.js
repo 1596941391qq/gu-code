@@ -1,7 +1,7 @@
 // 蛊码 GuCode · 斗蛊引擎（纯函数，种子随机，可复现）。输出事件流 + 每步快照，渲染层只负责回放。
-import { makeRng, SP, SUMMON_NAMES, comboOf, BATTLE } from './core.js';
+import { makeRng, SP, SUMMON_NAMES, comboOf, BATTLE, SLOTS } from './core.js';
 
-const MAXTURN = 40, MAXOPS = 4000, CAP = 5;
+const MAXTURN = 60, MAXOPS = 6000, CAP = SLOTS;   // CAP：场上同时存活的上限（与空窍格数一致）
 
 export function toUnit(g, side) {
   const w = g.wound || 0, q = g.q || [];

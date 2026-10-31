@@ -1,5 +1,5 @@
 // node tools/sim.mjs [场数]  —— 随机阵容对战压测：死循环、回合数、物种/杀招胜率、可复现性、坐标码往返
-import { makeRng, genTeam, comboOf, SP, applyNode, newGu, encodeTeam, decodeTeam, QUIRKS, COMBOS, addTrait, MARK_KEYS, MARKS, playMs, tempoFor, poolFor, rollCompass, nodeChoices, rollShop, buyGu, canBuy, sellValue, tribTeam, endlessTeam, rollMarks, slotCap, ECON, ghostTrio, REALMS, arrangeTeam, spTraits, RANK, baseRank, rankOf, canWield } from '../src/core.js';
+import { makeRng, genTeam, comboOf, SP, applyNode, newGu, encodeTeam, decodeTeam, QUIRKS, COMBOS, addTrait, MARK_KEYS, MARKS, playMs, tempoFor, poolFor, rollCompass, nodeChoices, rollShop, buyGu, canBuy, sellValue, tribTeam, endlessTeam, rollMarks, slotCap, ECON, ghostTrio, REALMS, arrangeTeam, spTraits, RANK, baseRank, rankOf, canWield, BAG } from '../src/core.js';
 import { battle } from '../src/battle.js';
 
 const N = +process.argv[2] || 1000;
@@ -13,7 +13,7 @@ for (let i = 0; i < N; i++) {
   const r = battle(ta, tb, 'seed' + i, ma, mb), r2 = battle(ta, tb, 'seed' + i, ma, mb);
   if (r.winner !== r2.winner || r.log.length !== r2.log.length) nondet++;
   const dec = decodeTeam(encodeTeam(ta, { name: '测试', realm: 2, marks: ma }));
-  if (!dec || dec.marks.join() !== ma.join() || dec.team.length !== ta.length || dec.team.some((g, j) => g.atk !== Math.min(255, ta[j].atk) || g.hp !== Math.min(255, ta[j].hp) || rankOf(g) !== rankOf(ta[j]) || JSON.stringify(g.tr) !== JSON.stringify(ta[j].tr) || g.att.join() !== ta[j].att.join() || g.q.join() !== ta[j].q.join())) codeFail++;
+  if (!dec || dec.marks.join() !== ma.join() || dec.team.length !== ta.length || dec.team.some((g, j) => g.atk !== Math.min(1023, ta[j].atk) || g.hp !== Math.min(1023, ta[j].hp) || rankOf(g) !== rankOf(ta[j]) || JSON.stringify(g.tr) !== JSON.stringify(ta[j].tr) || g.att.join() !== ta[j].att.join() || g.q.join() !== ta[j].q.join())) codeFail++;
   else { const rd = battle(dec.team, decodeTeam(encodeTeam(tb, { marks: mb })).team, 'seed' + i, dec.marks, mb); if (rd.winner !== r.winner && ta.every(g => g.atk < 256 && g.hp < 256)) codeFail++; }
   durs.push(playMs(r.log) * tempoFor(playMs(r.log)) / 1000); turns.push(r.turns); if (r.winner === 'draw') draws++; if (r.capped) capped++; maxEv = Math.max(maxEv, r.log.length);
   [[ta, 'A'], [tb, 'B']].forEach(([t, side]) => {
@@ -68,7 +68,7 @@ let simRealm = 0;
 const ar = t => { const f = t.filter(g => canWield(g, simRealm)); return arrangeTeam((f.length ? f : t).slice()); };   // 机器人开战前按规则排阵（不改原阵）；真元不足以驱使的不上阵
 const pow = g => g.atk + g.hp + g.tr.reduce((a, t) => a + t[1] * 2, 0);
 for (let run = 0; run < RUNS; run++) {
-  const rng = makeRng('run' + run); let team = [newGu(rng.pick(poolFor(0)))], realm = 0, stone = 5, marks = [], shop = rollShop(rng, 0, []), floor = 1, best = 0, endLoss = 0;
+  const rng = makeRng('run' + run); let team = [newGu(rng.pick(poolFor(0)))], bag = [], realm = 0, stone = 5, marks = [], shop = rollShop(rng, 0, []), floor = 1, best = 0, endLoss = 0;
   for (let step = 1; step <= STEPS; step++) {
     const cap = Math.max(slotCap(realm), team.length); simRealm = realm;
     const comp = rollCompass(rng, team, false, cap);
@@ -79,12 +79,13 @@ for (let run = 0; run < RUNS; run++) {
     shop = rollShop(rng, realm, shop);
     for (let k = 0; k < 3; k++) {   // 逛蛊市：先买能合炼的，再补空位，满了就卖最弱的换
       const cost = marks.includes('shiJing') ? 2 : ECON.buy; if (stone < cost) break;
-      const ci = shop.findIndex(w => !w.sold && team.filter(g => g.sp === w.sp && rankOf(g) === baseRank(w.sp)).length >= 2);
-      const fi = ci >= 0 ? ci : shop.findIndex(w => !w.sold && canBuy(team, w.sp, cap));
-      if (fi >= 0) { if (buyGu(team, shop[fi].sp, cap, marks, rng)) { stone -= cost; shop[fi].sold = true; } continue; }
+      const ci = shop.findIndex(w => !w.sold && [...team, ...bag].filter(g => g.sp === w.sp && rankOf(g) === baseRank(w.sp)).length >= 2);
+      const fi = ci >= 0 ? ci : shop.findIndex(w => !w.sold && (team.length < cap || (bag.length < BAG.cap && [...team, ...bag].some(g => g.sp === w.sp && rankOf(g) === baseRank(w.sp)))));   // 蛊囊只用来攒同种
+      if (fi >= 0) { if (buyGu(team, shop[fi].sp, cap, marks, rng, bag)) { stone -= cost; shop[fi].sold = true; } continue; }
       if (team.length >= cap && stone >= cost + 2) { const wi = team.reduce((b, g, i) => pow(g) < pow(team[b]) ? i : b, 0); if (wi > 0) { stone += sellValue(team[wi]); team.splice(wi, 1); continue; } }
       if (stone >= cost + ECON.refresh) { stone -= marks.includes('shiJing') ? 0 : ECON.refresh; shop = rollShop(rng, realm, []); } else break;
     }
+    while (team.length < cap && bag.length) team.push(bag.shift());   // 空窍有空位就从蛊囊补上
     team.forEach(g => { g.wound = 0; });
     if (step % 2 === 0) { const t = ghostTrio(rng, step + realm, realm)[1]; const r = battle(ar(team), t.team, 'g' + run + ':' + step, marks); stone += r.winner === 'A' ? ECON.win.mid : ECON.lose; }
     if (step % 3 === 0) {
@@ -120,11 +121,32 @@ const big = spreads.filter(x => x.d >= 0.15).length, pp = x => (100 * x).toFixed
 console.log(`== 布阵 20 套阵容 × 全部排列 × 80 场，用时 ${Date.now() - tF}ms`);
 console.log('每套 最佳/最差/规则排阵:', spreads.map(x => `${x.names} ${pp(x.best)}/${pp(x.worst)}/${pp(x.ai)}`).join('  '));
 console.log(`最佳−最差胜率差 中位 ${pp(med(spreads.map(x => x.d)))} 个百分点；≥15 个百分点的 ${big}/20；规则排阵平均比最佳低 ${pp(spreads.reduce((a, x) => a + x.best - x.ai, 0) / 20)} 个百分点`);
+// 7 格：6–7 只的阵容排列太多（最多 5040 种），每套随机抽 60 种排法 + 规则排阵，各打 40 场
+const sp7 = []; const t7 = Date.now();
+for (let k = 0; sp7.length < 10; k++) {
+  const rng = makeRng('form7' + k), p = 24 + rng.int(20), team = genTeam(rng, p, 7); if (team.length < 6) continue;
+  const foes = Array.from({ length: 20 }, (_, j) => genTeam(makeRng('form7foe' + k + ':' + j), p, 7));
+  const wr = perm => { let w = 0; foes.forEach((f, j) => { for (const sd of ['a', 'b']) { const r = battle(perm, f, 'f7' + sd + j); w += r.winner === 'A' ? 1 : r.winner === 'draw' ? 0.5 : 0; } }); return w / (foes.length * 2); };
+  const ws = Array.from({ length: 60 }, () => { const a = team.slice(); for (let i = a.length - 1; i > 0; i--) { const j = rng.int(i + 1); [a[i], a[j]] = [a[j], a[i]]; } return wr(a); });
+  const ai = wr(arrangeTeam(team.slice())); ws.push(ai); const best = Math.max(...ws), worst = Math.min(...ws);
+  sp7.push({ d: best - worst, best, worst, ai, names: team.map(g => SP[g.sp].ab).join('') });
+}
+const big7 = sp7.filter(x => x.d >= 0.15).length;
+console.log(`== 布阵 7 格：10 套 6–7 只阵容 × 61 种排法 × 40 场，用时 ${Date.now() - t7}ms`);
+console.log('每套 最佳/最差/规则排阵:', sp7.map(x => `${x.names} ${pp(x.best)}/${pp(x.worst)}/${pp(x.ai)}`).join('  '));
+console.log(`7 格最佳−最差胜率差 中位 ${pp(med(sp7.map(x => x.d)))} 个百分点；≥15 个百分点的 ${big7}/10`);
 
 // CI 闸门：死循环 / 编解码不一致 / 同种子不复现 任何一项出现就失败退出
 const fails = [];
-if (turns[turns.length - 1] >= 40 || capped > 0) fails.push(`回合或触发上限被触发（最大回合 ${turns[turns.length - 1]}，触发上限 ${capped}）`);
+if (turns[turns.length - 1] >= 60 || capped > 0) fails.push(`回合或触发上限被触发（最大回合 ${turns[turns.length - 1]}，触发上限 ${capped}）`);
 if (codeFail) fails.push(`坐标码往返失败 ${codeFail}`);
 if (nondet) fails.push(`同种子不复现 ${nondet}`);
+{ // 旧码兼容：M2 时代（v2，5 格、4 位物种、星级）生成的真实坐标码必须还能解码，星级换算成转数
+  const d = decodeTeam('ShuaXp-eggSAJEhwk5YaU1WgAL4IwBAYWQAAFACwECC0AAAgAEBAgUQAAFABU');
+  const ok = d && d.name === '旧码' && d.realm === 2 && d.marks.join() === 'heLian' && JSON.stringify(d.team.map(g => [g.sp, g.atk, g.hp, rankOf(g)])) === '[["drum",18,28,4],["cicada",2,3,2],["moth",1,2,3],["twin",2,4,1]]';
+  console.log(ok ? '旧 v2 坐标码解码：OK' : '旧 v2 坐标码解码：失败 ' + JSON.stringify(d && d.team.map(g => [g.sp, g.atk, g.hp, rankOf(g)])));
+  if (!ok) fails.push('旧 v2 坐标码解码失败');
+}
+if (med(sp7.map(x => x.d)) < 0.15) fails.push(`7 格站位差中位不足 15 个百分点`);
 if (fails.length) { console.error('FAIL: ' + fails.join('；')); process.exit(1); }
 console.log('PASS');

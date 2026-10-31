@@ -8,9 +8,9 @@ export function makeRng(seed) {
   return r;
 }
 
-export const MAXV = 3, MAXTR = 4, MAXQ = 2, MAXATT = 2, SLOTS = 5;
+export const MAXV = 3, MAXTR = 4, MAXQ = 2, MAXATT = 2, SLOTS = 7;
 export const REALMS = ['凡人', '一转', '二转', '三转', '四转', '五转'];
-export const SLOT_BY_REALM = [3, 4, 5, 5, 5, 5];
+export const SLOT_BY_REALM = [3, 4, 5, 6, 7, 7];   // 上阵格（空窍）按境界开放：凡人 3、一转 4、二转 5、三转 6、四转起 7
 export const slotCap = r => SLOT_BY_REALM[Math.min(5, Math.max(0, r | 0))];
 export const POOL_TIERS = [['boar', 'fire', 'twin', 'iron', 'thorn', 'bone'], ['mantis', 'queen', 'cicada'], ['drum', 'scorp', 'moth']];
 export const poolFor = r => POOL_TIERS.slice(0, Math.min(3, (r | 0) + 1)).flat();
@@ -25,6 +25,11 @@ export const canWield = (g, realm) => rankOf(g) <= (realm | 0) + RANK.over;
 export const rankName = g => RANK.names[rankOf(g)] + SP[g.sp].n;          // 「一转野猪蛊」
 export const ECON = { node: 2, buy: 3, refresh: 1, tokPer: 25, lose: 1, win: { easy: 3, mid: 5, hard: 8, trib: 10, endless: 6, duel: 0 } };
 export const trCap = g => MAXTR + fuseLv(g);
+// 蛊囊（备战区）：开茧、宝箱、夺蛊得到的蛊先放这里，拖进空窍才上阵；也用来攒同种合炼。
+// cap 凡人时的格数，perRealm 每升一阶加几格（五转 18 格）；feedMul 吃灵气的比例（只吃一半）；
+// meltMul 满了选「炼化」时按卖价的倍数折元石，rarSell 按品质（凡良珍绝天）再乘；trioOff 货架三只同种一起买的折扣
+export const BAG = { cap: 8, perRealm: 2, feedMul: 0.5, meltMul: 1.5, rarSell: [1, 1.2, 1.5, 2, 3], trioOff: 0.8 };
+export const bagCap = realm => BAG.cap + BAG.perRealm * Math.min(5, Math.max(0, realm | 0));
 
 // 词条：v 为层数（1–3），同名合并即叠层
 export const TRAITS = {
@@ -191,7 +196,7 @@ export function rollCompass(rng, team, first, cap = SLOTS) {
 export function applyNode(team, node, rng, opt = {}) {
   const fx = [], gone = []; let combo = null, muts = 0; const L = team[0];
   switch (node.type) {
-    case 'feed': team.forEach((g, i) => { const h = [3, 2, 1, 1, 1][i]; g.hp += h; if (i === 0) g.atk += 1; fx.push({ uid: g.uid, txt: i === 0 ? `+1/+${h}` : `+${h}血` }); }); break;
+    case 'feed': team.forEach((g, i) => { const h = [3, 2, 1][i] || 1; g.hp += h; if (i === 0) g.atk += 1; fx.push({ uid: g.uid, txt: i === 0 ? `+1/+${h}` : `+${h}血` }); }); break;
     case 'temper': L.atk += 2; L.hp += 2; fx.push({ uid: L.uid, txt: '+2/+2' }); break;
     case 'mutate': { const t = opt.pick && TRAITS[opt.pick] && addTrait(L, opt.pick, 1) ? opt.pick : mutateGu(L, rng); L.mut++; muts++; fx.push({ uid: L.uid, txt: '觉醒·' + TRAITS[t].n, k: 'mut' }); break; }
     case 'split': { const c = cloneGu(L); team.splice(1, 0, c); fx.push({ uid: c.uid, txt: '分身', k: 'new' }); break; }
@@ -235,27 +240,40 @@ export function nodeChoices(node, team, rng, realm = 5) {
 }
 // ---------- 蛊市与合炼 ----------
 export function rollShop(rng, realm, old = []) { const pool = poolFor(realm); return [0, 1, 2].map(i => (old[i] && old[i].frozen && !old[i].sold) ? old[i] : { sp: rng.pick(pool), frozen: false }); }
-export function canBuy(team, sp, cap) { return team.length < cap || team.filter(g => g.sp === sp && rankOf(g) === baseRank(sp)).length >= 2; }
-export function mergeAll(team, marks = [], rng) {
-  const done = [];
-  for (let guard = 0; guard < 6; guard++) {
-    let grp = null;
-    for (const g of team) { const rk = rankOf(g), same = team.filter(x => x.sp === g.sp && rankOf(x) === rk); if (same.length >= 3 && fuseLv(g) < RANK.fuse && rk < RANK.max) { grp = same.slice(0, 3); break; } }
+// 能否再收一只：空窍或蛊囊有空位，或者它能和已有的同种同转凑成合炼（空窍、蛊囊都算）
+export const sameRank = (list, sp, rk) => list.filter(g => g.sp === sp && rankOf(g) === rk).length;
+// mode：'shop' 蛊市买的（合炼 → 空窍空位 → 蛊囊）；'reward' 开茧、宝箱、夺蛊得的（合炼 → 蛊囊，不自动进空窍）
+const fusable = (team, bag, g) => fuseLv(g) < RANK.fuse && rankOf(g) < RANK.max && sameRank([...team, ...(bag || [])], g.sp, rankOf(g)) >= 2;
+export function canTake(team, bag, g, cap, bc = BAG.cap, mode = 'shop') { return (mode === 'shop' && team.length < cap) || (bag || []).length < bc || fusable(team, bag, g); }
+export function canBuy(team, sp, cap, bag = [], bc = BAG.cap) { return canTake(team, bag, { sp, rank: baseRank(sp) }, cap, bc, 'shop'); }
+// 收下一只蛊，按 mode 找去处。返回 { where: 'merge'|'team'|'bag'|null, merged }
+export function placeGu(team, bag, g, cap, marks, rng, bc = BAG.cap, mode = 'shop') {
+  if (fusable(team, bag, g)) { bag.push(g); return { where: 'merge', merged: mergeAll(team, marks, rng, bag) }; }
+  if (mode === 'shop' && team.length < cap) { team.push(g); return { where: 'team', merged: [] }; }
+  if (bag.length < bc) { bag.push(g); return { where: 'bag', merged: mergeAll(team, marks, rng, bag) }; }
+  return { where: null, merged: [] };
+}
+export function mergeAll(team, marks = [], rng, bag = []) {   // 空窍和蛊囊一起算；合炼结果留在第一只的位置（空窍优先）
+  const done = [], rm = x => { const l = team.includes(x) ? team : bag; l.splice(l.indexOf(x), 1); };
+  for (let guard = 0; guard < 8; guard++) {
+    let grp = null; const all = [...team, ...bag];
+    for (const g of all) { const rk = rankOf(g), same = all.filter(x => x.sp === g.sp && rankOf(x) === rk); if (same.length >= 3 && fuseLv(g) < RANK.fuse && rk < RANK.max) { grp = same.slice(0, 3); break; } }
     if (!grp) break;
     const [a, b, c] = grp, s0 = fuseLv(a) + 1;
     a.rank = rankOf(a) + 1; a.atk = Math.max(a.atk, b.atk, c.atk) + 2 * s0 + 1; a.hp = Math.max(a.hp, b.hp, c.hp) + 3 * s0 + 1;
     [b, c].forEach(x => {
       x.tr.forEach(([id, v]) => addTrait(a, id, v)); x.q.forEach(q => { if (!a.q.includes(q) && a.q.length < MAXQ) a.q.push(q); });
       x.att.forEach(t => { if (a.att.length < MAXATT) a.att.push(t); }); a.fed = (a.fed || 0) + (x.fed || 0); a.mut = (a.mut || 0) + (x.mut || 0);
-      a.wound = Math.min(a.wound || 0, x.wound || 0); team.splice(team.indexOf(x), 1);
+      a.wound = Math.min(a.wound || 0, x.wound || 0); rm(x);
     });
     if (marks.includes('heLian') && rng) { mutateGu(a, rng); a.mut++; }
     done.push(a);
   }
   return done;
 }
-export function buyGu(team, sp, cap, marks, rng) { if (!canBuy(team, sp, cap)) return null; const g = newGu(sp); team.push(g); return { gu: g, merged: mergeAll(team, marks, rng) }; }
+export function buyGu(team, sp, cap, marks, rng, bag = []) { if (!canBuy(team, sp, cap, bag)) return null; const g = newGu(sp), r = placeGu(team, bag, g, cap, marks, rng); return { gu: g, where: r.where, merged: r.merged }; }
 export const sellValue = g => fuseLv(g) + 1 + (g.att ? g.att.length : 0);
+export const meltValue = g => Math.round(sellValue(g) * BAG.meltMul * BAG.rarSell[Math.min(4, g.rar | 0)]);   // 炼化：按品质给卖价的 1.5 倍起
 
 // 程序生成同阶阵容（幽灵 / 天劫），用同一套养成规则随机走路
 export function genTeam(rng, power, cap = SLOTS) {
@@ -319,7 +337,12 @@ export function arrangeTeam(team) {
   const n = Math.min(team.length, SLOTS); if (n < 2) return team;
   let best = team.slice(), bs = formScore(best);
   const perm = (a, k) => { if (k === a.length) { const sc = formScore(a); if (sc > bs + 1e-9) { bs = sc; best = a.slice(); } return; } for (let i = k; i < a.length; i++) { [a[k], a[i]] = [a[i], a[k]]; perm(a, k + 1); [a[k], a[i]] = [a[i], a[k]]; } };
-  perm(team.slice(0, n), 0);
+  if (n <= 5) perm(team.slice(0, n), 0);
+  else {   // 6–7 只时全排列太多（5040 种），改为逐对交换的爬山：一直换到没有更好的排法为止
+    let cur = team.slice(0, n), cs = formScore(cur), up = true;
+    while (up) { up = false; for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) { [cur[i], cur[j]] = [cur[j], cur[i]]; const sc = formScore(cur); if (sc > cs + 1e-9) { cs = sc; up = true; } else [cur[i], cur[j]] = [cur[j], cur[i]]; } }
+    if (cs > bs) { bs = cs; best = cur; }
+  }
   team.splice(0, n, ...best); return team;
 }
 export const TRIB_NAMES = ['心魔劫', '雷劫', '火劫', '风劫', '天人劫'];
@@ -336,7 +359,7 @@ export function endlessTeam(floor) {
 export const TRIB = { power: [4, 14, 30, 52, 88], all: [[0, 0], [1, 2], [2, 4], [4, 7], [7, 13]], boss: [[1, 2], [2, 5], [4, 8], [6, 12], [12, 24]] };
 export function tribTeam(realm) {
   const r = Math.min(realm, 4), rng = makeRng('tribulation:' + r);
-  const team = genTeam(rng, TRIB.power[r], Math.min(5, slotCap(r) + 1));
+  const team = genTeam(rng, TRIB.power[r], Math.min(SLOTS, slotCap(r) + 1));
   team.forEach(g => { g.atk += TRIB.all[r][0]; g.hp += TRIB.all[r][1]; });
   const b = team[0]; b.atk += TRIB.boss[r][0]; b.hp += TRIB.boss[r][1]; b.boss = 1;
   return team;
@@ -354,18 +377,20 @@ const TRI = Object.fromEntries(TRAIT_KEYS.map((k, i) => [k, i]));
 const QUI = Object.fromEntries(QUIRK_KEYS.map((k, i) => [k, i]));
 function utf8(s) { return typeof TextEncoder !== 'undefined' ? new TextEncoder().encode(s) : Buffer.from(s, 'utf8'); }
 function unutf8(b) { return typeof TextDecoder !== 'undefined' ? new TextDecoder().decode(new Uint8Array(b)) : Buffer.from(b).toString('utf8'); }
+// 坐标码各版本的位宽：v1 无道痕与转数；v2 物种/词条 4 位、攻血 8 位；v3 物种/词条 6 位（装得下 64 种物种）、攻血 10 位、最多 7 格、直接存转数
+const CODE_W = { 1: { sp: 4, tr: 4, q: 3, st: 8, mk: 0, rk: 0 }, 2: { sp: 4, tr: 4, q: 3, st: 8, mk: 12, rk: 2 }, 3: { sp: 6, tr: 6, q: 4, st: 10, mk: 16, rk: 3 } };
 export function encodeTeam(team, meta = {}) {
   const bits = [];
   const put = (v, n) => { v = Math.max(0, Math.min(Math.floor(v) || 0, 2 ** n - 1)); for (let i = n - 1; i >= 0; i--) bits.push(Math.floor(v / 2 ** i) % 2); };
   let nm = utf8(String(meta.name || '').slice(0, 8)); if (nm.length > 24) nm = nm.slice(0, 24);
-  put(2, 3); put(meta.realm || 0, 3); put(team.length, 3); put(nm.length, 5); nm.forEach(b => put(b, 8));
-  let mb = 0; (meta.marks || []).forEach(k => { const i = MARK_KEYS.indexOf(k); if (i >= 0) mb += 2 ** i; }); put(mb, 12);
+  const W = CODE_W[3]; put(3, 3); put(meta.realm || 0, 3); put(Math.min(SLOTS, team.length), 3); put(nm.length, 5); nm.forEach(b => put(b, 8));
+  let mb = 0; (meta.marks || []).forEach(k => { const i = MARK_KEYS.indexOf(k); if (i >= 0) mb += 2 ** i; }); put(mb, W.mk);
   for (const g of team.slice(0, SLOTS)) {
-    put(SPI[g.sp], 4); put(g.atk, 8); put(g.hp, 8); put(g.wound || 0, 2);
-    put(g.tr.length, 3); g.tr.forEach(([id, v]) => { put(TRI[id], 4); put(v, 2); });
-    put(g.q.length, 2); g.q.forEach(q => put(QUI[q], 3));
-    put(g.att.length, 2); g.att.forEach(a => put(SPI[a], 4));
-    put(Math.round((g.fed || 0) / 10000), 18); put(g.mut || 0, 7); put(g.boss ? 1 : 0, 1); put(Math.min(3, fuseLv(g)), 2);
+    put(SPI[g.sp], W.sp); put(g.atk, W.st); put(g.hp, W.st); put(g.wound || 0, 2);
+    put(g.tr.length, 3); g.tr.forEach(([id, v]) => { put(TRI[id], W.tr); put(v, 2); });
+    put(g.q.length, 2); g.q.forEach(q => put(QUI[q], W.q));
+    put(g.att.length, 2); g.att.forEach(a => put(SPI[a], W.sp));
+    put(Math.round((g.fed || 0) / 10000), 18); put(g.mut || 0, 7); put(g.boss ? 1 : 0, 1); put(rankOf(g), 3);
   }
   let chk = 0; bits.forEach((b, i) => { if (b) chk = (chk + i * 7 + 3) % 64; }); put(chk, 6);
   while (bits.length % 6) bits.push(0);
@@ -378,19 +403,20 @@ export function decodeTeam(code) {
     if (!/^[A-Za-z0-9_-]{8,}$/.test(code)) return null;
     const bits = []; for (const ch of code) { const v = B64.indexOf(ch); for (let j = 5; j >= 0; j--) bits.push((v >> j) & 1); }
     let p = 0; const get = n => { let v = 0; for (let i = 0; i < n; i++) { if (p >= bits.length) throw 0; v = v * 2 + bits[p++]; } return v; };
-    const ver = get(3); if (ver !== 1 && ver !== 2) return null;
+    const ver = get(3); if (!CODE_W[ver]) return null; const W = CODE_W[ver];
     const realm = get(3), n = get(3), nl = get(5), nm = []; for (let i = 0; i < nl; i++) nm.push(get(8));
-    const marks = []; if (ver >= 2) { const mb = get(12); MARK_KEYS.forEach((k, i) => { if (Math.floor(mb / 2 ** i) % 2) marks.push(k); }); }
+    const marks = []; if (W.mk) { const mb = get(W.mk); MARK_KEYS.forEach((k, i) => { if (Math.floor(mb / 2 ** i) % 2) marks.push(k); }); }
     if (n < 1 || n > SLOTS) return null;
     const team = [];
     for (let i = 0; i < n; i++) {
-      const sp = SPECIES[get(4)]; if (!sp) return null;
-      const g = { uid: nuid(), sp: sp.id, atk: Math.max(1, get(8)), hp: Math.max(1, get(8)), wound: get(2), tr: [], q: [], att: [] };
-      const nt = get(3); for (let j = 0; j < nt; j++) { const k = TRAIT_KEYS[get(4)], v = get(2); if (k && j < MAXTR) g.tr.push([k, Math.max(1, Math.min(MAXV, v))]); }
-      const nq = get(2); for (let j = 0; j < nq; j++) { const k = QUIRK_KEYS[get(3)]; if (k) g.q.push(k); }
-      const na = get(2); for (let j = 0; j < na; j++) { const a = SPECIES[get(4)]; if (a && j < MAXATT) g.att.push(a.id); }
+      const sp = SPECIES[get(W.sp)]; if (!sp) return null;
+      const g = { uid: nuid(), sp: sp.id, atk: Math.max(1, get(W.st)), hp: Math.max(1, get(W.st)), wound: get(2), tr: [], q: [], att: [] };
+      const nt = get(3); for (let j = 0; j < nt; j++) { const k = TRAIT_KEYS[get(W.tr)], v = get(2); if (k && j < MAXTR + RANK.fuse) g.tr.push([k, Math.max(1, Math.min(MAXV, v))]); }
+      const nq = get(2); for (let j = 0; j < nq; j++) { const k = QUIRK_KEYS[get(W.q)]; if (k) g.q.push(k); }
+      const na = get(2); for (let j = 0; j < na; j++) { const a = SPECIES[get(W.sp)]; if (a && j < MAXATT) g.att.push(a.id); }
       g.fed = get(18) * 10000; g.mut = get(7); if (get(1)) g.boss = 1;
-      g.rank = baseRank(g.sp) + (ver >= 2 ? Math.min(RANK.fuse, get(2)) : 0);
+      const rk = W.rk ? get(W.rk) : 0;
+      g.rank = ver >= 3 ? Math.max(1, Math.min(RANK.names.length - 1, rk)) : baseRank(g.sp) + Math.min(RANK.fuse, rk);   // v1 无转数；v2 存合炼次数；v3 存转数
       team.push(g);
     }
     const end = p; let chk = 0; for (let i = 0; i < end; i++) if (bits[i]) chk = (chk + i * 7 + 3) % 64;
@@ -398,9 +424,6 @@ export function decodeTeam(code) {
     return { team, realm, name: unutf8(nm), marks };
   } catch (e) { return null; }
 }
-// 空窍真元：token 先化为真元存在空窍里（上限 cap 个「千」单位，插件模式再乘 unit），选了路就灌进节点。
-// 颜色随境界：凡人/一转 青铜、二转 赤铁、三转 白银、四转 黄金、五转 紫晶
-export const ZHENYUAN = { cap: 120, names: ['青铜', '青铜', '赤铁', '白银', '黄金', '紫晶'], colors: ['#a0703f', '#a0703f', '#a4442c', '#9aa4ab', '#d9a441', '#7d62a8'] };
 // 受伤：每层 -1/-1，最多 3 层；写代码温养（token）或静置（时间）都会愈合，哪个先满算哪个。不做永久损失
 export const WOUND = { max: 3, healTok: 60000, healSec: 240, loseNodePct: 0.3 };
 // 战斗手感：暴击概率与倍数（种子随机，复盘可复现）
