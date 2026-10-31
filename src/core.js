@@ -14,8 +14,17 @@ export const SLOT_BY_REALM = [3, 4, 5, 5, 5, 5];
 export const slotCap = r => SLOT_BY_REALM[Math.min(5, Math.max(0, r | 0))];
 export const POOL_TIERS = [['boar', 'fire', 'twin', 'iron', 'thorn', 'bone'], ['mantis', 'queen', 'cicada'], ['drum', 'scorp', 'moth']];
 export const poolFor = r => POOL_TIERS.slice(0, Math.min(3, (r | 0) + 1)).flat();
+// 转数（向原书靠拢：一转到五转，六转仙蛊另加）。基础转数 = 物种所在蛊池档位 + 1（凡人池一转，往上依次二转、三转）；
+// 物种带 rank 字段时以它为准。三只同种同转合炼成高一转：同一只最多合炼 fuse 次，且不超过 max。
+// 驱使上限：境界 r 的蛊师只能让转数 ≤ r + over 的蛊上阵（凡人驱使一转，一转蛊师驱使二转……），超出的可以收着，不能上阵。
+export const RANK = { names: ['', '一转', '二转', '三转', '四转', '五转', '六转'], ch: ['', '一', '二', '三', '四', '五', '六'], max: 5, fuse: 2, over: 1 };
+export const baseRank = sp => (SP[sp] && SP[sp].rank) || (POOL_TIERS.findIndex(t => t.includes(sp)) + 1) || 1;
+export const rankOf = g => g.rank || baseRank(g.sp);
+export const fuseLv = g => Math.max(0, rankOf(g) - baseRank(g.sp));     // 合炼过几次（0 = 原生转数）
+export const canWield = (g, realm) => rankOf(g) <= (realm | 0) + RANK.over;
+export const rankName = g => RANK.names[rankOf(g)] + SP[g.sp].n;          // 「一转野猪蛊」
 export const ECON = { node: 2, buy: 3, refresh: 1, tokPer: 25, lose: 1, win: { easy: 3, mid: 5, hard: 8, trib: 10, endless: 6, duel: 0 } };
-export const trCap = g => MAXTR + Math.max(0, (g.star || 1) - 1);
+export const trCap = g => MAXTR + fuseLv(g);
 
 // 词条：v 为层数（1–3），同名合并即叠层
 export const TRAITS = {
@@ -94,7 +103,7 @@ export const MARKS = {
   shiHun:    { n: '噬魂入骨', d: '击杀时额外 +1/+1' },
   xianSheng: { n: '先声夺人', d: '开锋伤害 +2' },
   yiZe:      { n: '遗泽绵长', d: '遗泽与化生多算一层' },
-  heLian:    { n: '合炼得道', d: '合炼升星时额外觉醒一个词条' },
+  heLian:    { n: '合炼得道', d: '合炼升转时额外觉醒一个词条' },
   shengCai:  { n: '生财有道', d: '斗蛊所得元石 +50%' },
   shiJing:   { n: '市井熟客', d: '蛊市买蛊只要 2 元石，刷新免费' },
 };
@@ -103,7 +112,7 @@ export function rollMarks(rng, owned = []) { const pool = MARK_KEYS.filter(k => 
 
 let UIDN = 1;
 export function nuid() { return 'g' + (UIDN++).toString(36) + Math.floor(Math.random() * 1e6).toString(36); }
-export function newGu(sp) { const s = SP[sp]; return { uid: nuid(), sp, atk: s.atk, hp: s.hp, tr: spTraits(sp), q: [], att: [], wound: 0, fed: 0, mut: 0 }; }
+export function newGu(sp) { const s = SP[sp]; return { uid: nuid(), sp, rank: baseRank(sp), atk: s.atk, hp: s.hp, tr: spTraits(sp), q: [], att: [], wound: 0, fed: 0, mut: 0 }; }
 export function starterTeam() { return ['boar', 'fire', 'twin'].map(newGu); }
 
 export function addTrait(g, id, v, bonus) {
@@ -226,15 +235,15 @@ export function nodeChoices(node, team, rng, realm = 5) {
 }
 // ---------- 蛊市与合炼 ----------
 export function rollShop(rng, realm, old = []) { const pool = poolFor(realm); return [0, 1, 2].map(i => (old[i] && old[i].frozen && !old[i].sold) ? old[i] : { sp: rng.pick(pool), frozen: false }); }
-export function canBuy(team, sp, cap) { return team.length < cap || team.filter(g => g.sp === sp && (g.star || 1) === 1).length >= 2; }
+export function canBuy(team, sp, cap) { return team.length < cap || team.filter(g => g.sp === sp && rankOf(g) === baseRank(sp)).length >= 2; }
 export function mergeAll(team, marks = [], rng) {
   const done = [];
   for (let guard = 0; guard < 6; guard++) {
     let grp = null;
-    for (const g of team) { const st = g.star || 1, same = team.filter(x => x.sp === g.sp && (x.star || 1) === st); if (same.length >= 3 && st < 3) { grp = same.slice(0, 3); break; } }
+    for (const g of team) { const rk = rankOf(g), same = team.filter(x => x.sp === g.sp && rankOf(x) === rk); if (same.length >= 3 && fuseLv(g) < RANK.fuse && rk < RANK.max) { grp = same.slice(0, 3); break; } }
     if (!grp) break;
-    const [a, b, c] = grp, s0 = a.star || 1;
-    a.star = s0 + 1; a.atk = Math.max(a.atk, b.atk, c.atk) + 2 * s0 + 1; a.hp = Math.max(a.hp, b.hp, c.hp) + 3 * s0 + 1;
+    const [a, b, c] = grp, s0 = fuseLv(a) + 1;
+    a.rank = rankOf(a) + 1; a.atk = Math.max(a.atk, b.atk, c.atk) + 2 * s0 + 1; a.hp = Math.max(a.hp, b.hp, c.hp) + 3 * s0 + 1;
     [b, c].forEach(x => {
       x.tr.forEach(([id, v]) => addTrait(a, id, v)); x.q.forEach(q => { if (!a.q.includes(q) && a.q.length < MAXQ) a.q.push(q); });
       x.att.forEach(t => { if (a.att.length < MAXATT) a.att.push(t); }); a.fed = (a.fed || 0) + (x.fed || 0); a.mut = (a.mut || 0) + (x.mut || 0);
@@ -246,7 +255,7 @@ export function mergeAll(team, marks = [], rng) {
   return done;
 }
 export function buyGu(team, sp, cap, marks, rng) { if (!canBuy(team, sp, cap)) return null; const g = newGu(sp); team.push(g); return { gu: g, merged: mergeAll(team, marks, rng) }; }
-export const sellValue = g => (g.star || 1) + (g.att ? g.att.length : 0);
+export const sellValue = g => fuseLv(g) + 1 + (g.att ? g.att.length : 0);
 
 // 程序生成同阶阵容（幽灵 / 天劫），用同一套养成规则随机走路
 export function genTeam(rng, power, cap = SLOTS) {
@@ -356,7 +365,7 @@ export function encodeTeam(team, meta = {}) {
     put(g.tr.length, 3); g.tr.forEach(([id, v]) => { put(TRI[id], 4); put(v, 2); });
     put(g.q.length, 2); g.q.forEach(q => put(QUI[q], 3));
     put(g.att.length, 2); g.att.forEach(a => put(SPI[a], 4));
-    put(Math.round((g.fed || 0) / 10000), 18); put(g.mut || 0, 7); put(g.boss ? 1 : 0, 1); put((g.star || 1) - 1, 2);
+    put(Math.round((g.fed || 0) / 10000), 18); put(g.mut || 0, 7); put(g.boss ? 1 : 0, 1); put(Math.min(3, fuseLv(g)), 2);
   }
   let chk = 0; bits.forEach((b, i) => { if (b) chk = (chk + i * 7 + 3) % 64; }); put(chk, 6);
   while (bits.length % 6) bits.push(0);
@@ -381,7 +390,7 @@ export function decodeTeam(code) {
       const nq = get(2); for (let j = 0; j < nq; j++) { const k = QUIRK_KEYS[get(3)]; if (k) g.q.push(k); }
       const na = get(2); for (let j = 0; j < na; j++) { const a = SPECIES[get(4)]; if (a && j < MAXATT) g.att.push(a.id); }
       g.fed = get(18) * 10000; g.mut = get(7); if (get(1)) g.boss = 1;
-      if (ver >= 2) { const st = get(2) + 1; if (st > 1) g.star = Math.min(3, st); }
+      g.rank = baseRank(g.sp) + (ver >= 2 ? Math.min(RANK.fuse, get(2)) : 0);
       team.push(g);
     }
     const end = p; let chk = 0; for (let i = 0; i < end; i++) if (bits[i]) chk = (chk + i * 7 + 3) % 64;
@@ -389,6 +398,9 @@ export function decodeTeam(code) {
     return { team, realm, name: unutf8(nm), marks };
   } catch (e) { return null; }
 }
+// 空窍真元：token 先化为真元存在空窍里（上限 cap 个「千」单位，插件模式再乘 unit），选了路就灌进节点。
+// 颜色随境界：凡人/一转 青铜、二转 赤铁、三转 白银、四转 黄金、五转 紫晶
+export const ZHENYUAN = { cap: 120, names: ['青铜', '青铜', '赤铁', '白银', '黄金', '紫晶'], colors: ['#a0703f', '#a0703f', '#a4442c', '#9aa4ab', '#d9a441', '#7d62a8'] };
 // 受伤：每层 -1/-1，最多 3 层；写代码温养（token）或静置（时间）都会愈合，哪个先满算哪个。不做永久损失
 export const WOUND = { max: 3, healTok: 60000, healSec: 240, loseNodePct: 0.3 };
 // 战斗手感：暴击概率与倍数（种子随机，复盘可复现）

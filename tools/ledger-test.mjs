@@ -1,6 +1,7 @@
 // node tools/ledger-test.mjs —— 算力履历纯函数的边界测试：rootBuffs / cycleRewards / agentBonus / ledgerAchievements，
 // 两种口径：玩法按全量吞吐 x（raw）判定，没有 x 时退回当量 t。外加统计、清洗、上限解析，以及演示数据生成器的确定性（同种子同时刻 → 同一份数据）。
-import { rootBuffs, rootFeedMul, cycleRewards, ledgerSnap, agentBonus, ledgerAchievements, ledgerStats, demoLedger, normLedger, lgParseTok, lgKey, ledgerShichen, ROOT_TUNE, AGENT_TUNE, LG_FAMS, LEDGER_ACHS, LG_ACH_TUNE } from '../src/ledger.js';
+import { rootBuffs, rootFeedMul, cycleRewards, ledgerSnap, agentBonus, ledgerAchievements, ledgerStats, demoLedger, normLedger, lgParseTok, lgKey, ledgerShichen, ROOT_TUNE, AGENT_TUNE, LG_FAMS, LEDGER_ACHS, LG_ACH_TUNE, ledgerMetaRegister, ledgerApply, LG_TITLE_DEFS } from '../src/ledger.js';
+import { metaInit, metaMigrate, metaEmit, achList, titleName, setTitle, ACHIEVEMENTS, TITLES } from '../src/meta.js';
 
 let pass = 0, fail = 0;
 const ok = (c, msg) => { if (c) pass++; else { fail++; console.log('✗ ' + msg); } };
@@ -168,6 +169,37 @@ function mk({ m = null, n = 7, days = {}, hours = {}, windows = [], agents = { a
   const st = ledgerStats(a); ok(st.best.x >= 1e9 && st.best.x < 2.5e9 && st.best.t < 2.2e8, '最强一日 raw 过十亿、当量不离谱'); ok(st.cur >= 23 && st.longest.n >= 61, '有像样的连修');
   ok(a.demo === true && a.windows.some(w => w.pct == null) && a.windows.some(w => w.basis === 'estimate') && a.windows.every(w => w.used > w.usedEq && w.usedEq > 0), '带演示标记、窗口有 used/usedEq，窗口覆盖 pct 为空与估算两种');
   const rt = normLedger(a); ok(rt && Object.keys(rt.days).length === keys.length && rt.days[keys[5]].t === a.days[keys[5]].t, '演示数据能过清洗');
+}
+
+// ───── 接入 meta：成就、称号、周天轮转箱
+{
+  const n0 = ACHIEVEMENTS.length; ledgerMetaRegister(); ledgerMetaRegister();
+  eq(ACHIEVEMENTS.length, n0 + LEDGER_ACHS.length, '履历成就并进 meta，重复注册不重复');
+  ok(LG_TITLE_DEFS.every(t => TITLES.some(x => x.id === t.id)), '履历称号并进 TITLES');
+  const S = { started: true, team: [], realm: 0, nodes: 0, wins: 0, total: 0 }; const M = metaMigrate(null, S);
+  const w = (start, used) => ({ key: 'c5', label: 'Claude · 五小时', kind: '5h', start, resetsAt: start + 5 * H, used, pct: 0.4, basis: 'log' });
+  const d7 = {}; for (let i = 0; i < 7; i++) d7[day(i)] = { t: 2e8, x: 1.2e9, s: {}, m: { 'claude-opus': 2e8 } };
+  const L1 = mk({ days: d7, windows: [w(NOW - H, 3e8)] });
+  const r1 = ledgerApply(M, S, L1);
+  eq(r1.filter(r => r.k === 'chest'), [], '第一次收到数据不发轮转箱');
+  ok(S.lgSnap && S.lgSnap.windows.length === 1 && S.lgAch.includes('lg_streak7') && S.lgAch.includes('lg_day_1e9'), '存档里记下快照与已达成的履历成就');
+  ok(r1.some(r => r.k === 'title' && r.id === 'lg_t2') && M.titles.includes('lg_t1') && M.titles.includes('lg_t2') && !M.titles.includes('lg_t3'), '全年吞吐 84 亿：发到十亿蛊师为止');
+  const out = metaEmit(M, 'ledger', {}, null, S);
+  ok(['lg_streak7', 'lg_day_1e8', 'lg_day_1e9'].every(id => out.achievements.some(a => a.id === id)), 'metaEmit 结算出履历成就');
+  ok(achList(M).filter(a => /^lg_/.test(a.id)).every(a => a.n && a.d) && achList(M).some(a => a.id === 'lg_streak7' && a.done), '成就面板列得出、标得出已得');
+  ok(setTitle(M, 'lg_t2') && titleName(M) === '十亿蛊师', '履历称号能装备、名字对');
+  eq(metaEmit(M, 'ledger', {}, null, S).achievements, [], '已得成就不重复发');
+  const chests0 = M.chests.length, got0 = M.stats.chestsGot;
+  const L2 = mk({ days: d7, windows: [w(NOW + 4 * H, 1e6)] }); L2.generatedAt = NOW + 4.5 * H;
+  const r2 = ledgerApply(M, S, L2);
+  eq(r2.filter(r => r.k === 'chest').map(r => r.tier), ['copper'], '五小时窗口轮转：一个铜箱');
+  eq([M.chests.length - chests0, M.stats.chestsGot - got0], [1, 1], '箱子进了 meta 的待开队列');
+  eq(ledgerApply(M, S, L2).filter(r => r.k === 'chest'), [], '同一份数据再来一次不重复发');
+  eq(ledgerApply(M, S, demoLedger('x', NOW)), [], '演示数据不碰存档');
+  const S2 = { lgAch: ['lg_streak7'] }; ledgerApply(null, S2, mk({ days: { [day(0)]: { t: 1, s: {}, m: {} } } }));
+  ok(S2.lgAch.includes('lg_streak7'), '履历成就一旦达成就留着（数据窗口滚动也不丢）');
+  const old = metaMigrate({ level: 3, ach: { first_node: 1 }, titles: ['t0'] }, { total: 5 });
+  ok(old.ach.first_node === 1 && !old.ach.lg_streak7 && titleName(old) === '无名蛊师', '旧存档读得进来，履历成就未得');
 }
 
 console.log(`ledger-test：通过 ${pass}，失败 ${fail}`);

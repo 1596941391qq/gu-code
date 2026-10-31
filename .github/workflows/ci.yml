@@ -1,0 +1,22 @@
+name: check
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: 打包结果与 src 一致
+        run: |
+          node tools/build.mjs
+          git diff --exit-code -- gucode.js vscode-ext/media || { echo "::error::gucode.js 和 src/ 不一致，请本地跑 node tools/build.mjs 后一起提交"; exit 1; }
+      - name: 平衡模拟能跑完
+        run: timeout 120 node tools/sim.mjs

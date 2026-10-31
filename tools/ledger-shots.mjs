@@ -7,7 +7,8 @@ const errs = [], browser = await chromium.launch(), w = (p, ms) => p.waitForTime
 async function open(width, scheme, height = 900) {
   const p = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 2, colorScheme: scheme });
   p.on('pageerror', e => errs.push(e.message)); p.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
-  await p.goto(url); await w(p, 300); await p.click('.starter >> nth=0'); await w(p, 300);
+  await p.addInitScript(() => { try { if (!localStorage.getItem('gucode.v1')) localStorage.setItem('gucode.v1', JSON.stringify({ v: 2, started: false, tutDone: true })); } catch (e) {} });   // 跳过新手引导
+  await p.goto(url); await w(p, 700); await p.click('.starter >> nth=0'); await p.mouse.move(2, 2); await w(p, 300);
   return p;
 }
 async function panel(p, name) {   // 视口拉到面板全高，整张截下

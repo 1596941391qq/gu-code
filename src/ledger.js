@@ -10,7 +10,7 @@
 // 界面入口（ui.js 只加了几行）：
 //   ledgerInit({ vsc, getLimits, setLimit, openSettings, onData, buffsOn })  启动时调一次；buffsOn=true 表示 rootBuffs/agentBonus 已接进 feed，
 //     界面才把加成写成生效（没接时写「待接入」，演示数据写「演示」）。它自己监听 window message（网页版只收同源 / file / localhost）。
-//   openLedger(meta)          打开「算力履历」面板。meta = { name, realm, title? }，title 不给就按全年总量取默认称号。
+//   openLedger(meta)          打开「算力履历」面板。meta = { name, realm, rank?, title? }：title 是印章里的字（不给就按全年吞吐取），rank 是玩家装备的称号，写在印章下。
 //   ledgerShades(qiaoEl)      空窍上方挂「分神 ×N」小影；renderAll() 之后、收到新数据之后各调一次。
 //   ledgerLimitRows() / ledgerBindLimits(sheetEl)   设置面板里「周天上限」输入行（插件给不出 pct 的窗口才出现）。
 //   ledgerData() / ledgerLive()  当前数据（无真实数据时是演示数据）与是否真实。
@@ -31,8 +31,16 @@
 //   4) ledgerAchievements(ledger) → [{ id, tier, n, d }]（已达成的），按 raw 判定：单日破亿 1 亿、一日十亿 10 亿（重度用户 raw 约 5–6 亿/天）。LEDGER_ACHS 是全表，id 以 lg_ 开头，tier 用 meta 的 bronze/silver/gold。
 //      合并进 meta：ACHIEVEMENTS 追加这些条目，check 写成 c => ledgerAchievements(c.S.ledger).some(a => a.id === id)，或者收到 ledger 时直接解锁。
 // 年度履历卡：makeLedgerCard(ledger, meta) → PNG dataURL（1080×1350，同步）。二维码指向游戏首页。
+// ─── 已接入主线（m4-ledger 预集成）───
+//   ledgerInit 时 ledgerMetaRegister() 把 LEDGER_ACHS 并进 meta 的 ACHIEVEMENTS / ACH_BY_ID（check 读 S.lgAch），
+//   把按全年吞吐分档的称号（LG_TITLE_DEFS）并进 TITLES。meta.js 本身不用改。
+//   真实数据到达：ledgerApply(M, S, L) 更新 S.lgSnap / S.lgAch，把周天轮转箱压进 M.chests，按全年吞吐发称号，
+//   返回要展示的奖励；ui 随后 metaEmit(M, 'ledger', {}) 让成就结算，再 handleOut。
+//   feed()：节点进度乘 ledgerFeedMul(S.team[0])，元石累计乘 ledgerStoneMul()；数据超过 LG_STALE_MS 没更新就不加。
+//   存档字段：S.qlim（周天上限，属设置）、S.lgSnap、S.lgAch，三者都不随「重开一局」清空。
 // ══════════════════════════════════════════════════════════════════════════
 import { makeRng, hashStr, TRAITS } from './core.js';
+import { ACHIEVEMENTS, ACH_BY_ID, TITLES } from './meta.js';
 import { qrDraw } from './qr.js';
 
 // ───────────────────────── 调参表 ─────────────────────────
@@ -60,6 +68,8 @@ const LG_SHI = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '
 const LG_SHI_ALIAS = ['夜半', '鸡鸣', '平旦', '日出', '食时', '隅中', '日中', '日昳', '晡时', '日入', '黄昏', '人定'];
 const LG_CN_NUM = ['〇', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十', '十一', '十二'];
 const LG_TITLES = [[1e11, '吞天蛊尊'], [3e10, '焚天蛊仙'], [1e10, '百亿蛊师'], [1e9, '十亿蛊师'], [1e8, '亿灵蛊徒'], [0, '初炼蛊徒']];   // 按全年 raw
+export const LG_TITLE_DEFS = LG_TITLES.filter(([n]) => n > 0).reverse().map(([min, n], i) => ({ id: 'lg_t' + (i + 1), n, lgMin: min }));   // 可装备的称号
+export const LG_STALE_MS = 10 * 60e3;
 export const LEDGER_ACHS = [
   { id: 'lg_day_1e8', tier: 'bronze', n: '单日破亿', d: '单日全量吞吐过 1 亿 token' },
   { id: 'lg_day_1e9', tier: 'silver', n: '一日十亿', d: '单日全量吞吐过 10 亿 token' },
@@ -211,6 +221,30 @@ export function ledgerShichen(L) {
 }
 export function ledgerTitle(total) { return (LG_TITLES.find(([n]) => total >= n) || LG_TITLES[LG_TITLES.length - 1])[1]; }
 
+// ───────────────────────── 接入 meta ─────────────────────────
+const lgHasAch = (S, id) => !!(S && Array.isArray(S.lgAch) && S.lgAch.includes(id));
+export function ledgerMetaRegister() {   // 幂等：成就与称号并进 meta 的表
+  for (const a of LEDGER_ACHS) if (!ACH_BY_ID[a.id]) { const x = { ...a, hidden: false, check: c => lgHasAch(c.S, a.id) }; ACHIEVEMENTS.push(x); ACH_BY_ID[a.id] = x; }
+  for (const t of LG_TITLE_DEFS) if (!TITLES.some(x => x.id === t.id)) TITLES.push({ ...t });
+}
+// 真实数据到达时调用：改 S 的三个履历字段、轮转箱进 M.chests、按全年吞吐发称号；返回要展示的奖励（chest / title）
+export function ledgerApply(M, S, L) {
+  if (!S || !L || L.demo) return [];
+  const ev = cycleRewards(S.lgSnap || null, L); S.lgSnap = ledgerSnap(L);
+  const got = ledgerAchievements(L, { limits: S.qlim || {} }).map(a => a.id);
+  S.lgAch = [...new Set([...(Array.isArray(S.lgAch) ? S.lgAch : []), ...got])];
+  const out = ev.map(e => ({ k: 'chest', tier: e.chest, why: `周天轮转 · ${e.labels.join('、')}` }));
+  if (M) {
+    out.forEach(r => { M.chests.push(r.tier); M.stats.chestsGot = (M.stats.chestsGot | 0) + 1; });
+    const total = ledgerStats(L).total;
+    LG_TITLE_DEFS.filter(t => total >= t.lgMin && !M.titles.includes(t.id)).forEach(t => { M.titles.push(t.id); out.push({ k: 'title', id: t.id, why: '算力履历' }); });
+  }
+  return out;
+}
+const lgFresh = () => LGS.live && LGS.data && Date.now() - (LGS.data.generatedAt || 0) < LG_STALE_MS;
+export const ledgerFeedMul = g => lgFresh() && LGS.opts.buffsOn ? rootFeedMul(LGS.buffs, g) : 1;
+export const ledgerStoneMul = () => lgFresh() && LGS.opts.buffsOn && LGS.agent ? LGS.agent.stoneMul : 1;
+
 // ───────────────────────── 校验清洗 ─────────────────────────
 export function normLedger(raw) {
   if (!raw || raw.type !== 'ledger' || +raw.v !== 1 || typeof raw.days !== 'object' || !raw.days) return null;
@@ -284,7 +318,7 @@ export function demoLedger(seed = 'gucode', now = Date.now()) {
 // ───────────────────────── 面板状态与入口 ─────────────────────────
 const LGS = { data: null, live: false, demo: null, opts: {}, sel: null, mode: 'stack', hday: null, timer: 0, meta: {}, card: '' };
 export function ledgerInit(opts = {}) {
-  LGS.opts = opts;
+  LGS.opts = opts; ledgerMetaRegister();
   if (typeof window === 'undefined' || LGS.bound) return; LGS.bound = true;
   window.addEventListener('message', e => {
     const m = e.data; if (!m || m.type !== 'ledger') return;
@@ -295,7 +329,7 @@ export function ledgerInit(opts = {}) {
 }
 export function ledgerIngest(raw) {
   const L = normLedger(raw); if (!L) return null;
-  LGS.data = L; LGS.live = true;
+  LGS.data = L; LGS.live = true; LGS.buffs = rootBuffs(L); LGS.agent = agentBonus(L);
   if (document.getElementById('lgx')) lgRender();
   if (LGS.opts.onData) try { LGS.opts.onData(L); } catch (e) {}
   return L;
@@ -526,7 +560,7 @@ function lgAchHTML(L) {
 export function ledgerShades(host) {
   if (!host) return;
   let box = host.querySelector('.lg-shades');
-  const show = LGS.live || !LGS.opts.vsc, L = show ? ledgerData() : null, b = L ? agentBonus(L) : { show: false };
+  const show = LGS.live ? lgFresh() : !LGS.opts.vsc, L = show ? ledgerData() : null, b = L ? agentBonus(L) : { show: false };
   if (!b.show) { if (box) box.remove(); return; }
   if (!box) { box = document.createElement('button'); box.className = 'lg-shades'; box.dataset.act = 'ledger'; const qh = host.querySelector('.qhead'); if (qh) qh.after(box); else host.prepend(box); }
   box.title = '同时在跑的 agent · 点开算力履历';
@@ -590,7 +624,8 @@ export function makeLedgerCard(L, meta = {}) {
   ctx.fillStyle = K.mu; ctx.font = `34px ${LG_KAI}`; ctx.fillText(`${gz}年${season} · ${(meta.name || '无名蛊师').slice(0, 8)} 记`, P + 4, 272);
   ctx.fillStyle = K.mu2; ctx.font = `24px ${LG_SANS}`; ctx.fillText(`${st.from.replace(/-/g, '.')} — ${st.end.replace(/-/g, '.')}`, P + 4, 314);
   lgSeal(ctx, W - P - 46, 214, String(meta.title || ledgerTitle(st.total)).slice(0, 5), 52, 0.05);
-  if (meta.realm) { ctx.fillStyle = K.mu; ctx.font = `26px ${LG_KAI}`; ctx.textAlign = 'center'; ctx.fillText(meta.realm, W - P - 46, 372); ctx.textAlign = 'left'; }
+  const sub = [meta.realm, meta.rank && meta.rank !== '无名蛊师' ? meta.rank : ''].filter(Boolean);
+  if (sub.length) { ctx.fillStyle = K.mu; ctx.font = `26px ${LG_KAI}`; ctx.textAlign = 'center'; sub.forEach((t, i) => ctx.fillText(t, W - P - 46, 372 + i * 34, 220)); ctx.textAlign = 'left'; }
   // 全年总量
   ctx.fillStyle = K.mu; ctx.font = `34px ${LG_KAI}`; ctx.fillText('全年吞吐', P, 392);
   const tv = lgCN(st.total), num = tv.replace(/[亿万]$/, ''), unit = (tv.match(/[亿万]$/) || [''])[0];
