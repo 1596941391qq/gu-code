@@ -7157,7 +7157,7 @@ function timelineView(M) {
 //   api.onTripEnd(result)  秘境结束（退出秘境、渡劫成功或渡劫失败）时调用一次。
 //                          result = { dead: [uid], survivors: [uid], loot: { foods: [id], gu: [{ sp, rank, xing? }] }, cleared, wiped }
 //                          洞府负责：删掉倒下的蛊、发战利品（全灭时秘境应传空 loot）、cleared 且秘境属于当前境界时渡劫（境界 +1，全屏）、全员回满、
-//                          清掉 S.trip 和只在这次渡劫有效的食物（S.tripFood）、罗盘重转、蛊市刷新。
+//                          清掉 S.trip 和只在这次渡劫有效的食物（S.tripFood）、罗盘重转（蛊市在玩家转完罗盘时换新货）。
 //   api.big(kind, title, lines)  全屏时刻（只给 design.md 第 5 节那三种用：'trib' 渡劫成功、'ach' 成就解锁、'combo' 杀招第一次成形）
 //   api.note(text)         在原地战报加一行（其余反馈都用这个）
 //   api.float(uid, text, kind)   在某只蛊身上跳一个字
@@ -8879,8 +8879,10 @@ const TXT = {
   shopTip: '花元气买蛊和食物。什么道的蛊都会刷，罗盘选中的道出现得稍多一点（+5%）。转市换一批，冻结的货下次还在。',
   refresh: c => `转市 · ${c}`,
   freeze: on => on ? '解冻' : '冻结',
-  daoNone: '罗盘：还没转（选中的道在蛊市里多出 5%）',
-  daoLine: d => `罗盘：${DAO[d] ? DAO[d].n : d}（这一轮蛊市里多出 5%）`,
+  daoNone: '罗盘：渡劫回来可以转一次',
+  daoLine: d => `这一轮：${DAO[d] ? DAO[d].n : d} +5%｜渡劫回来可再转`,
+  compassBtn: '转罗盘（三选一）',
+  compassLit: '选中的道在这一轮蛊市里多出 5%，选完蛊市换一批新货',
   daoTip: '每次回到洞府转一次罗盘，三选一：选中的道在本轮蛊市出现的概率 +5%。只是轻轻偏一下，蛊市照样什么道都会刷。罗盘不加属性。',
   compassHead: '罗盘 · 三选一',
   compassSub: '选一道，它在本轮蛊市出现的概率 +5%。只是轻轻偏一下，什么道都还会刷。',
@@ -9157,12 +9159,12 @@ function renderHome() {
   const t = tripOn();
   box.classList.toggle('away', t);
   const land = curLand(), used = quotaOf(S.team), why = goWhy(land);
-  box.innerHTML = `<div class="hhead"><span class="lbl" data-tip="${esc(TXT.daoTip)}">${S.dao ? TXT.daoLine(S.dao) : TXT.daoNone}</span></div><div id="reso" class="reso"></div>
+  box.innerHTML = `<div id="reso" class="reso"></div>
   <section class="qiao" id="qiao"><button class="landbtn" data-act="lands"${t ? ' disabled' : ''}><span class="lbl">秘境</span><b>${esc(land.n)}${kalpaOf(land) ? ` · ${esc(jieName(kalpaOf(land)))}` : ''}</b><small>${esc(TXT.landLine(land))}</small><span class="lchg">${t ? '渡劫中' : '换秘境'}</span></button>
   <div class="qhead"><span class="lbl">${TXT.slotsHead} <small>${TXT.slotsSub}</small></span><span class="qmeta quota${used > land.quota ? ' over' : ''}" data-tip="${esc(TXT.quotaTip(used, land.quota) + '\n' + TXT.driveTip())}">已用 ${used} / 额度 ${land.quota}</span>${t ? '' : `<button class="trybtn" data-act="tryOpen" data-tip="${esc(TXT.tryTip)}">${TXT.tryName}</button>`}</div><div class="slots" id="slots"></div>
   <div class="bagline" id="bagline"></div></section>
   <ul class="hlog" id="hlog"></ul>
-  ${t ? `<p class="hint">${TXT.inTrip}</p>` : S.compass ? compassHTML() : `<section class="shop" id="shop"></section>`}
+  ${t ? `<p class="hint">${TXT.inTrip}</p>` : `${compassBar()}<section class="shop" id="shop"></section>`}
   ${t ? '' : `<div class="gorow"><button class="trygo" data-act="tryOpen"${S.team.length ? '' : ' disabled'}>${TXT.tryGo}</button><button class="zhu big go" data-act="go"${why ? ' disabled' : ''}>${TXT.go} · ${esc(land.n)}<small>${esc(why || TXT.goSub(S.team.length, land))}</small></button></div>${(() => { const L = gainLines(previewOf(land)); return L.length ? `<p class="gainline">${esc(TXT.gainLine(L))}</p>` : ''; })()}`}`;
   renderSlots(); renderBagLine(); renderShop(); renderReso(); renderLog();
 }
@@ -9188,6 +9190,11 @@ function renderReso() {
 }
 // ---------- 罗盘：回到洞府时三选一，选中的道在这一轮蛊市里多出 5% ----------
 function rollCompass() { const r = R(), ids = DAOS.map(d => d.id), out = []; while (out.length < 3 && ids.length) out.push(ids.splice(r.int(ids.length), 1)[0]); S.compass = out; }
+// 罗盘常驻一块：回洞府后亮起「转罗盘（三选一）」，点开选；这一轮转过了写「这一轮：炎道 +5%｜渡劫回来可再转」
+function compassBar() {
+  const lit = !!(S.compass && S.compass.length);
+  return `<section class="cbar${lit ? ' lit' : ''}" data-tip="${esc(TXT.daoTip)}"><span class="lbl">罗盘</span>${lit ? `<button class="zhu" data-act="compassOpen">${TXT.compassBtn}</button><small>${TXT.compassLit}</small>` : `<span class="cnow">${esc(S.dao ? TXT.daoLine(S.dao) : TXT.daoNone)}</span>`}</section>`;
+}
 function compassHTML() {
   return `<section class="compass2"><div class="ch"><span class="lbl">${TXT.compassHead}</span></div><p class="sm">${TXT.compassSub}</p><div class="dopts">${S.compass.map(id => { const d = DAO[id], sp = shopSpeciesOf(id); return `<button class="dopt" data-act="dao" data-d="${id}"><b>${d.n}</b><small>${esc(d.d)}</small><span class="dsp">${sp.slice(0, 4).map(x => `<i>${guSVG(x)}</i>`).join('')}</span><em>共鸣：${esc(d.r2.d)}</em></button>`; }).join('')}</div></section>`;
 }
@@ -9332,7 +9339,7 @@ function onTripEnd(result = {}) {
   if (result.cleared) clearEvents({ quota: land ? land.quota : 0, ranks: went.map(g => (SP[g.sp] && SP[g.sp].immortal ? 6 : rankOf(g))), daos: went.map(g => daoOf(g.sp)),
     fallen: dead.size + (end.saved || []).length, combos: synOf(went).combos.length, kalpa: result.kalpa || end.kalpa || 0, cnt: M().cnt }).forEach(([k, n, set]) => achieve(k, n, { set }));
   if (result.cleared && (!land || land.realm === S.realm) && S.realm < 5) { S.realm++; S.land = (lands().find(l => l.realm === S.realm) || {}).id || S.land; big('trib', TXT.trib(S.realm), TXT.tribLines(S.realm)); achieve('realm', S.realm, { set: true }); }
-  rollCompass(); S.shop = S.shop.filter(w => w.frozen && !w.sold);
+  rollCompass();   // 蛊市先留着出发前那一批，转完罗盘再换新货（ACT.dao）
   renderAll(); save(); floorCheck();
 }
 // 进战斗前按阵盘摆好（复制一份，没位置的按 前列→中列→后列 自动摆），引擎读 g.pos
@@ -9838,7 +9845,8 @@ const ACT = {
     const g = newGu(a.dataset.sp, 1); S.team = [g]; S.started = true; S.bank = S.bank || 0; codexScan();
     rollCompass(); renderAll(); save();
   },
-  dao(a) { S.dao = a.dataset.d; S.compass = null; S.shop = S.shop.filter(w => w.frozen && !w.sold); newShop(); note(TXT.daoLine(S.dao)); renderHome(); save(); },
+  compassOpen() { if (S.compass && S.compass.length) sheet(compassHTML()); },
+  dao(a) { closeSheet(); S.dao = a.dataset.d; S.compass = null; S.shop = S.shop.filter(w => w.frozen && !w.sold); newShop(); note(TXT.daoLine(S.dao)); renderHome(); save(); },
   ware(a) {
     const i = +a.dataset.i, w = S.shop[i]; if (!w) return;
     if (w.kind === 'food') { const f = FOOD[w.id]; sheet(`<div class="fhead"><span class="fbig">${foodSVG(f.id)}</span><div><h3>${esc(f.n)} <small>${FOOD_KIND[f.kind]}</small></h3><p>${esc(f.d)}</p></div></div><div class="row2"><button data-act="freeze" data-i="${i}">${TXT.freeze(w.frozen)}</button><button class="zhu" data-act="buy" data-i="${i}"${!w.sold && canPay(foodCost(w.id)) ? '' : ' disabled'}>买下 ${fmtTok(price(foodCost(w.id)))}</button></div><p class="sm">余 ${fmtTok(S.bank)} 元气</p>`); return; }

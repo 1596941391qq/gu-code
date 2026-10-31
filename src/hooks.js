@@ -18,7 +18,7 @@
 //   api.onTripEnd(result)  秘境结束（退出秘境、渡劫成功或渡劫失败）时调用一次。
 //                          result = { dead: [uid], survivors: [uid], loot: { foods: [id], gu: [{ sp, rank, xing? }] }, cleared, wiped }
 //                          洞府负责：删掉倒下的蛊、发战利品（全灭时秘境应传空 loot）、cleared 且秘境属于当前境界时渡劫（境界 +1，全屏）、全员回满、
-//                          清掉 S.trip 和只在这次渡劫有效的食物（S.tripFood）、罗盘重转、蛊市刷新。
+//                          清掉 S.trip 和只在这次渡劫有效的食物（S.tripFood）、罗盘重转（蛊市在玩家转完罗盘时换新货）。
 //   api.big(kind, title, lines)  全屏时刻（只给 design.md 第 5 节那三种用：'trib' 渡劫成功、'ach' 成就解锁、'combo' 杀招第一次成形）
 //   api.note(text)         在原地战报加一行（其余反馈都用这个）
 //   api.float(uid, text, kind)   在某只蛊身上跳一个字

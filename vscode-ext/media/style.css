@@ -520,7 +520,7 @@ button.mg{font:inherit;font-size:11px;border:0;cursor:pointer;position:relative;
 .gu .mseal + .dz{top:22px}
 .ware .dz{left:3px;right:auto}
 .ware .fu.rzg{background:var(--paper);color:var(--zhu2);border:1px solid var(--zhu2)}
-.reso{display:flex;flex-wrap:wrap;gap:6px}.reso .ro{font:12px var(--sans);color:var(--mu)}.reso .ro.on{color:var(--qing);border:1px solid var(--qing);border-radius:10px;padding:0 7px}
+.reso{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 6px}.reso .ro{font:12px var(--sans);color:var(--mu)}.reso .ro.on{color:var(--qing);border:1px solid var(--qing);border-radius:10px;padding:0 7px}
 .bagline .bhead{display:flex;justify-content:space-between;align-items:baseline}
 .mini.bagrow{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;overflow:visible}
 .mini.bagrow .mg{width:auto;min-height:64px;position:relative;font-size:10px;padding:2px}
@@ -559,7 +559,11 @@ button.mg{font:inherit;font-size:11px;border:0;cursor:pointer;position:relative;
 .simres{margin-top:10px;min-height:1.4em}.simres p{margin:3px 0}
 .foeopt .fh .ib{margin-left:auto;font-size:12px;color:var(--mu)}.gorow .go small{font:12px var(--sans);opacity:.85}
 .gorow .go:disabled{background:transparent;color:var(--mu);border:1px dashed var(--line2);box-shadow:none}.gorow .go:disabled small{color:var(--zhu2);opacity:1}
-.compass2{margin-top:16px}.dopts{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}
+/* 罗盘常驻一块：亮起时朱色按钮，转过了写这一轮的道 */
+.cbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin:16px 0 0;padding:8px 10px;border:1px solid var(--line);border-radius:3px}
+.cbar .cnow{font:15px var(--kai)}.cbar small{font-size:12px;color:var(--mu);flex-basis:100%}
+.cbar.lit{border-color:var(--zhu2);background:rgba(181,48,31,.06)}.cbar.lit button{font:15px var(--kai);padding:4px 12px}
+.compass2{margin-top:0}.dopts{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}
 .dopt{display:flex;flex-direction:column;gap:4px;align-items:flex-start;text-align:left;background:var(--paper);color:var(--ink);border-radius:3px;padding:10px}
 .dopt b{font:400 20px var(--kai)}.dopt small{font-size:12px;color:#5b5244}.dopt em{font:normal 12px var(--kai);color:var(--atk)}
 .dopt .dsp{display:flex;gap:2px}.dopt .dsp i{width:28px;height:28px}
