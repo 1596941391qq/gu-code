@@ -1987,7 +1987,7 @@ return { DAOS, DAO, DAO_KEYS, DAO_TIERS, CLASH_MUL, DAO_CLASH, CLASH_NOTE, DAO_O
 // ---- src/foods.js
 // 蛊码 GuCode · 食物（第四版，50 种：加攻血 10、只管这一场 6、挂件 19、功能 4、影响蛊市 4、渡劫用 8）。纯数据，不 import 任何文件。
 // 格式：FOODS[i] = { id, n 名, kind, dao 所属的道（蛊市按罗盘选中的道加权）, cost 价格档（× core.PRICE.food 才是元气）, d 一句话（是什么、有什么用、喂给谁）, look 长什么样（画图标用）, ...效果字段 }
-//   战斗效果 eff 都按 battle-spec 第 4、6 节写，施放者是吃下或挂着它的那只蛊，数值不随转数涨。数值已按 design 2.8 放大十倍（和 core.STAT_SCALE 一致）。
+//   战斗效果 eff 都按 battle-spec 第 4、6 节写，施放者是吃下或挂着它的那只蛊，数值不随转数涨。数值已按 design 2.8 放大十倍（和 core.STAT_SCALE 一致）；血再乘 4（core.HP_SCALE：卡面写的血就是战斗里的血）。
 //
 //   kind 'stat'  加攻血：买下立刻生效，永久。每只最多吃 core.ATE_MAX 次（单只封顶）。
 //                to = 'one'（玩家选一只）| 'rand2' | 'rand3'（空窍里随机两只 / 三只，只挑还没吃满的）| 'all'（空窍全体）；atk、hp = 加多少点
@@ -2014,18 +2014,18 @@ const F = (id, n, kind, dao, cost, d, look, o = {}) => ({ id, n, kind, dao, cost
 const E = (when, op, tg, o = {}) => ({ when, op, tg, ...o });
 const FOODS = [
   // —— 第一批 26 种（位置不动）——
-  F('meat', '血肉团', 'stat', 'li', 3, '喂给一只蛊：攻 +20、血 +20，永久', '一团暗红的生肉，用草绳扎成拳头大小', { to: 'one', atk: 20, hp: 20 }),
-  F('dew', '晨露丸', 'stat', 'xue', 3, '空窍里随机两只：攻 +10、血 +20，永久', '三颗透明的露珠丸子，里面裹着一缕血丝', { to: 'rand2', atk: 10, hp: 20 }),
+  F('meat', '血肉团', 'stat', 'li', 3, '喂给一只蛊：攻 +20、血 +80，永久', '一团暗红的生肉，用草绳扎成拳头大小', { to: 'one', atk: 20, hp: 80 }),
+  F('dew', '晨露丸', 'stat', 'xue', 3, '空窍里随机两只：攻 +10、血 +80，永久', '三颗透明的露珠丸子，里面裹着一缕血丝', { to: 'rand2', atk: 10, hp: 80 }),
   F('egg', '孵蛊卵', 'gear', 'nu', 4, '挂在一只蛊上：它倒下时原地化出一只蛊蛹（本蛊攻血的 40%）', '一枚灰白的软壳卵，壳上透出里面蜷着的小虫影', { gear: 'spawn', pct: 40 }),
   F('scale', '鳞甲片', 'gear', 'jin', 4, '挂在一只蛊上：受到的伤害 -10%', '一片巴掌大的青铜色鳞片，边缘磨得发亮', { gear: 'ward', pct: 10 }),
   F('tea', '回春茶', 'trip', 'xue', 3, '下一次渡劫：每场开打前全队回 20% 血', '一只粗陶小碗，盛着冒热气的红褐色茶汤', { trip: 'heal', pct: 20 }),
   F('map', '寻路图', 'trip', 'zhi', 3, '下一次渡劫：房间路程 -15%，少花元气', '一卷泛黄的羊皮小图，边上画着弯弯曲曲的山路', { trip: 'road', pct: 15 }),
   F('yuelan', '月兰花瓣', 'stat', 'guang', 3, '喂给一只蛊：攻 +30，永久', '几片半透明的淡蓝花瓣，夜里会发出月光一样的冷光', { to: 'one', atk: 30, hp: 0, canon: true }),
-  F('zhujiu', '青竹酒', 'stat', 'zhi', 5, '空窍全体各喝一口：攻 +10、血 +10，永久', '一截青竹筒，塞着软木塞，竹节上挂着酒珠', { to: 'all', atk: 10, hp: 10 }),
-  F('huotan', '火炭心', 'stat', 'yan', 4, '空窍里随机两只：攻 +20、血 +10，永久', '一块外黑里红的炭芯，裂缝里还在一明一暗地烧', { to: 'rand2', atk: 20, hp: 10 }),
-  F('shuangye', '霜叶', 'stat', 'bing', 2, '喂给一只蛊：攻 +10、血 +20，永久', '一片结了白霜的枫叶，叶脉冻成银线', { to: 'one', atk: 10, hp: 20 }),
-  F('lingzhi', '灵芝片', 'stat', 'mu', 5, '空窍全体：血 +20，永久', '一片切开的赤褐色灵芝，横截面一圈圈年轮', { to: 'all', atk: 0, hp: 20 }),
-  F('leizao', '雷击枣', 'stat', 'lei', 4, '喂给一只蛊：攻 +20、血 +30，永久', '一颗焦黑的红枣，表面有一道蓝白色的电纹', { to: 'one', atk: 20, hp: 30 }),
+  F('zhujiu', '青竹酒', 'stat', 'zhi', 5, '空窍全体各喝一口：攻 +10、血 +40，永久', '一截青竹筒，塞着软木塞，竹节上挂着酒珠', { to: 'all', atk: 10, hp: 40 }),
+  F('huotan', '火炭心', 'stat', 'yan', 4, '空窍里随机两只：攻 +20、血 +40，永久', '一块外黑里红的炭芯，裂缝里还在一明一暗地烧', { to: 'rand2', atk: 20, hp: 40 }),
+  F('shuangye', '霜叶', 'stat', 'bing', 2, '喂给一只蛊：攻 +10、血 +80，永久', '一片结了白霜的枫叶，叶脉冻成银线', { to: 'one', atk: 10, hp: 80 }),
+  F('lingzhi', '灵芝片', 'stat', 'mu', 5, '空窍全体：血 +80，永久', '一片切开的赤褐色灵芝，横截面一圈圈年轮', { to: 'all', atk: 0, hp: 80 }),
+  F('leizao', '雷击枣', 'stat', 'lei', 4, '喂给一只蛊：攻 +20、血 +120，永久', '一颗焦黑的红枣，表面有一道蓝白色的电纹', { to: 'one', atk: 20, hp: 120 }),
   F('duzhen', '毒针囊', 'gear', 'du', 4, '挂在一只蛊上：它的普攻让目标中毒（攻击 10%，可叠）', '一个墨绿色的小皮囊，口上露出三根细针', { eff: [E('attack', 'st', 'tg', { k: 'psn', atk: 0.1 })] }),
   F('huorong', '火绒草', 'gear', 'yan', 4, '挂在一只蛊上：它的普攻让目标灼烧 2 轮（攻击 12%）', '一簇橙红色的绒毛草，尖上冒着火星', { eff: [E('attack', 'st', 'tg', { k: 'burn', n: 2, atk: 0.12 })] }),
   F('bingpo', '冰魄珠', 'gear', 'bing', 4, '挂在一只蛊上：它的普攻 35% 机会让目标寒 1 层', '一颗鸽蛋大的冰珠，里面封着一片雪花', { eff: [E('attack', 'st', 'tg', { k: 'chill', n: 1, chance: 0.35 })] }),
@@ -2041,8 +2041,8 @@ const FOODS = [
   F('houtufu', '厚土符', 'trip', 'tu', 4, '下一次渡劫：每场开战全队得到最大血量 8% 的护体', '一块方形陶片，上面压着一个土黄色的掌印', { trip: 'eff', eff: [E('start', 'shield', 'self', { mx: 0.08 })] }),
   F('fengxingfu', '风行符', 'trip', 'yu', 3, '下一次渡劫：每场开战全队行动条提前 15%', '一张青色纸符折成纸鸢的样子，翅膀微微翘起', { trip: 'eff', eff: [E('start', 'adv', 'self', { v: 0.15 })] }),
   // —— 加攻血（续）——
-  F('gutang', '骨头汤', 'stat', 'hun', 4, '空窍里随机三只：攻 +10、血 +10，永久', '一口豁边的小铁锅，汤里浮着几截白骨', { to: 'rand3', atk: 10, hp: 10 }),
-  F('xuejing', '血精丸', 'stat', 'xue', 7, '喂给一只蛊：攻 +40、血 +40，永久', '一颗龙眼大的深红药丸，表面像血管一样爬着细纹', { to: 'one', atk: 40, hp: 40 }),
+  F('gutang', '骨头汤', 'stat', 'hun', 4, '空窍里随机三只：攻 +10、血 +40，永久', '一口豁边的小铁锅，汤里浮着几截白骨', { to: 'rand3', atk: 10, hp: 40 }),
+  F('xuejing', '血精丸', 'stat', 'xue', 7, '喂给一只蛊：攻 +40、血 +160，永久', '一颗龙眼大的深红药丸，表面像血管一样爬着细纹', { to: 'one', atk: 40, hp: 160 }),
   // —— 只管这一场 ——
   F('zhanjiu', '壮行酒', 'fight', 'li', 3, '下一场战斗：上场的全体攻 +20%（只这一场）', '一只大口粗瓷碗，酒面上浮着一片红辣椒', { to: 'all', eff: [E('start', 'buff', 'self', { atk: 0.2 })] }),
   F('huxin', '护心镜', 'fight', 'jin', 3, '下一场战斗：上场的全体开战得到最大血量 15% 的护体（只这一场）', '一面巴掌大的圆铜镜，背面铸着一圈兽纹', { to: 'all', eff: [E('start', 'shield', 'self', { mx: 0.15 })] }),
@@ -2246,6 +2246,8 @@ const RANK_GROW = [0, 1, 1.8, 3, 4.6, 6.8, 9.6];
 // 数值放大十倍（design 2.8）：物种表里的攻血是小数字，statFor 统一乘 STAT_SCALE 再给出去（一转约攻 20、血 40），百分比加成才看得出来。
 // 食物加的攻血在 foods.js 里已经是放大后的数，不再乘。
 const STAT_SCALE = 10;
+// 血再乘 HP_SCALE：卡面写的血就是战斗里的血（以前战斗里另乘 HPK = 4，跳字和卡面对不上）。食物加的血在 foods.js 里已按这个口径写
+const HP_SCALE = 4;
 const ATE_MAX = 3;
 const ateOf = g => (g && g.ate) || 0;
 const canEat = g => !!g && ateOf(g) < ATE_MAX;
@@ -2253,9 +2255,9 @@ const canEat = g => !!g && ateOf(g) < ATE_MAX;
 const statTable = sp => { const out = []; for (let r = baseRank(sp); r <= RANK.max; r++) out.push({ rank: r, ...statFor(sp, r) }); return out; };
 function statFor(sp, rank) {
   const s = SP[sp]; if (!s) return { atk: 1, hp: 1 };
-  const r = Math.max(1, Math.min(6, rank | 0)), X = STAT_SCALE; if (s.st && s.st[r]) return { atk: Math.max(1, Math.round(s.st[r][0] * X)), hp: Math.max(1, Math.round(s.st[r][1] * X)) };
+  const r = Math.max(1, Math.min(6, rank | 0)), X = STAT_SCALE, XH = STAT_SCALE * HP_SCALE; if (s.st && s.st[r]) return { atk: Math.max(1, Math.round(s.st[r][0] * X)), hp: Math.max(1, Math.round(s.st[r][1] * XH)) };
   const k = RANK_GROW[r] / RANK_GROW[Math.max(1, Math.min(6, baseRank(sp)))];
-  return { atk: Math.max(1, Math.round(s.atk * k * X)), hp: Math.max(1, Math.round(s.hp * k * X)) };
+  return { atk: Math.max(1, Math.round(s.atk * k * X)), hp: Math.max(1, Math.round(s.hp * k * XH)) };
 }
 
 // 词条效果表：旧 12 种蛊的本命技（物种的 nat 字段指向这里），v 为层数；数值按本蛊攻血的百分比。v2 不再有副词条，词条只作本命技用。
@@ -2502,7 +2504,7 @@ function posNote(team, i, id) {
 function formScore(t) {
   let s = 0; const n = t.length;
   t.forEach((g, i) => {
-    const k = natOf(g.sp), T = k ? { [k]: 1 } : {}, q = [], A = g.atk / STAT_SCALE, h = g.hp / STAT_SCALE + 3 * (T.shell || 0) + 2 * (T.guard || 0);   // 攻血按放大前的量级打分，和下面的常数对得上
+    const k = natOf(g.sp), T = k ? { [k]: 1 } : {}, q = [], A = g.atk / STAT_SCALE, h = g.hp / (STAT_SCALE * HP_SCALE) + 3 * (T.shell || 0) + 2 * (T.guard || 0);   // 攻血按放大前的量级打分，和下面的常数对得上
     if (i === 0) s += h * 1.3 + A * 0.5 + 2.5 * (T.thorn || 0) + 2 * (T.frenzy || 0) + 1.5 * (T.split || 0) + 4 * (T.vanguard || 0) - 4 * (T.snipe || 0) - 2 * (T.war || 0) - 1.5 * (T.legacy || 0) - (q.includes('timid') ? 4 : 0) + (q.includes('lastgasp') ? 2 : 0);
     else s += 3 * (T.snipe || 0) + (n - i) * 0.15 * h;
     if (T.legacy && t[i + 1]) s += T.legacy * (1 + 0.15 * t[i + 1].atk / STAT_SCALE);
@@ -2540,15 +2542,16 @@ function unutf8(b) { return typeof TextDecoder !== 'undefined' ? new TextDecoder
 // v6（阵盘）：v5 每只蛊后面再加 阵盘格 4 位（0–8，15 = 没摆）、速 8 位（0 = 按物种）。v1–v5 解出来按顺序自动摆进阵盘
 // v7（额度）：和 v6 一样，只是只数字段从 3 位改成 4 位（阵盘最多 9 只）
 // v8（数值放大十倍）：版本字段写 0 再跟 3 位扩展号（8 = 7 + 1），攻血各 12 位；v5–v7 的攻血是放大前的数，解出来乘 STAT_SCALE
+// v9（血统一口径）：扩展号 2，攻 12 位、血 14 位；v8 及以前的血是乘 HP_SCALE 之前的数，解出来再乘 HP_SCALE
 const OLD_W = { 1: { sp: 4, tr: 4, q: 3, st: 8, mk: 0, rk: 0 }, 2: { sp: 4, tr: 4, q: 3, st: 8, mk: 12, rk: 2 }, 3: { sp: 6, tr: 6, q: 4, st: 10, mk: 16, rk: 3 }, 4: { sp: 6, tr: 6, q: 4, st: 10, mk: 16, rk: 3, fl: 1 } };
-const W5 = { sp: 7, rk: 3, st: 10, fd: 6, xg: 6 }, ST8 = 12;
+const W5 = { sp: 7, rk: 3, st: 10, fd: 6, xg: 6 }, ST8 = 12, HP9 = 14;
 function encodeTeam(team, meta = {}) {
   let bits = ''; const put = (v, n) => { bits += Math.max(0, Math.min(2 ** n - 1, Math.round(v) || 0)).toString(2).padStart(n, '0'); };
   const nm = Array.from(utf8((meta.name || '').slice(0, 8))).slice(0, 31);
-  put(0, 3); put(1, 3); put(meta.realm || 0, 3); put(Math.min(SLOTS, team.length), 4); put(nm.length, 5); nm.forEach(b => put(b, 8)); put(meta.trial ? 1 : 0, 1);
+  put(0, 3); put(2, 3); put(meta.realm || 0, 3); put(Math.min(SLOTS, team.length), 4); put(nm.length, 5); nm.forEach(b => put(b, 8)); put(meta.trial ? 1 : 0, 1);
   const xk = XING_KEYS();
   for (const g of team.slice(0, SLOTS)) {
-    put(SPI[g.sp], W5.sp); put(rankOf(g), W5.rk); put(g.atk, ST8); put(g.hp, ST8);
+    put(SPI[g.sp], W5.sp); put(rankOf(g), W5.rk); put(g.atk, ST8); put(g.hp, HP9);
     put(g.food && FDI[g.food] != null ? FDI[g.food] + 1 : 0, W5.fd); const xi = g.xing ? xk.indexOf(g.xing) : -1; put(xi + 1, W5.xg); put(g.boss ? 1 : 0, 1);
     const k = cellOf(g); put(k >= 0 && k <= 8 ? k : 15, 4); put(g.spd || 0, 8);
   }
@@ -2561,14 +2564,14 @@ function decodeTeam(code) {
     const m = String(code).match(/[A-Za-z0-9_-]{8,}/); if (!m) return null;
     let bits = ''; for (const ch of m[0]) { const i = B64.indexOf(ch); if (i < 0) return null; bits += i.toString(2).padStart(6, '0'); }
     let p = 0; const get = n => { if (p + n > bits.length) throw 0; const v = parseInt(bits.slice(p, p + n), 2); p += n; return v; };
-    let ver = get(3); if (ver === 0) ver = 7 + get(3); if (ver < 1 || ver > 8) return null;
+    let ver = get(3); if (ver === 0) ver = 7 + get(3); if (ver < 1 || ver > 9) return null;
     const realm = get(3), n = get(ver >= 7 ? 4 : 3), nl = get(5), nm = []; for (let i = 0; i < nl; i++) nm.push(get(8));
     const team = []; let trial = false;
     if (ver >= 5) {
-      trial = !!get(1); const xk = XING_KEYS(), sw = ver >= 8 ? ST8 : W5.st, sx = ver >= 8 ? 1 : STAT_SCALE;
+      trial = !!get(1); const xk = XING_KEYS(), sw = ver >= 8 ? ST8 : W5.st, hw = ver >= 9 ? HP9 : sw, sx = ver >= 8 ? 1 : STAT_SCALE, hx = sx * (ver >= 9 ? 1 : HP_SCALE);
       for (let i = 0; i < n; i++) {
         const sp = SPECIES[get(W5.sp)]; if (!sp) return null;
-        const rank = Math.max(1, Math.min(6, get(W5.rk))), g = { uid: nuid(), sp: sp.id, rank, atk: Math.max(1, get(sw) * sx), hp: Math.max(1, get(sw) * sx), food: null, xing: null };
+        const rank = Math.max(1, Math.min(6, get(W5.rk))), g = { uid: nuid(), sp: sp.id, rank, atk: Math.max(1, get(sw) * sx), hp: Math.max(1, get(hw) * hx), food: null, xing: null };
         const fi = get(W5.fd); if (fi && FOODS[fi - 1]) g.food = FOODS[fi - 1].id; const xi = get(W5.xg); if (xi && xk[xi - 1]) g.xing = xk[xi - 1]; if (get(1)) g.boss = 1;
         if (ver >= 6) { const k = get(4); if (k <= 8) g.pos = cellPos(k); const sp2 = get(8); if (sp2) g.spd = sp2; }
         team.push(g);
@@ -2618,7 +2621,7 @@ const { HPK, DIST, SPD_K, MAXROUND, OFF_MX, RES_K, TUNE, GP, CRIT, NAT_K, battle
 
 // HPK：战斗血量 = 卡面血 × HPK；DIST：行动条长度（速 100 的蛊每 DIST 个时间单位出手一次 = 一轮）
 // SPD_K：速对出手间隔的影响系数（速 120 的蛊出手频率 = 1 + 0.2 × SPD_K 倍），让速度有意义又不一边倒
-const HPK = 4;
+const HPK = 1;   // 卡面血就是战斗里的血（core.HP_SCALE 已把卡面血乘 4）
 const DIST = 100;
 const SPD_K = 0.18;
 const MAXROUND = 30;
@@ -9273,7 +9276,7 @@ const trialTag = on => on ? `<span class="trialtag">${TXT.trial}</span>` : '';
 // v3 = v2 玩法的存档（gu = { uid, sp, rank, atk, hp, food, xing, bonusA?, bonusH? }）。旧版本存档一律不读，启动时另存到 BAK_KEY。
 // bank = 元气（token），没有上限；所有价格都是 token 数
 const BAK_KEY = 'gucode.v1.bak-v2';
-const fresh = () => ({ v: 3, sx: STAT_SCALE, started: false, name: '', realm: 0, bank: 0, total: 0, team: [], bag: [], shop: [], dao: null, compass: null, tripFood: [], pantry: [], trip: null, land: null,
+const fresh = () => ({ v: 3, sx: STAT_SCALE, hx: HP_SCALE, started: false, name: '', realm: 0, bank: 0, total: 0, team: [], bag: [], shop: [], dao: null, compass: null, tripFood: [], pantry: [], trip: null, land: null,
   seed: (Math.random() * 1e9) >>> 0, step: 0, speed: 1, mute: true, theme: 'auto', calm: false, codex: {}, combosSeen: [], log: [], hlog: [], meta: null, todayKey: '', todayTok: 0, sim: null, fightFood: [], shopBuff: [], trial: false, sotaAt: 0 });
 const today = () => { const d = new Date(); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); };
 const curCap = () => SLOTS, BC = () => Math.max(bagCap(S.realm), S.bag.length);
@@ -9289,7 +9292,19 @@ function scaleSave(s) {
   }
   delete s.ghosts; s.sx = STAT_SCALE; return s;
 }
-const migrate = s => s && s.v === 3 ? scaleSave(s) : null;
+// hx = 存档里的血按几倍存的（血统一口径：卡面血 = 战斗里的血）。没有 hx 的旧存档：空窍、蛊囊的血和食物加的血、秘境里延续的血量和战利品蛊的血一律乘 HP_SCALE（只做一次，和 sx 分开记）
+const scaleHp = (g, k) => { if (!g) return; if (typeof g.hp === 'number') g.hp = Math.max(1, Math.round(g.hp * k)); if (typeof g.bonusH === 'number') g.bonusH = Math.round(g.bonusH * k); if (typeof g.hpNow === 'number') g.hpNow = Math.round(g.hpNow * k); };
+function scaleSaveHp(s) {
+  if (!s || s.hx === HP_SCALE) return s;
+  const k = HP_SCALE / (s.hx || 1), t = s.trip;
+  (s.team || []).forEach(g => scaleHp(g, k)); (s.bag || []).forEach(g => scaleHp(g, k));
+  if (t) {
+    ['hp', 'mx'].forEach(f => { if (t[f]) for (const u in t[f]) t[f][u] = Math.max(t[f][u] > 0 ? 1 : 0, Math.round(t[f][u] * k)); });
+    [t.loot, t.end && t.end.loot].forEach(l => l && (l.gu || []).forEach(g => scaleHp(g, k)));
+  }
+  s.hx = HP_SCALE; return s;
+}
+const migrate = s => s && s.v === 3 ? scaleSaveHp(scaleSave(s)) : null;
 const price = k => Math.round(k * src.unit);   // 价格表（core.PRICE，单位 = 罗盘「千」）换成 token 数
 let S = fresh(), rate = 0, hot = false, inBattle = false, booted = false, skip = false, resetArm = 0;
 const src = new TokenSource(onTick);

@@ -50,6 +50,8 @@ export const RANK_GROW = [0, 1, 1.8, 3, 4.6, 6.8, 9.6];
 // 数值放大十倍（design 2.8）：物种表里的攻血是小数字，statFor 统一乘 STAT_SCALE 再给出去（一转约攻 20、血 40），百分比加成才看得出来。
 // 食物加的攻血在 foods.js 里已经是放大后的数，不再乘。
 export const STAT_SCALE = 10;
+// 血再乘 HP_SCALE：卡面写的血就是战斗里的血（以前战斗里另乘 HPK = 4，跳字和卡面对不上）。食物加的血在 foods.js 里已按这个口径写
+export const HP_SCALE = 4;
 export const ATE_MAX = 3;
 export const ateOf = g => (g && g.ate) || 0;
 export const canEat = g => !!g && ateOf(g) < ATE_MAX;
@@ -57,9 +59,9 @@ export const canEat = g => !!g && ateOf(g) < ATE_MAX;
 export const statTable = sp => { const out = []; for (let r = baseRank(sp); r <= RANK.max; r++) out.push({ rank: r, ...statFor(sp, r) }); return out; };
 export function statFor(sp, rank) {
   const s = SP[sp]; if (!s) return { atk: 1, hp: 1 };
-  const r = Math.max(1, Math.min(6, rank | 0)), X = STAT_SCALE; if (s.st && s.st[r]) return { atk: Math.max(1, Math.round(s.st[r][0] * X)), hp: Math.max(1, Math.round(s.st[r][1] * X)) };
+  const r = Math.max(1, Math.min(6, rank | 0)), X = STAT_SCALE, XH = STAT_SCALE * HP_SCALE; if (s.st && s.st[r]) return { atk: Math.max(1, Math.round(s.st[r][0] * X)), hp: Math.max(1, Math.round(s.st[r][1] * XH)) };
   const k = RANK_GROW[r] / RANK_GROW[Math.max(1, Math.min(6, baseRank(sp)))];
-  return { atk: Math.max(1, Math.round(s.atk * k * X)), hp: Math.max(1, Math.round(s.hp * k * X)) };
+  return { atk: Math.max(1, Math.round(s.atk * k * X)), hp: Math.max(1, Math.round(s.hp * k * XH)) };
 }
 
 // 词条效果表：旧 12 种蛊的本命技（物种的 nat 字段指向这里），v 为层数；数值按本蛊攻血的百分比。v2 不再有副词条，词条只作本命技用。
@@ -306,7 +308,7 @@ export function posNote(team, i, id) {
 export function formScore(t) {
   let s = 0; const n = t.length;
   t.forEach((g, i) => {
-    const k = natOf(g.sp), T = k ? { [k]: 1 } : {}, q = [], A = g.atk / STAT_SCALE, h = g.hp / STAT_SCALE + 3 * (T.shell || 0) + 2 * (T.guard || 0);   // 攻血按放大前的量级打分，和下面的常数对得上
+    const k = natOf(g.sp), T = k ? { [k]: 1 } : {}, q = [], A = g.atk / STAT_SCALE, h = g.hp / (STAT_SCALE * HP_SCALE) + 3 * (T.shell || 0) + 2 * (T.guard || 0);   // 攻血按放大前的量级打分，和下面的常数对得上
     if (i === 0) s += h * 1.3 + A * 0.5 + 2.5 * (T.thorn || 0) + 2 * (T.frenzy || 0) + 1.5 * (T.split || 0) + 4 * (T.vanguard || 0) - 4 * (T.snipe || 0) - 2 * (T.war || 0) - 1.5 * (T.legacy || 0) - (q.includes('timid') ? 4 : 0) + (q.includes('lastgasp') ? 2 : 0);
     else s += 3 * (T.snipe || 0) + (n - i) * 0.15 * h;
     if (T.legacy && t[i + 1]) s += T.legacy * (1 + 0.15 * t[i + 1].atk / STAT_SCALE);
@@ -344,15 +346,16 @@ function unutf8(b) { return typeof TextDecoder !== 'undefined' ? new TextDecoder
 // v6（阵盘）：v5 每只蛊后面再加 阵盘格 4 位（0–8，15 = 没摆）、速 8 位（0 = 按物种）。v1–v5 解出来按顺序自动摆进阵盘
 // v7（额度）：和 v6 一样，只是只数字段从 3 位改成 4 位（阵盘最多 9 只）
 // v8（数值放大十倍）：版本字段写 0 再跟 3 位扩展号（8 = 7 + 1），攻血各 12 位；v5–v7 的攻血是放大前的数，解出来乘 STAT_SCALE
+// v9（血统一口径）：扩展号 2，攻 12 位、血 14 位；v8 及以前的血是乘 HP_SCALE 之前的数，解出来再乘 HP_SCALE
 const OLD_W = { 1: { sp: 4, tr: 4, q: 3, st: 8, mk: 0, rk: 0 }, 2: { sp: 4, tr: 4, q: 3, st: 8, mk: 12, rk: 2 }, 3: { sp: 6, tr: 6, q: 4, st: 10, mk: 16, rk: 3 }, 4: { sp: 6, tr: 6, q: 4, st: 10, mk: 16, rk: 3, fl: 1 } };
-const W5 = { sp: 7, rk: 3, st: 10, fd: 6, xg: 6 }, ST8 = 12;
+const W5 = { sp: 7, rk: 3, st: 10, fd: 6, xg: 6 }, ST8 = 12, HP9 = 14;
 export function encodeTeam(team, meta = {}) {
   let bits = ''; const put = (v, n) => { bits += Math.max(0, Math.min(2 ** n - 1, Math.round(v) || 0)).toString(2).padStart(n, '0'); };
   const nm = Array.from(utf8((meta.name || '').slice(0, 8))).slice(0, 31);
-  put(0, 3); put(1, 3); put(meta.realm || 0, 3); put(Math.min(SLOTS, team.length), 4); put(nm.length, 5); nm.forEach(b => put(b, 8)); put(meta.trial ? 1 : 0, 1);
+  put(0, 3); put(2, 3); put(meta.realm || 0, 3); put(Math.min(SLOTS, team.length), 4); put(nm.length, 5); nm.forEach(b => put(b, 8)); put(meta.trial ? 1 : 0, 1);
   const xk = XING_KEYS();
   for (const g of team.slice(0, SLOTS)) {
-    put(SPI[g.sp], W5.sp); put(rankOf(g), W5.rk); put(g.atk, ST8); put(g.hp, ST8);
+    put(SPI[g.sp], W5.sp); put(rankOf(g), W5.rk); put(g.atk, ST8); put(g.hp, HP9);
     put(g.food && FDI[g.food] != null ? FDI[g.food] + 1 : 0, W5.fd); const xi = g.xing ? xk.indexOf(g.xing) : -1; put(xi + 1, W5.xg); put(g.boss ? 1 : 0, 1);
     const k = cellOf(g); put(k >= 0 && k <= 8 ? k : 15, 4); put(g.spd || 0, 8);
   }
@@ -365,14 +368,14 @@ export function decodeTeam(code) {
     const m = String(code).match(/[A-Za-z0-9_-]{8,}/); if (!m) return null;
     let bits = ''; for (const ch of m[0]) { const i = B64.indexOf(ch); if (i < 0) return null; bits += i.toString(2).padStart(6, '0'); }
     let p = 0; const get = n => { if (p + n > bits.length) throw 0; const v = parseInt(bits.slice(p, p + n), 2); p += n; return v; };
-    let ver = get(3); if (ver === 0) ver = 7 + get(3); if (ver < 1 || ver > 8) return null;
+    let ver = get(3); if (ver === 0) ver = 7 + get(3); if (ver < 1 || ver > 9) return null;
     const realm = get(3), n = get(ver >= 7 ? 4 : 3), nl = get(5), nm = []; for (let i = 0; i < nl; i++) nm.push(get(8));
     const team = []; let trial = false;
     if (ver >= 5) {
-      trial = !!get(1); const xk = XING_KEYS(), sw = ver >= 8 ? ST8 : W5.st, sx = ver >= 8 ? 1 : STAT_SCALE;
+      trial = !!get(1); const xk = XING_KEYS(), sw = ver >= 8 ? ST8 : W5.st, hw = ver >= 9 ? HP9 : sw, sx = ver >= 8 ? 1 : STAT_SCALE, hx = sx * (ver >= 9 ? 1 : HP_SCALE);
       for (let i = 0; i < n; i++) {
         const sp = SPECIES[get(W5.sp)]; if (!sp) return null;
-        const rank = Math.max(1, Math.min(6, get(W5.rk))), g = { uid: nuid(), sp: sp.id, rank, atk: Math.max(1, get(sw) * sx), hp: Math.max(1, get(sw) * sx), food: null, xing: null };
+        const rank = Math.max(1, Math.min(6, get(W5.rk))), g = { uid: nuid(), sp: sp.id, rank, atk: Math.max(1, get(sw) * sx), hp: Math.max(1, get(hw) * hx), food: null, xing: null };
         const fi = get(W5.fd); if (fi && FOODS[fi - 1]) g.food = FOODS[fi - 1].id; const xi = get(W5.xg); if (xi && xk[xi - 1]) g.xing = xk[xi - 1]; if (get(1)) g.boss = 1;
         if (ver >= 6) { const k = get(4); if (k <= 8) g.pos = cellPos(k); const sp2 = get(8); if (sp2) g.spd = sp2; }
         team.push(g);
