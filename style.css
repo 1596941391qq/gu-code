@@ -236,7 +236,7 @@ body:has(#tut-layer) .sheet-bg{z-index:1001}   /* 引导进行中打开的面板
 .slots.board::before{display:none}
 .slots.board .bcol{font:13px var(--kai);text-align:center;color:var(--mu);letter-spacing:.2em}.slots.board .bcol small{font-size:10px;letter-spacing:0;color:var(--zhu2)}
 .slots.board .gu{min-height:96px}.slots.board .gu .art{width:52%}
-/* 驱使不了的蛊（境界不够）：淡墨，出征前要收进蛊囊 */
+/* 驱使不了的蛊（境界不够）：淡墨，渡劫前要收进蛊囊 */
 .slots.board .gu.over{opacity:.5;filter:grayscale(.7);border-style:dashed}
 /* 选秘境：空窍上方一行，点开换秘境；额度用量在空窍标题右边 */
 .landbtn{display:grid;grid-template-columns:auto 1fr auto;grid-template-rows:auto auto;column-gap:10px;align-items:baseline;width:100%;text-align:left;padding:8px 10px;margin-bottom:10px;border:1px solid var(--line);border-radius:3px;background:var(--bg)}

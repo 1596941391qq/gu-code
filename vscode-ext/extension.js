@@ -77,7 +77,7 @@ function updateStatus() {
   let text;
   if (!st || !st.started) text = '$(bug) 蛊码';
   else {
-    const pct = st.where || '洞府';   // 出征状态：在洞府 / 秘境第 N 层
+    const pct = st.where || '洞府';   // 渡劫状态：在洞府 / 秘境第 N 层
     text = meter.rawRate > 0 ? `$(bug) ${fmt(meter.rawRate)}/s · ${pct}` : `$(bug) 静 · ${pct}`;
   }
   statusItem.text = text;
