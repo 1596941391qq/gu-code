@@ -2053,20 +2053,118 @@ const TRIP_NEW = ['road', 'revive', 'eff'];
 const lockedTrip = () => FOODS.filter(f => f.kind === 'trip' && TRIP_NEW.includes(f.trip)).map(f => f.id);
 
 // ---- src/timeline.js
-// 蛊码 GuCode · 成就道途（占位数据：5 条，内容专家交付后整份替换）。纯数据，不 import 任何文件。
-// 格式：TIMELINE[i] = { id, n 名, d 怎么达成（一句话）, need { 事件计数名: 次数 }, after 前置成就 id（可无）, unlock [{ k, id, n }] 解锁什么 }
-//   事件计数名：trips 出征次数、clears 秘境通关、realm 境界、merges 合成次数、combos 杀招成形种数、buys 买蛊次数、feeds 喂食次数
-//   unlock.k：'species' 新蛊进蛊市 | 'food' 新食物进蛊市 | 'trip' 新秘境 | 'feature' 新玩法
-// 成就本身不给数值，只解锁东西。
+// 蛊码 GuCode · 成就道途（第三版：50 个节点，入门 / 境界 / 出征 / 养蛊 / 杀招 / 劫数 / 挑战七组）。纯数据 + 两个纯函数，不 import 任何文件。由 tools/gen-timeline.mjs 生成，改道途改那边再跑一次。
+// 格式：TIMELINE[i] = { id, n 名, g 分组, d 怎么达成（一句话）, need { 事件计数名: 次数 }, after 前置节点 id（可无）, unlock [{ k, id, n }] 解锁什么 }
+// 成就本身不给数值，只解锁东西（design 第 4 节、2.7 节）。
+//
+// 事件计数名（metaEmit 的 k）：
+//   原有：trips 出征次数（打完回来就算）、realm 境界（set 取最大）、merges 合成次数、combos 杀招成形过的种数、buys 买蛊次数、feeds 喂食次数
+//   clears 秘境通关次数：每通关一次都 +1（哪个秘境、第几劫都算，不只渡劫那一次）——请改用下面的 clearEvents，别只在渡劫时加
+//   以下都在通关时由 clearEvents 算出来（set 取最大，值 = 这次通关的秘境额度）：
+//     r1q 出场全是一转 · r2q 出场全是一转二转 · no5q 没有五转和仙蛊 · few3q 出场不超过 3 只 · monoq 出场全属同一道
+//     flawq 一只都没倒下 · nocomboq 一个杀招都没成形
+//   d_<道 id>（+1）这次通关的主力道（出场只数最多的道，并列都算）；daos（set）当过主力通关的道一共几个
+//   kalpa（set）通关过的最高劫数（任意秘境）
+// unlock.k：'species' 新蛊进蛊市（仙蛊 = 仙茧里才可能开出它）| 'food' 新食物进蛊市 | 'combo' 杀招能成形 | 'trip' 新秘境 | 'feature' 新玩法（kalpa = 劫数）
+//   锁住的杀招在蛊典里照样能看到配方线索，只是凑齐了也不成形，界面写「道途解锁」。
 const TIMELINE = [
-  { id: 'first_trip', n: '初入秘境', d: '第一次出征', need: { trips: 1 }, unlock: [{ k: 'food', id: 'tea', n: '回春茶' }] },
-  { id: 'first_merge', n: '三蛊归一', d: '第一次合成', need: { merges: 1 }, unlock: [{ k: 'species', id: 'cicada', n: '金蝉蛊' }] },
-  { id: 'first_combo', n: '杀招初成', d: '第一次让杀招成形', need: { combos: 1 }, after: 'first_merge', unlock: [{ k: 'food', id: 'egg', n: '孵蛊卵' }] },
-  { id: 'feeder', n: '养蛊人', d: '喂食 5 次', need: { feeds: 5 }, unlock: [{ k: 'food', id: 'map', n: '寻宝图' }] },
-  { id: 'realm1', n: '一转蛊师', d: '渡劫成功一次', need: { realm: 1 }, after: 'first_trip', unlock: [{ k: 'species', id: 'drum', n: '战鼓蛊' }] },
+  { id: 'first_buy', n: '开张', g: '入门', d: '在蛊市买下第一只蛊', need: { buys: 1 }, unlock: [{ k: 'species', id: 'jingzhe', n: '惊蛰蛊' }, { k: 'food', id: 'tea', n: '回春茶' }] },
+  { id: 'first_trip', n: '初入秘境', g: '入门', d: '第一次出征（打完回来就算，输了也算）', need: { trips: 1 }, unlock: [{ k: 'species', id: 'snowflea', n: '雪蚤蛊' }, { k: 'species', id: 'will', n: '鬼火蛊' }] },
+  { id: 'first_merge', n: '三蛊归一', g: '入门', d: '第一次把三只同种同转的蛊合成一只', need: { merges: 1 }, unlock: [{ k: 'species', id: 'tick', n: '蜱蛊' }, { k: 'species', id: 'bloodant', n: '血蚁蛊' }] },
+  { id: 'first_combo', n: '杀招初成', g: '入门', d: '第一次让一个杀招成形', need: { combos: 1 }, after: 'first_merge', unlock: [{ k: 'species', id: 'jiuchong', n: '酒虫' }, { k: 'food', id: 'egg', n: '孵蛊卵' }] },
+  { id: 'feeder', n: '养蛊人', g: '入门', d: '喂食 5 次（挂件、出征用的也算）', need: { feeds: 5 }, unlock: [{ k: 'food', id: 'map', n: '寻路图' }] },
+  { id: 'buyer10', n: '蛊市熟客', g: '入门', d: '买蛊 10 次', need: { buys: 10 }, after: 'first_buy', unlock: [{ k: 'species', id: 'strider', n: '水黾蛊' }, { k: 'food', id: 'yuelan', n: '月兰花瓣' }] },
+  { id: 'realm1', n: '一转蛊师', g: '境界', d: '渡劫成功一次（打赢本境界任一秘境最深处的首领）', need: { realm: 1 }, after: 'first_trip', unlock: [{ k: 'species', id: 'wasp', n: '胡蜂蛊' }, { k: 'species', id: 'spider', n: '蛛母蛊' }, { k: 'species', id: 'qingfu', n: '青蚨蛊' }, { k: 'species', id: 'bomb', n: '爆囊蛊' }] },
+  { id: 'realm2', n: '二转蛊师', g: '境界', d: '境界到二转', need: { realm: 2 }, after: 'realm1', unlock: [{ k: 'species', id: 'qant', n: '蚁后蛊' }, { k: 'species', id: 'flea', n: '跳蚤蛊' }, { k: 'species', id: 'bfly', n: '比翼蛊' }, { k: 'species', id: 'sleep', n: '眠虫蛊' }] },
+  { id: 'realm3', n: '三转蛊师', g: '境界', d: '境界到三转', need: { realm: 3 }, after: 'realm2', unlock: [{ k: 'species', id: 'mirror', n: '镜甲蛊' }, { k: 'species', id: 'hive', n: '蜂巢蛊' }, { k: 'species', id: 'fly', n: '尸蝇蛊' }, { k: 'species', id: 'bury', n: '葬甲蛊' }] },
+  { id: 'realm4', n: '四转蛊师', g: '境界', d: '境界到四转', need: { realm: 4 }, after: 'realm3', unlock: [{ k: 'species', id: 'xiongli', n: '熊力蛊' }, { k: 'species', id: 'magma', n: '熔岩蛊' }, { k: 'species', id: 'hail', n: '雹甲蛊' }, { k: 'species', id: 'cordy', n: '虫草蛊' }] },
+  { id: 'realm5', n: '五转蛊师', g: '境界', d: '境界到五转', need: { realm: 5 }, after: 'realm4', unlock: [{ k: 'species', id: 'thunder', n: '雷甲蛊' }, { k: 'species', id: 'tortoise', n: '玄龟蛊' }, { k: 'species', id: 'puppet', n: '傀儡蛛' }, { k: 'species', id: 'hairworm', n: '铁线蛊' }] },
+  { id: 'trips3', n: '三进三出', g: '出征', d: '出征 3 次', need: { trips: 3 }, after: 'first_trip', unlock: [{ k: 'species', id: 'silk', n: '蚕茧蛊' }, { k: 'species', id: 'mosq', n: '赤蚊蛊' }] },
+  { id: 'trips6', n: '常走秘境', g: '出征', d: '出征 6 次', need: { trips: 6 }, after: 'trips3', unlock: [{ k: 'species', id: 'click', n: '叩甲蛊' }, { k: 'species', id: 'sheli', n: '舍利蛊' }, { k: 'species', id: 'bat', n: '夜蝠蛊' }] },
+  { id: 'trips10', n: '十进秘境', g: '出征', d: '出征 10 次', need: { trips: 10 }, after: 'trips6', unlock: [{ k: 'species', id: 'cloud', n: '积云蛊' }, { k: 'species', id: 'shine', n: '照夜蛊' }, { k: 'species', id: 'amber', n: '血珀蛊' }, { k: 'species', id: 'ring', n: '年轮蛊' }] },
+  { id: 'trips15', n: '识途老蛊', g: '出征', d: '出征 15 次', need: { trips: 15 }, after: 'trips10', unlock: [{ k: 'species', id: 'xueyue', n: '血月蛊' }, { k: 'species', id: 'widow', n: '寡妇蛛' }, { k: 'species', id: 'blink', n: '瞬移蛊' }] },
+  { id: 'trips20', n: '踏遍山河', g: '出征', d: '出征 20 次', need: { trips: 20 }, after: 'trips15', unlock: [{ k: 'species', id: 'orchid', n: '兰螳蛊' }, { k: 'species', id: 'taisui', n: '太岁蛊' }, { k: 'species', id: 'yue', n: '镇岳蛊' }, { k: 'species', id: 'jinchan', n: '金蟾蛊' }] },
+  { id: 'clears2', n: '再下一城', g: '出征', d: '通关秘境 2 次（打赢最深处的首领，哪个秘境、第几劫都算）', need: { clears: 2 }, after: 'realm1', unlock: [{ k: 'species', id: 'stag', n: '锹甲蛊' }, { k: 'species', id: 'glut', n: '饕虫蛊' }, { k: 'species', id: 'toad', n: '毒蟾蛊' }] },
+  { id: 'clears4', n: '连破四关', g: '出征', d: '通关秘境 4 次', need: { clears: 4 }, after: 'clears2', unlock: [{ k: 'species', id: 'flint', n: '燧石蛊' }, { k: 'species', id: 'coldcicada', n: '寒蝉蛊' }, { k: 'species', id: 'baiyu', n: '白玉蛊' }] },
+  { id: 'clears6', n: '六关在握', g: '出征', d: '通关秘境 6 次', need: { clears: 6 }, after: 'clears4', unlock: [{ k: 'species', id: 'moveshan', n: '搬山蛊' }, { k: 'species', id: 'magstorm', n: '磁暴蛊' }, { k: 'species', id: 'eclipse', n: '月蚀蛊' }] },
+  { id: 'clears8', n: '八方来朝', g: '出征', d: '通关秘境 8 次', need: { clears: 8 }, after: 'clears6', unlock: [{ k: 'species', id: 'urn', n: '瓮王蛊' }, { k: 'species', id: 'hex', n: '魇蛾蛊' }, { k: 'species', id: 'saw', n: '天牛蛊' }, { k: 'species', id: 'dfly', n: '霆蜓蛊' }] },
+  { id: 'clears10', n: '十关无阻', g: '出征', d: '通关秘境 10 次', need: { clears: 10 }, after: 'clears8', unlock: [{ k: 'food', id: 'xuming', n: '续命汤' }, { k: 'food', id: 'dinghun', n: '定魂香' }] },
+  { id: 'merges5', n: '合蛊五次', g: '养蛊', d: '合成 5 次', need: { merges: 5 }, after: 'first_merge', unlock: [{ k: 'species', id: 'rhino', n: '犀角蛊' }, { k: 'species', id: 'gold', n: '金龟蛊' }] },
+  { id: 'merges12', n: '炼蛊有成', g: '养蛊', d: '合成 12 次', need: { merges: 12 }, after: 'merges5', unlock: [{ k: 'species', id: 'pyre', n: '焚翅蛊' }, { k: 'species', id: 'icesnail', n: '冰蜗蛊' }, { k: 'species', id: 'lockarm', n: '锁甲蛊' }] },
+  { id: 'merges25', n: '炼蛊大家', g: '养蛊', d: '合成 25 次', need: { merges: 25 }, after: 'merges12', unlock: [{ k: 'species', id: 'frost', n: '霜蛉蛊' }, { k: 'species', id: 'lure', n: '迷蝶蛊' }, { k: 'species', id: 'antlion', n: '蚁狮蛊' }, { k: 'species', id: 'mayfly', n: '蜉蝣蛊' }] },
+  { id: 'merges40', n: '千炼成器', g: '养蛊', d: '合成 40 次', need: { merges: 40 }, after: 'merges25', unlock: [{ k: 'species', id: 'glacier', n: '玄冰蛊' }, { k: 'species', id: 'fusang', n: '扶桑蛊' }, { k: 'species', id: 'solar', n: '曜日蛊' }] },
+  { id: 'feeds12', n: '投喂有方', g: '养蛊', d: '喂食 12 次', need: { feeds: 12 }, after: 'feeder', unlock: [{ k: 'food', id: 'duzhen', n: '毒针囊' }, { k: 'food', id: 'huorong', n: '火绒草' }] },
+  { id: 'feeds20', n: '百味蛊厨', g: '养蛊', d: '喂食 20 次', need: { feeds: 20 }, after: 'feeds12', unlock: [{ k: 'food', id: 'bingpo', n: '冰魄珠' }, { k: 'food', id: 'yeming', n: '夜明砂' }, { k: 'food', id: 'xuelian', n: '血莲子' }] },
+  { id: 'feeds30', n: '食谱齐全', g: '养蛊', d: '喂食 30 次', need: { feeds: 30 }, after: 'feeds20', unlock: [{ k: 'food', id: 'taoya', n: '饕餮牙' }, { k: 'food', id: 'shanjiao', n: '撞山角' }, { k: 'food', id: 'jifeng', n: '疾风翎' }] },
+  { id: 'buys30', n: '常客', g: '养蛊', d: '买蛊 30 次', need: { buys: 30 }, after: 'buyer10', unlock: [{ k: 'species', id: 'cricket', n: '促织蛊' }, { k: 'species', id: 'locust', n: '蝗群蛊' }, { k: 'species', id: 'char', n: '炭甲蛊' }] },
+  { id: 'buys60', n: '蛊市贵客', g: '养蛊', d: '买蛊 60 次', need: { buys: 60 }, after: 'buys30', unlock: [{ k: 'food', id: 'huotan', n: '火炭心' }, { k: 'food', id: 'lingzhi', n: '灵芝片' }, { k: 'food', id: 'leizao', n: '雷击枣' }] },
+  { id: 'combos3', n: '三招在手', g: '杀招', d: '让 3 种不同的杀招成形过', need: { combos: 3 }, after: 'first_combo', unlock: [{ k: 'species', id: 'vine', n: '藤蔓蛊' }, { k: 'species', id: 'earthworm', n: '地龙蛊' }] },
+  { id: 'combos6', n: '推演进阶', g: '杀招', d: '让 6 种不同的杀招成形过', need: { combos: 6 }, after: 'combos3', unlock: [{ k: 'species', id: 'diting', n: '地听肉耳草' }, { k: 'species', id: 'hourglass', n: '沙漏蛊' }, { k: 'combo', id: 'sanzhu2', n: '焚原三豕' }] },
+  { id: 'combos10', n: '十招融会', g: '杀招', d: '让 10 种不同的杀招成形过', need: { combos: 10 }, after: 'combos6', unlock: [{ k: 'combo', id: 'jinjia2', n: '万钧金身' }, { k: 'combo', id: 'pojian2', n: '化蝶三生' }, { k: 'food', id: 'zhujiu', n: '青竹酒' }] },
+  { id: 'combos15', n: '招中有招', g: '杀招', d: '让 15 种不同的杀招成形过', need: { combos: 15 }, after: 'combos10', unlock: [{ k: 'combo', id: 'leigu2', n: '雷霆万钧' }] },
+  { id: 'combos20', n: '万法归宗', g: '杀招', d: '让 20 种不同的杀招成形过', need: { combos: 20 }, after: 'combos15', unlock: [{ k: 'species', id: 'styx', n: '冥蝶蛊' }, { k: 'species', id: 'boneflute', n: '骨笛蛊' }, { k: 'species', id: 'instant', n: '刹那蛊' }, { k: 'combo', id: 'bingfeng2', n: '冰火同炉' }] },
+  { id: 'kalpa_open', n: '渡劫之后', g: '劫数', d: '通关任意一个秘境，打开劫数', need: { clears: 1 }, unlock: [{ k: 'feature', id: 'kalpa', n: '劫数' }] },
+  { id: 'kalpa1', n: '初历一劫', g: '劫数', d: '通关任意秘境的劫一', need: { kalpa: 1 }, after: 'kalpa_open', unlock: [{ k: 'food', id: 'jingleifu', n: '惊雷符' }, { k: 'food', id: 'fengxingfu', n: '风行符' }] },
+  { id: 'kalpa3', n: '三劫不死', g: '劫数', d: '通关任意秘境的劫三', need: { kalpa: 3 }, after: 'kalpa1', unlock: [{ k: 'species', id: 'nirvana', n: '涅火蛾' }, { k: 'combo', id: 'suanwu2', n: '算尽天机' }] },
+  { id: 'kalpa5', n: '五劫加身', g: '劫数', d: '通关任意秘境的劫五', need: { kalpa: 5 }, after: 'kalpa3', unlock: [{ k: 'species', id: 'guangyin', n: '春秋蝉' }, { k: 'food', id: 'guangyinxiang', n: '光阴香' }, { k: 'food', id: 'houtufu', n: '厚土符' }] },
+  { id: 'kalpa7', n: '七劫过尽', g: '劫数', d: '通关任意秘境的劫七', need: { kalpa: 7 }, after: 'kalpa5', unlock: [{ k: 'species', id: 'fate', n: '织命蛛' }] },
+  { id: 'kalpa10', n: '十劫圆满', g: '劫数', d: '通关任意秘境的劫十', need: { kalpa: 10 }, after: 'kalpa7', unlock: [{ k: 'species', id: 'jiuxiao', n: '九霄蛊' }, { k: 'combo', id: 'zhichi2', n: '神游万里' }] },
+  { id: 'ch_r1q7', n: '一转亦能', g: '挑战', d: '只用一转蛊，通关额度 7 及以上的秘境', need: { r1q: 7 }, after: 'realm1', unlock: [{ k: 'species', id: 'qingtian', n: '擎天蛊' }] },
+  { id: 'ch_r2q10', n: '低转为本', g: '挑战', d: '只用一转、二转蛊，通关额度 10 及以上的秘境', need: { r2q: 10 }, after: 'realm2', unlock: [{ k: 'combo', id: 'baiyi2', n: '火蚁燎原' }] },
+  { id: 'ch_no5q14', n: '不仗高转', g: '挑战', d: '不带五转和仙蛊，通关额度 14 及以上的秘境', need: { no5q: 14 }, after: 'realm3', unlock: [{ k: 'species', id: 'dingxian', n: '定仙游' }, { k: 'combo', id: 'yiri2', n: '一梦千秋' }] },
+  { id: 'ch_few3', n: '三蛊破阵', g: '挑战', d: '出场不超过 3 只，通关额度 10 及以上的秘境', need: { few3q: 10 }, after: 'realm2', unlock: [{ k: 'species', id: 'chiba', n: '赤魃蛊' }] },
+  { id: 'ch_mono', n: '一道到底', g: '挑战', d: '出场的蛊全属同一道，通关额度 10 及以上的秘境', need: { monoq: 10 }, after: 'realm2', unlock: [{ k: 'trip', id: 'maigu', n: '埋骨荒原' }, { k: 'combo', id: 'wudu2', n: '万毒归宗' }] },
+  { id: 'ch_flawless', n: '全身而退', g: '挑战', d: '一只蛊都没倒下，通关额度 14 及以上的秘境', need: { flawq: 14 }, after: 'realm3', unlock: [{ k: 'combo', id: 'richu2', n: '凤栖扶桑' }] },
+  { id: 'ch_nocombo', n: '不靠杀招', g: '挑战', d: '一个杀招都没成形，通关额度 10 及以上的秘境', need: { nocomboq: 10 }, after: 'realm2', unlock: [{ k: 'combo', id: 'xuanwu2', n: '玄武负山' }] },
+  { id: 'ch_daos4', n: '四道皆通', g: '挑战', d: '用 4 个不同的道当主力各通关一次（主力 = 出场只数最多的道，并列都算）', need: { daos: 4 }, after: 'clears2', unlock: [{ k: 'combo', id: 'jiutian2', n: '九霄雷劫' }, { k: 'trip', id: 'tianting', n: '天庭' }] },
+  { id: 'ch_daos16', n: '十六道归一', g: '挑战', d: '十六个道都当过一次主力通关', need: { d_li: 1, d_yan: 1, d_bing: 1, d_jin: 1, d_mu: 1, d_tu: 1, d_lei: 1, d_guang: 1, d_an: 1, d_xue: 1, d_du: 1, d_zhi: 1, d_hun: 1, d_nu: 1, d_yu: 1, d_zhou: 1 }, after: 'ch_daos4', unlock: [{ k: 'species', id: 'zhihui', n: '智慧蛊' }] },
 ];
-// 一开始就锁着、要靠道途解锁的东西（不在这里的物种、食物默认可用）
-const LOCKED = { species: ['cicada', 'drum'], food: ['tea', 'egg', 'map'], trip: [], feature: [] };
+// 一开始就锁着、要靠道途解锁的东西（不在这里的默认可用）。开局能买的蛊 34 种：
+//   boar tiger fire fireant snowsilk iron yupi thorn stick shengji dung stonecase static firefly yueguang ink leech hairy cent webspider bone twin ant aphid inch asahi mantis queen cicada mole gecko scorp drum moth
+const LOCKED = {
+  species: [
+    'wasp', 'spider', 'qingfu', 'bomb', 'silk', 'mosq', 'rhino', 'gold', 'qant', 'flea', 'bfly', 'sleep',
+    'stag', 'glut', 'toad', 'cricket', 'locust', 'mirror', 'hive', 'fly', 'bury', 'frost', 'lure', 'antlion',
+    'mayfly', 'thunder', 'tortoise', 'puppet', 'hairworm', 'urn', 'hex', 'saw', 'dfly', 'orchid', 'taisui', 'yue',
+    'jinchan', 'guangyin', 'fate', 'nirvana', 'xiongli', 'qingtian', 'pyre', 'char', 'flint', 'magma', 'snowflea', 'icesnail',
+    'coldcicada', 'hail', 'glacier', 'lockarm', 'baiyu', 'vine', 'cordy', 'fusang', 'earthworm', 'moveshan', 'jingzhe', 'click',
+    'cloud', 'magstorm', 'jiuxiao', 'sheli', 'shine', 'solar', 'bat', 'eclipse', 'styx', 'tick', 'bloodant', 'amber',
+    'xueyue', 'chiba', 'widow', 'jiuchong', 'diting', 'zhihui', 'will', 'boneflute', 'strider', 'blink', 'dingxian', 'hourglass',
+    'ring', 'instant',
+  ],
+  food: ['egg', 'tea', 'map', 'yuelan', 'zhujiu', 'huotan', 'lingzhi', 'leizao', 'duzhen', 'huorong', 'bingpo', 'yeming', 'taoya', 'shanjiao', 'xuelian', 'jifeng', 'xuming', 'dinghun', 'jingleifu', 'guangyinxiang', 'houtufu', 'fengxingfu'],
+  combo: ['sanzhu2', 'jinjia2', 'pojian2', 'xuanwu2', 'leigu2', 'jiutian2', 'wudu2', 'bingfeng2', 'baiyi2', 'suanwu2', 'richu2', 'zhichi2', 'yiri2'],
+  trip: ['maigu', 'tianting'],
+  feature: ['kalpa'],
+};
+const STARTERS = ['boar', 'tiger', 'fire', 'fireant', 'snowsilk', 'iron', 'yupi', 'thorn', 'stick', 'shengji', 'dung', 'stonecase', 'static', 'firefly', 'yueguang', 'ink', 'leech', 'hairy', 'cent', 'webspider', 'bone', 'twin', 'ant', 'aphid', 'inch', 'asahi', 'mantis', 'queen', 'cicada', 'mole', 'gecko', 'scorp', 'drum', 'moth'];
+
+// 劫数（design 2.7）：通关一个秘境开它的劫一；劫 N 通关开劫 N+1，最高劫十。要先点亮「渡劫之后」解锁 kalpa 玩法。
+// 每个秘境打到第几劫由秘境一侧记在存档里（best = 这个秘境通关过的最高劫，普通难度通关记 0，没通关过记 -1）。
+const KALPA = { max: 10, feature: 'kalpa' };
+const kalpaOpen = best => (best == null || best < 0 ? 0 : Math.min(KALPA.max, (best | 0) + 1));   // 这个秘境现在最高能选第几劫（0 = 只有普通难度）
+
+// 秘境通关时要发的道途事件。info = { quota 秘境额度, ranks [出场蛊转数，仙蛊记 6], daos [出场蛊的道], fallen 这一趟倒下几只（救回的也算）,
+//   combos 这一趟成形过的杀招数, kalpa 这次打的第几劫（普通 0）, cnt 道途现有计数 M.cnt }
+// 返回 [[计数名, 数, set], …]，按顺序 metaEmit(M, k, n, { set }) 即可（召唤物不算出场蛊）。
+function clearEvents(info = {}) {
+  const q = info.quota | 0, rk = info.ranks || [], ds = info.daos || [], cnt = info.cnt || {}, ev = [['clears', 1, false]];
+  if (rk.length) {
+    if (rk.every(r => r <= 1)) ev.push(['r1q', q, true]);
+    if (rk.every(r => r <= 2)) ev.push(['r2q', q, true]);
+    if (rk.every(r => r < 5)) ev.push(['no5q', q, true]);
+    if (rk.length <= 3) ev.push(['few3q', q, true]);
+  }
+  if (ds.length && ds.every(d => d === ds[0])) ev.push(['monoq', q, true]);
+  if (!(info.fallen > 0)) ev.push(['flawq', q, true]);
+  if (!(info.combos > 0)) ev.push(['nocomboq', q, true]);
+  const by = {}; ds.forEach(d => { by[d] = (by[d] || 0) + 1; }); const top = Math.max(0, ...Object.values(by)), main = Object.keys(by).filter(d => by[d] === top);
+  main.forEach(d => ev.push(['d_' + d, 1, false]));
+  const had = new Set(Object.keys(cnt).filter(k => /^d_/.test(k) && cnt[k] > 0)); main.forEach(d => had.add('d_' + d));
+  ev.push(['daos', had.size, true]);
+  if (info.kalpa > 0) ev.push(['kalpa', info.kalpa | 0, true]);
+  return ev;
+}
 
 // ---- src/core.js
 // 蛊码 GuCode · 纯逻辑：种子随机、数据表、洞府养成（蛊市、合成、食物、道、杀招）、坐标码。不碰 DOM。规则见 docs/design.md
@@ -2208,6 +2306,10 @@ COMBOS.push(...NEW_COMBOS);   // 新杀招都是两蛊配方，排在旧配方�
 // 杀招第二版（combos2.js：核心蛊、时机、声明式效果、进阶）整表替换上面的旧配方；配方里有还不存在的物种的先跳过
 const COMBOS_SKIPPED = COMBOS2.filter(c => !c.need.every(x => SP[x])).map(c => c.id);
 COMBOS.length = 0; COMBOS.push(...COMBOS2.filter(c => c.need.every(x => SP[x])));
+// 道途锁住的杀招（进阶杀招要靠道途解锁）：COMBOS 只放能成形的，COMBOS_ALL 是全表（蛊典照样列出、写「道途解锁」）。
+// setComboLocks(on) 按 on(id) 重排 COMBOS；战斗引擎和 synergyOf 读的是 COMBOS。切磋和复盘前设成全开，结果和对方看到的一样
+const COMBOS_ALL = COMBOS.slice();
+function setComboLocks(on = () => true) { COMBOS.length = 0; COMBOS.push(...COMBOS_ALL.filter(c => on(c.id))); }
 const COMBO = Object.fromEntries(COMBOS.map(c => [c.id, c]));
 
 let UIDN = 1;
@@ -6006,6 +6108,7 @@ TRIP.feed = (S, tok) => {
 
 
 
+
 const KEY = 'gucode.v1';
 const $ = (s, r = document) => r.querySelector(s);
 const el = html => { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstElementChild; };
@@ -6083,7 +6186,7 @@ const TXT = {
   comboFirst: c => `杀招成形 · ${c.n}`,
   comboLines: (c, g) => [`${c.need.map(x => SP[x].n).join(' + ')} 同时在空窍，杀招自动成形`, `挂在${SP[g.sp].n}身上：${c.d}`, '蛊卡上的朱印就是它，悬停能看配方和效果'],
   achFirst: a => `道途 · ${a.n}`,
-  achLines: a => [a.d + '：达成', ...(a.unlock || []).map(u => `解锁${{ species: '新蛊', food: '新食物', trip: '新秘境', feature: '新玩法' }[u.k] || ''}：${u.n}`)],
+  achLines: a => [a.d + '：达成', ...(a.unlock || []).map(u => `解锁${{ species: '新蛊', food: '新食物', combo: '进阶杀招', trip: '新秘境', feature: '新玩法' }[u.k] || ''}：${u.n}`)],
   trial: '试玩',
   trialShare: '这是网页试玩存档（模拟元气养的蛊），坐标码、分享卡、战帖和复盘都会标「试玩」。装 VS Code 插件、用真实 token 养的蛊不带这个标。',
   trialFoe: '对方是试玩存档（网页模拟元气养的蛊，不是真实 token 养出来的）',
@@ -6213,13 +6316,17 @@ async function bigRun() {
 // 原地反馈：洞府战报加一行（留最近 5 行）
 function note(txt) { const l = S.hlog || (S.hlog = []); l.push(txt); if (l.length > 5) l.splice(0, l.length - 5); renderLog(); }
 function renderLog() { const b = $('#hlog'); if (b) setHTML(b, (S.hlog || []).map((t, i, a) => `<li${i === a.length - 1 ? ' class="new"' : ''}>${esc(t)}</li>`).join('')); }
-function achieve(k, n, o) { metaEmit(M(), k, n, o).forEach(a => big('ach', TXT.achFirst(a), TXT.achLines(a))); }
+function achieve(k, n, o) { const got = metaEmit(M(), k, n, o); got.forEach(a => big('ach', TXT.achFirst(a), TXT.achLines(a))); if (got.length) applyLocks(); }
+// 道途锁住的进阶杀招不成形（秘境里按自己的道途）；切磋、复盘一律全开，同一个坐标码谁算都一样
+const applyLocks = () => setComboLocks(id => unlocked(id, 'combo'));
+const allCombos = f => { setComboLocks(); try { return f(); } finally { applyLocks(); } };
 
 // ---------- 渲染 ----------
 // 出征用食物里秘境一侧还没接好的几种（寻路图、定魂香、各种符）：先不上架，界面写明「秘境里才能用，下个版本开放」
 let notYetSet; const notYet = id => (notYetSet || (notYetSet = new Set(lockedTrip()))).has(id);
 const unlocked = (id, k) => !(k === 'food' && notYet(id)) && isUnlocked(M(), id, k);
 function renderAll() {
+  applyLocks();
   const app = $('#app'); if (!app) return;
   app.innerHTML = S.started ? mainHTML() : startHTML();
   if (S.started) { renderHome(); meters(); if (tripOn() && TRIP.render) TRIP.render(TRIP.api); }
@@ -6387,7 +6494,8 @@ const LANDS0 = () => lands0 || (lands0 = QUOTA.flatMap((q, r) => LAND_NAMES[r].s
 })));
 const lands = () => (TRIP.lands && TRIP.lands.length ? TRIP.lands : LANDS0());
 const landById = id => lands().find(l => l.id === id);
-const curLand = () => { const l = landById(S.land); return l && l.realm <= S.realm ? l : lands().find(x => x.realm === S.realm) || lands()[0]; };
+const landOpen = l => l.realm <= S.realm && unlocked(l.id, 'trip');
+const curLand = () => { const l = landById(S.land); return l && landOpen(l) ? l : lands().find(x => x.realm === S.realm && landOpen(x)) || lands().find(landOpen) || lands()[0]; };
 const bossOf = l => (l.boss || []).map(b => (b.atk ? b : { ...newGu(b.sp, b.rank), ...b }));
 // 出征前的检查：空窍不能空、转数总和不超过额度、每只都在驱使上限内。返回原因（能出征时返回空）
 function goWhy(land = curLand()) {
@@ -6398,7 +6506,7 @@ function goWhy(land = curLand()) {
 }
 function landCard(l, lock) {
   const on = !lock && l.id === curLand().id, boss = bossOf(l);
-  return `<div class="land${on ? ' on' : ''}${lock ? ' lock' : ''}"><div class="lh"><b>${esc(l.n)}</b><small>${esc(TXT.landLine(l))}</small></div>${l.d ? `<p class="sm">${esc(l.d)}</p>` : ''}
+  return `<div class="land${on ? ' on' : ''}${lock ? ' lock' : ''}"><div class="lh"><b>${esc(l.n)}</b><small>${esc(TXT.landLine(l))}${l.realm <= S.realm && !unlocked(l.id, 'trip') ? ' · 道途解锁' : ''}</small></div>${l.d ? `<p class="sm">${esc(l.d)}</p>` : ''}
   <details><summary>首领阵容 · ${boss.length} 只，转数共 ${quotaOf(boss)}</summary>${miniRow(boss)}</details>
   ${lock ? '' : `<button class="${on ? '' : 'zhu'}" data-act="land" data-id="${esc(l.id)}"${on ? ' disabled' : ''}>${on ? '已选' : '选这个'}</button>`}</div>`;
 }
@@ -6406,7 +6514,7 @@ function openLands() {
   const all = lands(), top = Math.min(5, S.realm + 1);
   sheet(`<h3>${TXT.landsHead}</h3><p class="sm">${esc(TXT.landsSub)}</p>${REALMS.slice(0, top + 1).map((rn, r) => {
     const ls = all.filter(l => l.realm === r), lock = r > S.realm; if (!ls.length) return '';
-    return `<h4>${rn} · 额度 ${ls[0].quota}${lock ? ` <small>${esc(TXT.landLock)}</small>` : ''}</h4>${ls.map(l => landCard(l, lock)).join('')}`;
+    return `<h4>${rn} · 额度 ${ls[0].quota}${lock ? ` <small>${esc(TXT.landLock)}</small>` : ''}</h4>${ls.map(l => landCard(l, lock || !unlocked(l.id, 'trip'))).join('')}`;
   }).join('')}`, 'lands');
 }
 // ---------- 出征（秘境由另一侧实现，见 hooks.js）----------
@@ -6416,6 +6524,7 @@ function goSheet() {
 }
 function onTripEnd(result = {}) {
   const dead = new Set(result.dead || []), loot = result.loot || {}, land = landById(S.trip && S.trip.land);
+  const went = S.team.slice(), end = (S.trip && S.trip.end) || {};
   const lost = S.team.filter(g => dead.has(g.uid));
   S.team = S.team.filter(g => !dead.has(g.uid));
   lost.forEach(g => note(`${rankName(g)} 倒在了秘境里`));
@@ -6426,7 +6535,9 @@ function onTripEnd(result = {}) {
   } else note('全灭：这次的战利品全部丢失');
   S.trip = null; S.tripFood = [];
   achieve('trips', 1);
-  if (result.cleared && (!land || land.realm === S.realm) && S.realm < 5) { S.realm++; S.land = (lands().find(l => l.realm === S.realm) || {}).id || S.land; big('trib', TXT.trib(S.realm), TXT.tribLines(S.realm)); achieve('realm', S.realm, { set: true }); achieve('clears', 1); }
+  if (result.cleared) clearEvents({ quota: land ? land.quota : 0, ranks: went.map(g => (SP[g.sp] && SP[g.sp].immortal ? 6 : rankOf(g))), daos: went.map(g => daoOf(g.sp)),
+    fallen: dead.size + (end.saved || []).length, combos: synOf(went).combos.length, kalpa: result.kalpa || end.kalpa || 0, cnt: M().cnt }).forEach(([k, n, set]) => achieve(k, n, { set }));
+  if (result.cleared && (!land || land.realm === S.realm) && S.realm < 5) { S.realm++; S.land = (lands().find(l => l.realm === S.realm) || {}).id || S.land; big('trib', TXT.trib(S.realm), TXT.tribLines(S.realm)); achieve('realm', S.realm, { set: true }); }
   rollCompass(); S.shop = S.shop.filter(w => w.frozen && !w.sold);
   renderAll(); save(); floorCheck();
 }
@@ -6621,7 +6732,7 @@ function spar(kind, foe) {
   const ca = encodeTeam(mine, { name: S.name || '无名蛊师', realm: S.realm, trial: S.trial }), cb = encodeTeam(foe.team, { name: foe.name, realm: foe.realm || S.realm, trial: !!foe.trial });
   const seed = kind === 'duel' ? (hashStr(ca + '|' + cb) >>> 0).toString(36) : ((S.seed ^ Math.imul(++S.step, 2654435761)) >>> 0).toString(36);
   const A = decodeTeam(ca), Bt = decodeTeam(cb), sota = { A: sotaOn(), B: false };
-  const res = battle(placed(A.team), placed(Bt.team), 'r:' + seed, { sota });
+  const res = allCombos(() => battle(placed(A.team), placed(Bt.team), 'r:' + seed, { sota }));
   save(); playBattle({ kind, title: (kind === 'duel' ? '战帖 · ' : '幽灵 · ') + (foe.name || '无名'), res, A, B: Bt, sota, replay: [ca, cb, seed, kind[0], 's' + sotaFlag(sota)].join('.') });
 }
 // 斗幽灵：先挑几点场，再从三个幽灵里挑一个。幽灵阵容用秘境一侧的按额度出敌（满额度，和玩家同口径）
@@ -6709,28 +6820,31 @@ function closeSheet() { const a = document.querySelectorAll('.sheet-bg'); if (a.
 function miniRow(t) { return `<div class="mini">${t.map(g => `<div class="mg${g.boss ? ' boss' : ''}"><span class="art">${guSVG(g.sp, { rank: rankOf(g) })}</span><span class="rk rk${rankOf(g)}">${RANK.ch[rankOf(g)]}</span><b>${SP[g.sp] ? SP[g.sp].n : ''}</b><span class="st"><i class="a">${g.atk}</i><i class="h">${g.hp}</i></span></div>`).join('')}</div>`; }
 function guDetail(g, ctx = {}) {
   const s = SP[g.sp], nat = natOfG(g), team = ctx.kind === 'team' ? S.team : null, i = ctx.i | 0, c = team ? combosBy(team)[i] : null, f = g.food && FOOD[g.food];
-  const recipes = COMBOS.filter(x => x.need.includes(g.sp));
+  const recipes = COMBOS_ALL.filter(x => x.need.includes(g.sp));
   sheet(`<div class="detail"><div class="dart">${guSVG(g.sp, { rank: rankOf(g) })}</div><div><h3>${rankName(g)}</h3><p class="lore">${esc(s.lore)}</p><p class="dst"><i class="a">${g.atk}</i><i class="h">${g.hp}</i><i class="v">${spdG(g)}</i> <small>${DAO[daoOf(g.sp)] ? DAO[daoOf(g.sp)].n : ''} · ${reachG(g)}</small></p></div></div>
   ${nat ? `<h4>被动技能</h4><p><b>${esc(nat.n)}</b> ${esc(nat.d)}</p>` : ''}${actOfG(g) ? `<h4>主动技能</h4><p><b>${esc(actOfG(g).n)}</b> ${esc(actOfG(g).d)}<br><small>蛊力攒满自动放</small></p>` : ''}${nat ? `<p class="sm">三转、五转各觉醒一次，强化技能${nat.aw ? `（已觉醒 ${nat.aw} 次）` : ''}</p>` : ''}
   ${c ? `<h4>杀招</h4><div class="skill"><span class="seal">${esc(c.n)}</span><p>${esc(c.d)}<br><small>配方：${c.need.map(x => SP[x].n).join(' + ')}</small></p></div>` : ''}
   ${f ? `<h4>挂件</h4><p><b>${esc(f.n)}</b> ${esc(f.d)}</p>` : ''}
   ${g.xing ? `<h4>蛊性</h4><p><b>${esc(xingName(g.xing))}</b> ${esc(xingDesc(g.xing))}</p>` : ''}
   <h4>${TXT.statHead}</h4><p class="sm">${esc(TXT.statSub)}</p><table class="stab"><tr>${statTable(g.sp).map(x => `<th class="${x.rank === rankOf(g) ? 'on' : ''}">${RANK.names[x.rank]}</th>`).join('')}</tr><tr>${statTable(g.sp).map(x => `<td class="${x.rank === rankOf(g) ? 'on' : ''}"><i class="a">${x.atk}</i> <i class="h">${x.hp}</i></td>`).join('')}</tr></table><p class="sm">${esc(TXT.ateLine(g))}${g.bonusA || g.bonusH ? `（已加攻 ${g.bonusA || 0}、血 ${g.bonusH || 0}）` : ''}</p>
-  ${recipes.length ? `<h4>能凑的杀招</h4><ul>${recipes.map(x => `<li><b>${esc(x.n)}</b> ${x.need.map(y => SP[y].n).join(' + ')}</li>`).join('')}</ul>` : ''}
+  ${recipes.length ? `<h4>能凑的杀招</h4><ul>${recipes.map(x => `<li><b>${esc(x.n)}</b> ${x.need.map(y => SP[y].n).join(' + ')}${unlocked(x.id, 'combo') ? '' : ' <small>道途解锁</small>'}</li>`).join('')}</ul>` : ''}
   ${ctx.kind === 'team' || ctx.kind === 'bag' ? `<div class="row2">${ctx.kind === 'team' ? `<button data-act="toBag" data-k="${cellOf(g)}"${S.bag.length < BC() && !tripOn() ? '' : ' disabled'}>收进蛊囊</button>` : `<button class="zhu" data-act="fromBag" data-i="${i}"${S.team.length < SLOTS && rankOf(g) <= driveCap(S.realm) && !tripOn() ? '' : ' disabled'}>上阵</button>`}<button data-act="sell" data-k="${ctx.kind}" data-i="${i}"${tripOn() ? ' disabled' : ''}>卖出 · 退回 ${fmtTok(price(sellValue(g)))}</button></div>` : ''}`);
 }
 function openCodex() {
   const have = S.team.map(g => g.sp);
   sheet(`<h3>蛊典</h3><p class="sm">见过 ${Object.keys(S.codex).length} / ${SPECIES.length} 种。</p>
-  <h4>杀招图鉴</h4><p class="sm">没凑出来过的杀招只露出核心蛊，其余几只只告诉你属于哪一道；第一次成形后完整揭晓。</p><ul class="recipes">${COMBOS.map(c => { const seen = (S.combosSeen || []).includes(c.id), core = SP[c.need[0]], rest = c.need.slice(1);
-    if (!seen) return `<li class="hid"><b>？？？</b> 核心：<span class="${have.includes(c.need[0]) ? 'got' : ''}">${core ? core.n : '？'}</span> + ${rest.map(x => `<span>某只${DAO[daoOf(x)] ? DAO[daoOf(x)].n : ''}的蛊</span>`).join(' + ')}</li>`;
-    const miss = comboMissing(c, have); return `<li class="${miss.length ? '' : 'on'}"><b>${esc(c.n)}</b> ${c.need.map(x => `<span class="${have.includes(x) ? 'got' : ''}">${SP[x] ? SP[x].n : x}</span>`).join(' + ')}${miss.length ? '' : '<small>已成形</small>'}<br><small>${esc(c.d)}</small></li>`; }).join('')}</ul>
+  <h4>杀招图鉴</h4><p class="sm">没凑出来过的杀招只露出核心蛊，其余几只只告诉你属于哪一道；第一次成形后完整揭晓。</p><ul class="recipes">${COMBOS_ALL.map(c => { const seen = (S.combosSeen || []).includes(c.id), core = SP[c.need[0]], rest = c.need.slice(1);
+    if (!seen) return `<li class="hid"><b>？？？</b> 核心：<span class="${have.includes(c.need[0]) ? 'got' : ''}">${core ? core.n : '？'}</span> + ${rest.map(x => `<span>某只${DAO[daoOf(x)] ? DAO[daoOf(x)].n : ''}的蛊</span>`).join(' + ')}${unlocked(c.id, 'combo') ? '' : ' <small>道途解锁</small>'}</li>`;
+    const miss = comboMissing(c, have); return `<li class="${miss.length ? '' : 'on'}"><b>${esc(c.n)}</b> ${c.need.map(x => `<span class="${have.includes(x) ? 'got' : ''}">${SP[x] ? SP[x].n : x}</span>`).join(' + ')}${!unlocked(c.id, 'combo') ? '<small>道途解锁</small>' : miss.length ? '' : '<small>已成形</small>'}<br><small>${esc(c.d)}</small></li>`; }).join('')}</ul>
   <h4>道</h4><ul>${DAOS.map(d => `<li><b>${d.n}</b> ${esc(d.d)}<br><small>2 只：${esc(d.r2.d)}；4 只：${esc(d.r4.d)}</small></li>`).join('')}</ul>
   <h4>蛊</h4><div class="codexgrid">${SPECIES.filter(s => !s.immortal).map(s => `<div class="cx${S.codex[s.id] ? '' : ' unseen'}" data-tip="${esc(S.codex[s.id] ? `${s.n}（${RANK.names[baseRank(s.id)]} · ${DAO[daoOf(s.id)] ? DAO[daoOf(s.id)].n : ''}）\n${natDesc(s.id)}` : '还没见过')}">${guSVG(s.id)}<small>${S.codex[s.id] ? s.n : '？'}</small></div>`).join('')}</div>`, 'codex');
 }
+const PATH_K = { trips: '出征', clears: '通关', realm: '境界', merges: '合成', combos: '杀招成形', buys: '买蛊', feeds: '喂食', daos: '当过主力的道', kalpa: '劫数',
+  r1q: '只带一转通关的额度', r2q: '只带一二转通关的额度', no5q: '不带五转通关的额度', few3q: '不超过 3 只通关的额度', monoq: '全同一道通关的额度', flawq: '一只没倒通关的额度', nocomboq: '不成杀招通关的额度' };
+const pathK = k => PATH_K[k] || (/^d_/.test(k) && DAO[k.slice(2)] ? `${DAO[k.slice(2)].n}当主力通关` : k);
 function openPath() {
-  const v = timelineView(M()), K = { trips: '出征', clears: '通关', realm: '境界', merges: '合成', combos: '杀招成形', buys: '买蛊', feeds: '喂食' };
-  sheet(`<h3>道途</h3><p class="sm">达成一个，就解锁新的蛊、食物、秘境或玩法。成就本身不给数值。</p><ol class="tline">${v.map(a => `<li class="${a.state}"><b>${esc(a.n)}</b> <small>${esc(a.d)}</small>${a.state === 'done' ? '' : `<small class="prog">${a.prog.map(p => `${K[p.k] || p.k} ${p.cur}/${p.v}`).join(' · ')}</small>`}<em>${(a.unlock || []).map(u => '解锁 ' + esc(u.n)).join('、')}</em></li>`).join('')}</ol>`);
+  const v = timelineView(M()), groups = [...new Set(v.map(a => a.g || ''))];
+  sheet(`<h3>道途</h3><p class="sm">达成一个，就解锁新的蛊、食物、杀招、秘境或玩法。成就本身不给数值。</p>${groups.map(g => `${g ? `<h4>${esc(g)}</h4>` : ''}<ol class="tline">${v.filter(a => (a.g || '') === g).map(a => `<li class="${a.state}"><b>${esc(a.n)}</b> <small>${esc(a.d)}</small>${a.state === 'done' ? '' : `<small class="prog">${a.prog.map(p => `${pathK(p.k)} ${p.cur}/${p.v}`).join(' · ')}</small>`}<em>${(a.unlock || []).map(u => '解锁 ' + esc(u.n)).join('、')}</em></li>`).join('')}</ol>`).join('')}`);
 }
 const applyCalm = () => { document.documentElement.toggleAttribute('data-calm', !!S.calm); try { fxConfig({ calm: !!S.calm }); } catch (e) {} };
 function openSettings() {
@@ -6875,7 +6989,7 @@ const ACT = {
   sell(a) { const L = a.dataset.k === 'bag' ? S.bag : S.team, i = +a.dataset.i, g = L[i]; if (!g || tripOn()) return; const v = price(sellValue(g)); L.splice(i, 1); S.bank += v; note(TXT.sold(g, v)); closeSheet(); afterChange(); snd('coin'); },
   go() { if (tripOn() || goWhy()) return; goSheet(); },
   lands() { if (!tripOn()) openLands(); },
-  land(a) { const l = landById(a.dataset.id); if (!l || l.realm > S.realm) return; S.land = l.id; closeSheet(); renderHome(); save(); },
+  land(a) { const l = landById(a.dataset.id); if (!l || !landOpen(l)) return; S.land = l.id; closeSheet(); renderHome(); save(); },
   goConfirm() { closeSheet(); if (goWhy()) return; if (!TRIP.start) { note(TXT.goSoon); return; } S.trip = S.trip || { at: Date.now(), land: curLand().id }; save(); renderHome(); TRIP.start(TRIP.api); },
   ghost() { openGhosts(); },
   ghostNew() { const q = S.ghosts && S.ghosts.q; S.ghosts = null; openGhosts(q); },
@@ -6888,7 +7002,7 @@ const ACT = {
   duelInput() { openDuelInput(); },
   duelGo() { if (!openLinkText($('#duelIn').value)) $('#duelErr').textContent = '坐标码或复盘链接不对，或者被截断了。'; },
   duelFight() { const f = window.__guFoe, q = f && arenaOf(f.team); if (!f || !q || quotaOf(myArenaTeam()) > q) return; closeSheet(); spar('duel', f); },
-  replayGo() { const rp = window.__guRp; closeSheet(); playBattle({ kind: 'replay', title: `复盘 · ${rp.B.name || '无名'} 对 ${rp.A.name || '无名'}`, res: battle(placed(rp.A.team), placed(rp.B.team), 'r:' + rp.seed, { sota: rp.sota }), A: rp.A, B: rp.B, sota: rp.sota, replay: rp.replay }); },
+  replayGo() { const rp = window.__guRp; closeSheet(); playBattle({ kind: 'replay', title: `复盘 · ${rp.B.name || '无名'} 对 ${rp.A.name || '无名'}`, res: allCombos(() => battle(placed(rp.A.team), placed(rp.B.team), 'r:' + rp.seed, { sota: rp.sota })), A: rp.A, B: rp.B, sota: rp.sota, replay: rp.replay }); },
   copyReplay(a) { const B = window.__guB; if (!B) return; const w = B.res.winner, an = B.A.name || '无名', bn = B.B.name || '无名', wt = w === 'draw' ? '打成平手' : (w === 'A' ? an : bn) + ' 胜'; copy(`${(B.A.trial || B.B.trial) ? TXT.trialText : ''}《蛊码》复盘：${an} 对 ${bn}，${wt}。点开看整场：\n${replayURL(B.replay)}`, a); },
   closeBattle() { closeBattle(); },
   skip() { skip = true; },

@@ -1,11 +1,12 @@
 // 蛊码 GuCode · 界面与流程：洞府（养成）、斗幽灵与战帖（切磋）、战斗回放、秘境接口。规则只认 docs/design.md
-import { SPECIES, SP, TRAITS, REALMS, SLOTS, RANK, COMBOS, COMBO, makeRng, hashStr, newGu, starterTeam, baseRank, rankOf, rankName, statFor, natOf, natMulFor, awOf, QUOTA, quotaOf, ARENAS, arenaOf, GHOST_NAMES, ATE_MAX, ateOf, canEat, statTable, XING, driveCap, quotaTeam, poolFor, BAG, bagCap, canBuy, placeGu, mergeAll, sellValue, comboMissing, COL_NAMES, cellOf, cellPos, freeCell, autoPlace, sortTeam, daoOf, rollShop, foodCost, feedStat, PRICE, genTeam, posLinks, encodeTeam, decodeTeam, EV_MS, playMs, tempoFor, fmtNum, fmtTok } from './core.js';
+import { SPECIES, SP, TRAITS, REALMS, SLOTS, RANK, COMBOS, COMBO, COMBOS_ALL, setComboLocks, makeRng, hashStr, newGu, starterTeam, baseRank, rankOf, rankName, statFor, natOf, natMulFor, awOf, QUOTA, quotaOf, ARENAS, arenaOf, GHOST_NAMES, ATE_MAX, ateOf, canEat, statTable, XING, driveCap, quotaTeam, poolFor, BAG, bagCap, canBuy, placeGu, mergeAll, sellValue, comboMissing, COL_NAMES, cellOf, cellPos, freeCell, autoPlace, sortTeam, daoOf, rollShop, foodCost, feedStat, PRICE, genTeam, posLinks, encodeTeam, decodeTeam, EV_MS, playMs, tempoFor, fmtNum, fmtTok } from './core.js';
 import { battle, synergyOf, battleProfile } from './battle.js';
 import { guSVG, ART_DEFS } from './art.js';
 import { TokenSource, VSC } from './tokens.js';
 import { makeCard } from './card.js';
 import { fuseRankUp, fxConfig } from './fx.js';
 import { metaInit, metaMigrate, metaEmit, isUnlocked, timelineView } from './meta.js';
+import { clearEvents } from './timeline.js';
 import { ledgerInit, openLedger, ledgerLimitRows, ledgerBindLimits } from './ledger.js';
 import { DAOS, DAO } from './daos.js';
 import { FOODS, FOOD, FOOD_KIND, lockedTrip } from './foods.js';
@@ -88,7 +89,7 @@ const TXT = {
   comboFirst: c => `杀招成形 · ${c.n}`,
   comboLines: (c, g) => [`${c.need.map(x => SP[x].n).join(' + ')} 同时在空窍，杀招自动成形`, `挂在${SP[g.sp].n}身上：${c.d}`, '蛊卡上的朱印就是它，悬停能看配方和效果'],
   achFirst: a => `道途 · ${a.n}`,
-  achLines: a => [a.d + '：达成', ...(a.unlock || []).map(u => `解锁${{ species: '新蛊', food: '新食物', trip: '新秘境', feature: '新玩法' }[u.k] || ''}：${u.n}`)],
+  achLines: a => [a.d + '：达成', ...(a.unlock || []).map(u => `解锁${{ species: '新蛊', food: '新食物', combo: '进阶杀招', trip: '新秘境', feature: '新玩法' }[u.k] || ''}：${u.n}`)],
   trial: '试玩',
   trialShare: '这是网页试玩存档（模拟元气养的蛊），坐标码、分享卡、战帖和复盘都会标「试玩」。装 VS Code 插件、用真实 token 养的蛊不带这个标。',
   trialFoe: '对方是试玩存档（网页模拟元气养的蛊，不是真实 token 养出来的）',
@@ -218,13 +219,17 @@ async function bigRun() {
 // 原地反馈：洞府战报加一行（留最近 5 行）
 function note(txt) { const l = S.hlog || (S.hlog = []); l.push(txt); if (l.length > 5) l.splice(0, l.length - 5); renderLog(); }
 function renderLog() { const b = $('#hlog'); if (b) setHTML(b, (S.hlog || []).map((t, i, a) => `<li${i === a.length - 1 ? ' class="new"' : ''}>${esc(t)}</li>`).join('')); }
-function achieve(k, n, o) { metaEmit(M(), k, n, o).forEach(a => big('ach', TXT.achFirst(a), TXT.achLines(a))); }
+function achieve(k, n, o) { const got = metaEmit(M(), k, n, o); got.forEach(a => big('ach', TXT.achFirst(a), TXT.achLines(a))); if (got.length) applyLocks(); }
+// 道途锁住的进阶杀招不成形（秘境里按自己的道途）；切磋、复盘一律全开，同一个坐标码谁算都一样
+const applyLocks = () => setComboLocks(id => unlocked(id, 'combo'));
+const allCombos = f => { setComboLocks(); try { return f(); } finally { applyLocks(); } };
 
 // ---------- 渲染 ----------
 // 出征用食物里秘境一侧还没接好的几种（寻路图、定魂香、各种符）：先不上架，界面写明「秘境里才能用，下个版本开放」
 let notYetSet; const notYet = id => (notYetSet || (notYetSet = new Set(lockedTrip()))).has(id);
 const unlocked = (id, k) => !(k === 'food' && notYet(id)) && isUnlocked(M(), id, k);
 function renderAll() {
+  applyLocks();
   const app = $('#app'); if (!app) return;
   app.innerHTML = S.started ? mainHTML() : startHTML();
   if (S.started) { renderHome(); meters(); if (tripOn() && TRIP.render) TRIP.render(TRIP.api); }
@@ -392,7 +397,8 @@ const LANDS0 = () => lands0 || (lands0 = QUOTA.flatMap((q, r) => LAND_NAMES[r].s
 })));
 const lands = () => (TRIP.lands && TRIP.lands.length ? TRIP.lands : LANDS0());
 const landById = id => lands().find(l => l.id === id);
-const curLand = () => { const l = landById(S.land); return l && l.realm <= S.realm ? l : lands().find(x => x.realm === S.realm) || lands()[0]; };
+const landOpen = l => l.realm <= S.realm && unlocked(l.id, 'trip');
+const curLand = () => { const l = landById(S.land); return l && landOpen(l) ? l : lands().find(x => x.realm === S.realm && landOpen(x)) || lands().find(landOpen) || lands()[0]; };
 const bossOf = l => (l.boss || []).map(b => (b.atk ? b : { ...newGu(b.sp, b.rank), ...b }));
 // 出征前的检查：空窍不能空、转数总和不超过额度、每只都在驱使上限内。返回原因（能出征时返回空）
 function goWhy(land = curLand()) {
@@ -403,7 +409,7 @@ function goWhy(land = curLand()) {
 }
 function landCard(l, lock) {
   const on = !lock && l.id === curLand().id, boss = bossOf(l);
-  return `<div class="land${on ? ' on' : ''}${lock ? ' lock' : ''}"><div class="lh"><b>${esc(l.n)}</b><small>${esc(TXT.landLine(l))}</small></div>${l.d ? `<p class="sm">${esc(l.d)}</p>` : ''}
+  return `<div class="land${on ? ' on' : ''}${lock ? ' lock' : ''}"><div class="lh"><b>${esc(l.n)}</b><small>${esc(TXT.landLine(l))}${l.realm <= S.realm && !unlocked(l.id, 'trip') ? ' · 道途解锁' : ''}</small></div>${l.d ? `<p class="sm">${esc(l.d)}</p>` : ''}
   <details><summary>首领阵容 · ${boss.length} 只，转数共 ${quotaOf(boss)}</summary>${miniRow(boss)}</details>
   ${lock ? '' : `<button class="${on ? '' : 'zhu'}" data-act="land" data-id="${esc(l.id)}"${on ? ' disabled' : ''}>${on ? '已选' : '选这个'}</button>`}</div>`;
 }
@@ -411,7 +417,7 @@ function openLands() {
   const all = lands(), top = Math.min(5, S.realm + 1);
   sheet(`<h3>${TXT.landsHead}</h3><p class="sm">${esc(TXT.landsSub)}</p>${REALMS.slice(0, top + 1).map((rn, r) => {
     const ls = all.filter(l => l.realm === r), lock = r > S.realm; if (!ls.length) return '';
-    return `<h4>${rn} · 额度 ${ls[0].quota}${lock ? ` <small>${esc(TXT.landLock)}</small>` : ''}</h4>${ls.map(l => landCard(l, lock)).join('')}`;
+    return `<h4>${rn} · 额度 ${ls[0].quota}${lock ? ` <small>${esc(TXT.landLock)}</small>` : ''}</h4>${ls.map(l => landCard(l, lock || !unlocked(l.id, 'trip'))).join('')}`;
   }).join('')}`, 'lands');
 }
 // ---------- 出征（秘境由另一侧实现，见 hooks.js）----------
@@ -421,6 +427,7 @@ function goSheet() {
 }
 function onTripEnd(result = {}) {
   const dead = new Set(result.dead || []), loot = result.loot || {}, land = landById(S.trip && S.trip.land);
+  const went = S.team.slice(), end = (S.trip && S.trip.end) || {};
   const lost = S.team.filter(g => dead.has(g.uid));
   S.team = S.team.filter(g => !dead.has(g.uid));
   lost.forEach(g => note(`${rankName(g)} 倒在了秘境里`));
@@ -431,7 +438,9 @@ function onTripEnd(result = {}) {
   } else note('全灭：这次的战利品全部丢失');
   S.trip = null; S.tripFood = [];
   achieve('trips', 1);
-  if (result.cleared && (!land || land.realm === S.realm) && S.realm < 5) { S.realm++; S.land = (lands().find(l => l.realm === S.realm) || {}).id || S.land; big('trib', TXT.trib(S.realm), TXT.tribLines(S.realm)); achieve('realm', S.realm, { set: true }); achieve('clears', 1); }
+  if (result.cleared) clearEvents({ quota: land ? land.quota : 0, ranks: went.map(g => (SP[g.sp] && SP[g.sp].immortal ? 6 : rankOf(g))), daos: went.map(g => daoOf(g.sp)),
+    fallen: dead.size + (end.saved || []).length, combos: synOf(went).combos.length, kalpa: result.kalpa || end.kalpa || 0, cnt: M().cnt }).forEach(([k, n, set]) => achieve(k, n, { set }));
+  if (result.cleared && (!land || land.realm === S.realm) && S.realm < 5) { S.realm++; S.land = (lands().find(l => l.realm === S.realm) || {}).id || S.land; big('trib', TXT.trib(S.realm), TXT.tribLines(S.realm)); achieve('realm', S.realm, { set: true }); }
   rollCompass(); S.shop = S.shop.filter(w => w.frozen && !w.sold);
   renderAll(); save(); floorCheck();
 }
@@ -626,7 +635,7 @@ function spar(kind, foe) {
   const ca = encodeTeam(mine, { name: S.name || '无名蛊师', realm: S.realm, trial: S.trial }), cb = encodeTeam(foe.team, { name: foe.name, realm: foe.realm || S.realm, trial: !!foe.trial });
   const seed = kind === 'duel' ? (hashStr(ca + '|' + cb) >>> 0).toString(36) : ((S.seed ^ Math.imul(++S.step, 2654435761)) >>> 0).toString(36);
   const A = decodeTeam(ca), Bt = decodeTeam(cb), sota = { A: sotaOn(), B: false };
-  const res = battle(placed(A.team), placed(Bt.team), 'r:' + seed, { sota });
+  const res = allCombos(() => battle(placed(A.team), placed(Bt.team), 'r:' + seed, { sota }));
   save(); playBattle({ kind, title: (kind === 'duel' ? '战帖 · ' : '幽灵 · ') + (foe.name || '无名'), res, A, B: Bt, sota, replay: [ca, cb, seed, kind[0], 's' + sotaFlag(sota)].join('.') });
 }
 // 斗幽灵：先挑几点场，再从三个幽灵里挑一个。幽灵阵容用秘境一侧的按额度出敌（满额度，和玩家同口径）
@@ -714,28 +723,31 @@ function closeSheet() { const a = document.querySelectorAll('.sheet-bg'); if (a.
 function miniRow(t) { return `<div class="mini">${t.map(g => `<div class="mg${g.boss ? ' boss' : ''}"><span class="art">${guSVG(g.sp, { rank: rankOf(g) })}</span><span class="rk rk${rankOf(g)}">${RANK.ch[rankOf(g)]}</span><b>${SP[g.sp] ? SP[g.sp].n : ''}</b><span class="st"><i class="a">${g.atk}</i><i class="h">${g.hp}</i></span></div>`).join('')}</div>`; }
 function guDetail(g, ctx = {}) {
   const s = SP[g.sp], nat = natOfG(g), team = ctx.kind === 'team' ? S.team : null, i = ctx.i | 0, c = team ? combosBy(team)[i] : null, f = g.food && FOOD[g.food];
-  const recipes = COMBOS.filter(x => x.need.includes(g.sp));
+  const recipes = COMBOS_ALL.filter(x => x.need.includes(g.sp));
   sheet(`<div class="detail"><div class="dart">${guSVG(g.sp, { rank: rankOf(g) })}</div><div><h3>${rankName(g)}</h3><p class="lore">${esc(s.lore)}</p><p class="dst"><i class="a">${g.atk}</i><i class="h">${g.hp}</i><i class="v">${spdG(g)}</i> <small>${DAO[daoOf(g.sp)] ? DAO[daoOf(g.sp)].n : ''} · ${reachG(g)}</small></p></div></div>
   ${nat ? `<h4>被动技能</h4><p><b>${esc(nat.n)}</b> ${esc(nat.d)}</p>` : ''}${actOfG(g) ? `<h4>主动技能</h4><p><b>${esc(actOfG(g).n)}</b> ${esc(actOfG(g).d)}<br><small>蛊力攒满自动放</small></p>` : ''}${nat ? `<p class="sm">三转、五转各觉醒一次，强化技能${nat.aw ? `（已觉醒 ${nat.aw} 次）` : ''}</p>` : ''}
   ${c ? `<h4>杀招</h4><div class="skill"><span class="seal">${esc(c.n)}</span><p>${esc(c.d)}<br><small>配方：${c.need.map(x => SP[x].n).join(' + ')}</small></p></div>` : ''}
   ${f ? `<h4>挂件</h4><p><b>${esc(f.n)}</b> ${esc(f.d)}</p>` : ''}
   ${g.xing ? `<h4>蛊性</h4><p><b>${esc(xingName(g.xing))}</b> ${esc(xingDesc(g.xing))}</p>` : ''}
   <h4>${TXT.statHead}</h4><p class="sm">${esc(TXT.statSub)}</p><table class="stab"><tr>${statTable(g.sp).map(x => `<th class="${x.rank === rankOf(g) ? 'on' : ''}">${RANK.names[x.rank]}</th>`).join('')}</tr><tr>${statTable(g.sp).map(x => `<td class="${x.rank === rankOf(g) ? 'on' : ''}"><i class="a">${x.atk}</i> <i class="h">${x.hp}</i></td>`).join('')}</tr></table><p class="sm">${esc(TXT.ateLine(g))}${g.bonusA || g.bonusH ? `（已加攻 ${g.bonusA || 0}、血 ${g.bonusH || 0}）` : ''}</p>
-  ${recipes.length ? `<h4>能凑的杀招</h4><ul>${recipes.map(x => `<li><b>${esc(x.n)}</b> ${x.need.map(y => SP[y].n).join(' + ')}</li>`).join('')}</ul>` : ''}
+  ${recipes.length ? `<h4>能凑的杀招</h4><ul>${recipes.map(x => `<li><b>${esc(x.n)}</b> ${x.need.map(y => SP[y].n).join(' + ')}${unlocked(x.id, 'combo') ? '' : ' <small>道途解锁</small>'}</li>`).join('')}</ul>` : ''}
   ${ctx.kind === 'team' || ctx.kind === 'bag' ? `<div class="row2">${ctx.kind === 'team' ? `<button data-act="toBag" data-k="${cellOf(g)}"${S.bag.length < BC() && !tripOn() ? '' : ' disabled'}>收进蛊囊</button>` : `<button class="zhu" data-act="fromBag" data-i="${i}"${S.team.length < SLOTS && rankOf(g) <= driveCap(S.realm) && !tripOn() ? '' : ' disabled'}>上阵</button>`}<button data-act="sell" data-k="${ctx.kind}" data-i="${i}"${tripOn() ? ' disabled' : ''}>卖出 · 退回 ${fmtTok(price(sellValue(g)))}</button></div>` : ''}`);
 }
 function openCodex() {
   const have = S.team.map(g => g.sp);
   sheet(`<h3>蛊典</h3><p class="sm">见过 ${Object.keys(S.codex).length} / ${SPECIES.length} 种。</p>
-  <h4>杀招图鉴</h4><p class="sm">没凑出来过的杀招只露出核心蛊，其余几只只告诉你属于哪一道；第一次成形后完整揭晓。</p><ul class="recipes">${COMBOS.map(c => { const seen = (S.combosSeen || []).includes(c.id), core = SP[c.need[0]], rest = c.need.slice(1);
-    if (!seen) return `<li class="hid"><b>？？？</b> 核心：<span class="${have.includes(c.need[0]) ? 'got' : ''}">${core ? core.n : '？'}</span> + ${rest.map(x => `<span>某只${DAO[daoOf(x)] ? DAO[daoOf(x)].n : ''}的蛊</span>`).join(' + ')}</li>`;
-    const miss = comboMissing(c, have); return `<li class="${miss.length ? '' : 'on'}"><b>${esc(c.n)}</b> ${c.need.map(x => `<span class="${have.includes(x) ? 'got' : ''}">${SP[x] ? SP[x].n : x}</span>`).join(' + ')}${miss.length ? '' : '<small>已成形</small>'}<br><small>${esc(c.d)}</small></li>`; }).join('')}</ul>
+  <h4>杀招图鉴</h4><p class="sm">没凑出来过的杀招只露出核心蛊，其余几只只告诉你属于哪一道；第一次成形后完整揭晓。</p><ul class="recipes">${COMBOS_ALL.map(c => { const seen = (S.combosSeen || []).includes(c.id), core = SP[c.need[0]], rest = c.need.slice(1);
+    if (!seen) return `<li class="hid"><b>？？？</b> 核心：<span class="${have.includes(c.need[0]) ? 'got' : ''}">${core ? core.n : '？'}</span> + ${rest.map(x => `<span>某只${DAO[daoOf(x)] ? DAO[daoOf(x)].n : ''}的蛊</span>`).join(' + ')}${unlocked(c.id, 'combo') ? '' : ' <small>道途解锁</small>'}</li>`;
+    const miss = comboMissing(c, have); return `<li class="${miss.length ? '' : 'on'}"><b>${esc(c.n)}</b> ${c.need.map(x => `<span class="${have.includes(x) ? 'got' : ''}">${SP[x] ? SP[x].n : x}</span>`).join(' + ')}${!unlocked(c.id, 'combo') ? '<small>道途解锁</small>' : miss.length ? '' : '<small>已成形</small>'}<br><small>${esc(c.d)}</small></li>`; }).join('')}</ul>
   <h4>道</h4><ul>${DAOS.map(d => `<li><b>${d.n}</b> ${esc(d.d)}<br><small>2 只：${esc(d.r2.d)}；4 只：${esc(d.r4.d)}</small></li>`).join('')}</ul>
   <h4>蛊</h4><div class="codexgrid">${SPECIES.filter(s => !s.immortal).map(s => `<div class="cx${S.codex[s.id] ? '' : ' unseen'}" data-tip="${esc(S.codex[s.id] ? `${s.n}（${RANK.names[baseRank(s.id)]} · ${DAO[daoOf(s.id)] ? DAO[daoOf(s.id)].n : ''}）\n${natDesc(s.id)}` : '还没见过')}">${guSVG(s.id)}<small>${S.codex[s.id] ? s.n : '？'}</small></div>`).join('')}</div>`, 'codex');
 }
+const PATH_K = { trips: '出征', clears: '通关', realm: '境界', merges: '合成', combos: '杀招成形', buys: '买蛊', feeds: '喂食', daos: '当过主力的道', kalpa: '劫数',
+  r1q: '只带一转通关的额度', r2q: '只带一二转通关的额度', no5q: '不带五转通关的额度', few3q: '不超过 3 只通关的额度', monoq: '全同一道通关的额度', flawq: '一只没倒通关的额度', nocomboq: '不成杀招通关的额度' };
+const pathK = k => PATH_K[k] || (/^d_/.test(k) && DAO[k.slice(2)] ? `${DAO[k.slice(2)].n}当主力通关` : k);
 function openPath() {
-  const v = timelineView(M()), K = { trips: '出征', clears: '通关', realm: '境界', merges: '合成', combos: '杀招成形', buys: '买蛊', feeds: '喂食' };
-  sheet(`<h3>道途</h3><p class="sm">达成一个，就解锁新的蛊、食物、秘境或玩法。成就本身不给数值。</p><ol class="tline">${v.map(a => `<li class="${a.state}"><b>${esc(a.n)}</b> <small>${esc(a.d)}</small>${a.state === 'done' ? '' : `<small class="prog">${a.prog.map(p => `${K[p.k] || p.k} ${p.cur}/${p.v}`).join(' · ')}</small>`}<em>${(a.unlock || []).map(u => '解锁 ' + esc(u.n)).join('、')}</em></li>`).join('')}</ol>`);
+  const v = timelineView(M()), groups = [...new Set(v.map(a => a.g || ''))];
+  sheet(`<h3>道途</h3><p class="sm">达成一个，就解锁新的蛊、食物、杀招、秘境或玩法。成就本身不给数值。</p>${groups.map(g => `${g ? `<h4>${esc(g)}</h4>` : ''}<ol class="tline">${v.filter(a => (a.g || '') === g).map(a => `<li class="${a.state}"><b>${esc(a.n)}</b> <small>${esc(a.d)}</small>${a.state === 'done' ? '' : `<small class="prog">${a.prog.map(p => `${pathK(p.k)} ${p.cur}/${p.v}`).join(' · ')}</small>`}<em>${(a.unlock || []).map(u => '解锁 ' + esc(u.n)).join('、')}</em></li>`).join('')}</ol>`).join('')}`);
 }
 const applyCalm = () => { document.documentElement.toggleAttribute('data-calm', !!S.calm); try { fxConfig({ calm: !!S.calm }); } catch (e) {} };
 function openSettings() {
@@ -880,7 +892,7 @@ const ACT = {
   sell(a) { const L = a.dataset.k === 'bag' ? S.bag : S.team, i = +a.dataset.i, g = L[i]; if (!g || tripOn()) return; const v = price(sellValue(g)); L.splice(i, 1); S.bank += v; note(TXT.sold(g, v)); closeSheet(); afterChange(); snd('coin'); },
   go() { if (tripOn() || goWhy()) return; goSheet(); },
   lands() { if (!tripOn()) openLands(); },
-  land(a) { const l = landById(a.dataset.id); if (!l || l.realm > S.realm) return; S.land = l.id; closeSheet(); renderHome(); save(); },
+  land(a) { const l = landById(a.dataset.id); if (!l || !landOpen(l)) return; S.land = l.id; closeSheet(); renderHome(); save(); },
   goConfirm() { closeSheet(); if (goWhy()) return; if (!TRIP.start) { note(TXT.goSoon); return; } S.trip = S.trip || { at: Date.now(), land: curLand().id }; save(); renderHome(); TRIP.start(TRIP.api); },
   ghost() { openGhosts(); },
   ghostNew() { const q = S.ghosts && S.ghosts.q; S.ghosts = null; openGhosts(q); },
@@ -893,7 +905,7 @@ const ACT = {
   duelInput() { openDuelInput(); },
   duelGo() { if (!openLinkText($('#duelIn').value)) $('#duelErr').textContent = '坐标码或复盘链接不对，或者被截断了。'; },
   duelFight() { const f = window.__guFoe, q = f && arenaOf(f.team); if (!f || !q || quotaOf(myArenaTeam()) > q) return; closeSheet(); spar('duel', f); },
-  replayGo() { const rp = window.__guRp; closeSheet(); playBattle({ kind: 'replay', title: `复盘 · ${rp.B.name || '无名'} 对 ${rp.A.name || '无名'}`, res: battle(placed(rp.A.team), placed(rp.B.team), 'r:' + rp.seed, { sota: rp.sota }), A: rp.A, B: rp.B, sota: rp.sota, replay: rp.replay }); },
+  replayGo() { const rp = window.__guRp; closeSheet(); playBattle({ kind: 'replay', title: `复盘 · ${rp.B.name || '无名'} 对 ${rp.A.name || '无名'}`, res: allCombos(() => battle(placed(rp.A.team), placed(rp.B.team), 'r:' + rp.seed, { sota: rp.sota })), A: rp.A, B: rp.B, sota: rp.sota, replay: rp.replay }); },
   copyReplay(a) { const B = window.__guB; if (!B) return; const w = B.res.winner, an = B.A.name || '无名', bn = B.B.name || '无名', wt = w === 'draw' ? '打成平手' : (w === 'A' ? an : bn) + ' 胜'; copy(`${(B.A.trial || B.B.trial) ? TXT.trialText : ''}《蛊码》复盘：${an} 对 ${bn}，${wt}。点开看整场：\n${replayURL(B.replay)}`, a); },
   closeBattle() { closeBattle(); },
   skip() { skip = true; },

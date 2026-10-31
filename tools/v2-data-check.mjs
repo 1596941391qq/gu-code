@@ -113,7 +113,18 @@ try {
   const T = await import('../src/timeline.js');
   const lockedSp = new Set(T.LOCKED.species), unlock = new Set(T.TIMELINE.flatMap(t => t.unlock.filter(u => u.k === 'species').map(u => u.id)));
   lockedSp.forEach(id => { if (!B2.DAO120[id]) errs.push(`道途锁了不存在的蛊 ${id}`); if (!unlock.has(id)) errs.push(`锁住的蛊 ${id} 没有成就能解锁`); });
-  say(`道途 ${T.TIMELINE.length} 条，开局可买 ${ids.filter(id => !lockedSp.has(id) && !(B2.SPECIES2.find(s => s.id === id) || {}).immortal && !['guangyin', 'fate', 'nirvana'].includes(id)).length} 种`);
+  const K2 = await import('../src/combos2.js'), TR = await import('../src/trip.js'), FD = await import('../src/foods.js');
+  T.TIMELINE.forEach(t => t.unlock.forEach(u => {
+    const ok = u.k === 'species' ? B2.DAO120[u.id] : u.k === 'food' ? FD.FOOD[u.id] : u.k === 'combo' ? K2.COMBO2[u.id] : u.k === 'trip' ? TR.LAND[u.id] : u.k === 'feature' ? ['kalpa'].includes(u.id) : false;
+    if (!ok) errs.push(`道途 ${t.id} 解锁了不存在的 ${u.k}:${u.id}`);
+  }));
+  if (T.clearEvents) {
+    const ev = Object.fromEntries(T.clearEvents({ quota: 7, ranks: [1, 1, 1], daos: ['li', 'li', 'yan'], fallen: 0, combos: 0, kalpa: 2, cnt: { d_yan: 1 } }).map(([k, n]) => [k, n]));
+    if (!(ev.clears === 1 && ev.r1q === 7 && ev.few3q === 7 && ev.flawq === 7 && ev.nocomboq === 7 && ev.d_li === 1 && ev.daos === 2 && ev.kalpa === 2 && !ev.monoq)) errs.push('clearEvents 算得不对 ' + JSON.stringify(ev));
+    if (T.kalpaOpen(-1) !== 0 || T.kalpaOpen(0) !== 1 || T.kalpaOpen(9) !== 10 || T.kalpaOpen(10) !== 10) errs.push('kalpaOpen 不对');
+  }
+  const groups = {}; T.TIMELINE.forEach(t => { groups[t.g] = (groups[t.g] || 0) + 1; });
+  say(`道途 ${T.TIMELINE.length} 条（${Object.entries(groups).map(([g, n]) => g + ' ' + n).join('、')}），开局可买 ${ids.filter(id => !lockedSp.has(id)).length} 种，锁住杀招 ${(T.LOCKED.combo || []).length} 个`);
 } catch (e) { warn.push('timeline.js: ' + e.message); }
 warn.forEach(w => say('  （跳过）' + w));
 if (errs.length) { say(`\n${errs.length} 个问题：`); errs.forEach(e => say('  ✗ ' + e)); process.exit(1); }

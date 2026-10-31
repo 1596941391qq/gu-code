@@ -137,6 +137,10 @@ COMBOS.push(...NEW_COMBOS);   // 新杀招都是两蛊配方，排在旧配方�
 // 杀招第二版（combos2.js：核心蛊、时机、声明式效果、进阶）整表替换上面的旧配方；配方里有还不存在的物种的先跳过
 export const COMBOS_SKIPPED = COMBOS2.filter(c => !c.need.every(x => SP[x])).map(c => c.id);
 COMBOS.length = 0; COMBOS.push(...COMBOS2.filter(c => c.need.every(x => SP[x])));
+// 道途锁住的杀招（进阶杀招要靠道途解锁）：COMBOS 只放能成形的，COMBOS_ALL 是全表（蛊典照样列出、写「道途解锁」）。
+// setComboLocks(on) 按 on(id) 重排 COMBOS；战斗引擎和 synergyOf 读的是 COMBOS。切磋和复盘前设成全开，结果和对方看到的一样
+export const COMBOS_ALL = COMBOS.slice();
+export function setComboLocks(on = () => true) { COMBOS.length = 0; COMBOS.push(...COMBOS_ALL.filter(c => on(c.id))); }
 export const COMBO = Object.fromEntries(COMBOS.map(c => [c.id, c]));
 
 let UIDN = 1;
