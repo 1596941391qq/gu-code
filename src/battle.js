@@ -1,17 +1,23 @@
 // 蛊码 GuCode · 斗蛊引擎 v2（纯函数，种子随机，可复现）。规格见 docs/battle-spec.md，规则见 docs/design.md 2.5 / 3.5 / 第 8 节。
 // 双方各一块 3×3 阵盘（列 c：0 前 1 中 2 后；行 r：0–2）。速度决定出手顺序（行动条），出手和挨打攒蛊力，蛊力满了放主动技；
 // 近战打同一行最靠前的敌蛊（这一行没人打最近的一行），远程按 aim 挑；技能有形状和位移。输出事件流 + 每步快照，渲染层只负责回放。
-import { makeRng, SP, SUMMON_NAMES, SLOTS, natOf, awOf, guRank, daoOf, COMBOS, XING, decodeTeam } from './core.js';
+import { makeRng, SP, SUMMON_NAMES, SLOTS, natOf, awOf, guRank, daoOf, COMBOS, XING, decodeTeam, statFor, baseRank } from './core.js';
+import { natK } from './bestiary2.js';
 import { DAO } from './daos.js';
 import { FOOD } from './foods.js';
 import { BX, NEW_TRAITS } from './bestiary.js';   // 现有 64 种本命技（钩子式）照旧由 BX 派发，炉口 = 最前、对撞 = 普攻、回合开始 = 每轮开始
 
 // HPK：战斗血量 = 卡面血 × HPK；DIST：行动条长度（速 100 的蛊每 DIST 个时间单位出手一次 = 一轮）
 // SPD_K：速对出手间隔的影响系数（速 120 的蛊出手频率 = 1 + 0.2 × SPD_K 倍），让速度有意义又不一边倒
-export const HPK = 4, DIST = 100, SPD_K = 0.18, MAXROUND = 30;
+export const HPK = 4;
+export const DIST = 100;
+export const SPD_K = 0.18;
+export const MAXROUND = 30;
 const ROWS = 3, COLS = 3;
 // RES_K：道共鸣数值整体折算（design.md 2.6：道共鸣只给轻量加成，配合比堆道重要）
 export const RES_K = 0.5;
+// 状态与杀招的总体强度（模拟按道、杀招、单种蛊的胜率调）：灼烧每轮伤害、毒每轮伤害、寒每层减速、杀招效果
+export const TUNE = { burn: 1, psn: 1, chill: 0.15, combo: 1 };
 export const GP = { act: 34, charge: 60, hit: 15, cap: 100, start: 20 };
 export const CRIT = { p: 0.1, mul: 1.5 };
 const MAXOPS = 20000, MAXACT = 900, CAP = SLOTS, INFLICT = new Set(['psn', 'para', 'burn', 'chill', 'stun', 'web', 'mark', 'seal', 'tie']);
@@ -33,39 +39,6 @@ const DEF = {
 };
 // 主动技（占位：约四成物种；内容专家在物种上写 act 后以物种为准）。格式见规格 5.2
 const E = (op, tg, o = {}) => ({ op, tg, ...o });
-const DEF_ACT = {
-  fire: { n: '焚风吐息', cap: 110, fx: 'fire', d: '敌方全体各 90% 攻，灼烧 2 轮（每轮 30% 攻）', eff: [E('dmg', 'foe.all', { atk: 0.9 }), E('st', 'same', { k: 'burn', n: 2, atk: 0.3 })] },
-  twin: { n: '镜影分身', cap: 90, fx: 'summon', d: '身后召出一只 80% 攻血的分影，自己护 2 层', eff: [E('summon', null, { sp: 'shade', atk: 0.8, mx: 0.8, at: 'behind' }), E('st', 'self', { k: 'guard', n: 2 })] },
-  iron: { n: '铁壁', cap: 95, fx: 'shield', d: '自己得 60% 血的护体，嘲讽 2 轮', eff: [E('shield', 'self', { mx: 0.6 }), E('st', 'self', { k: 'taunt', n: 2 })] },
-  mantis: { n: '斩心镰', cap: 100, fx: 'slash', d: '斩血最少的敌蛊 280% 攻，它血不过半再 ×1.5', eff: [E('dmg', 'foe.low', { atk: 2.8, exe: 0.5 })] },
-  queen: { n: '万蜂朝王', cap: 120, fx: 'summon', d: '后列召两只工蜂（各 50% 攻血），全体友蛊攻 +15%', eff: [E('summon', null, { sp: 'bee', atk: 0.5, mx: 0.5, at: 'back', count: 2 }), E('buff', 'ally.all', { atk: 0.15 })] },
-  scorp: { n: '三连毒针', cap: 90, fx: 'needle', d: '对末位连射三针各 110% 攻，上毒（每轮 40% 攻）', eff: [E('dmg', 'foe.last', { atk: 1.1, times: 3 }), E('st', 'same', { k: 'psn', atk: 0.4 })] },
-  tiger: { n: '猛虎下山', cap: 70, fx: 'pounce', d: '扑血最少的敌蛊 260% 攻，自己行动条提前 50%', eff: [E('dmg', 'foe.low', { atk: 2.6 }), E('adv', 'self', { v: 0.5 })] },
-  webspider: { n: '天罗网', cap: 70, fx: 'web', d: '敌方最前一列落网（下次普攻落空），各受 80% 攻，行动条推后 30%', eff: [E('st', 'foe.front', { shape: 'col', k: 'web', n: 1 }), E('dmg', 'same', { atk: 0.8 }), E('delay', 'same', { v: 0.3 })] },
-  cent: { n: '百足噬', cap: 90, fx: 'bite', d: '咬最近的敌蛊 220% 攻并上毒（每轮 50% 攻）', eff: [E('dmg', 'foe.front', { atk: 2.2 }), E('st', 'same', { k: 'psn', atk: 0.5 })] },
-  wasp: { n: '群锋攒刺', cap: 100, fx: 'needle', d: '随机刺 5 下，每下 80% 攻', eff: [E('dmg', 'foe.rand', { atk: 0.8, times: 5 })] },
-  spider: { n: '万蛛归巢', cap: 110, fx: 'summon', d: '身后召两只小蛛（各 45% 攻血），自己回 25% 血', eff: [E('summon', null, { sp: 'spiderling', atk: 0.45, mx: 0.45, at: 'behind', count: 2 }), E('heal', 'self', { mx: 0.25 })] },
-  gecko: { n: '断尾护主', cap: 80, fx: 'shield', d: '相邻友蛊各得本蛊 50% 血的护体，并清掉减益', eff: [E('shield', 'ally.adj', { mx: 0.5 }), E('cleanse', 'same')] },
-  mosq: { n: '吸髓', cap: 90, fx: 'drain', d: '吸攻最高的敌蛊 180% 攻，回一半，偷它 15% 攻', eff: [E('dmg', 'foe.top', { atk: 1.8, steal: 0.5 }), E('buff', 'same', { atk: -0.15 }), E('buff', 'self', { atk: 0.15 })] },
-  rhino: { n: '犀角冲锋', cap: 100, fx: 'pounce', d: '冲最近的敌蛊 220% 攻并击退一格，眩晕 1 次', eff: [E('dmg', 'foe.front', { atk: 2.2 }), E('st', 'same', { k: 'stun', n: 1 }), E('knock', 'same', { v: 1 })] },
-  flea: { n: '连环跳', cap: 75, fx: 'pounce', d: '跳咬血最少的敌蛊 150% 攻，自己行动条提前 80%', eff: [E('dmg', 'foe.low', { atk: 1.5 }), E('adv', 'self', { v: 0.8 })] },
-  sleep: { n: '催眠粉', cap: 100, fx: 'spore', d: '敌方攻最高的蛊和它周围一圈眩晕 1 次', eff: [E('st', 'foe.top', { shape: 'ring', k: 'stun', n: 1 })] },
-  stag: { n: '断钳', cap: 100, fx: 'slash', d: '夹最近的敌蛊 220% 攻，它血不过半时 ×1.8', eff: [E('dmg', 'foe.front', { atk: 2.2, exe: 0.5, exeMul: 1.8 })] },
-  toad: { n: '毒瘴', cap: 110, fx: 'spore', d: '敌方全体中毒（每轮本蛊 10% 血）', eff: [E('st', 'foe.all', { k: 'psn', mx: 0.1 })] },
-  locust: { n: '蝗灾', cap: 110, fx: 'slash', d: '整行贯穿：最近那一行的敌蛊各 150% 攻', eff: [E('dmg', 'foe.front', { shape: 'row', atk: 1.5 })] },
-  frost: { n: '冰封', cap: 100, fx: 'frost', d: '速最快的敌蛊十字范围各 90% 攻，挂寒 2 层', eff: [E('dmg', 'foe.fast', { shape: 'cross', atk: 0.9 }), E('st', 'same', { k: 'chill', n: 2 })] },
-  thunder: { n: '雷暴', cap: 110, fx: 'bolt', d: '劈随机 3 只各 120% 攻，三成麻痹（眩 1 次）', eff: [E('dmg', 'foe.rand:3', { atk: 1.2 }), E('st', 'same', { k: 'stun', n: 1, chance: 0.3 })] },
-  tortoise: { n: '玄武镇', cap: 120, fx: 'shield', d: '全体友蛊得本蛊 30% 血的护体，自己嘲讽 2 轮', eff: [E('shield', 'ally.all', { mx: 0.3 }), E('st', 'self', { k: 'taunt', n: 2 })] },
-  dfly: { n: '九霄引雷', cap: 120, fx: 'bolt', d: '敌方后排各 160% 攻，行动条推后 25%', eff: [E('dmg', null, { shape: 'back', atk: 1.6 }), E('delay', 'same', { v: 0.25 })] },
-  jinchan: { n: '金光普照', cap: 110, fx: 'heal', d: '全体友蛊回本蛊 25% 血，加速 15%（2 轮）', eff: [E('heal', 'ally.all', { mx: 0.25 }), E('buff', 'same', { spd: 0.15, dur: 2 })] },
-  nirvana: { n: '焚身涅槃', cap: 120, fx: 'fire', d: '敌方全体各 120% 攻并灼烧 2 轮，自己回 30% 血', eff: [E('dmg', 'foe.all', { atk: 1.2 }), E('st', 'same', { k: 'burn', n: 2, atk: 0.4 }), E('heal', 'self', { mx: 0.3 })] },
-  hairworm: { n: '钻心', cap: 100, fx: 'needle', d: '对攻最高的敌蛊 240% 攻，无视护体', eff: [E('dmg', 'foe.top', { atk: 2.4, pierce: 1 })] },
-  cricket: { n: '震天鸣', cap: 100, fx: 'roar', d: '敌方全体攻 -15%（2 轮），行动条推后 30%', eff: [E('buff', 'foe.all', { atk: -0.15, dur: 2 }), E('delay', 'same', { v: 0.3 })] },
-  taisui: { n: '肉芝再生', cap: 80, fx: 'heal', d: '自己回 45% 血，相邻友蛊各得本蛊 25% 血的护体', eff: [E('heal', 'self', { mx: 0.45 }), E('shield', 'ally.adj', { mx: 0.25 })] },
-  hex: { n: '魇梦', cap: 80, fx: 'spore', d: '攻最高的两只敌蛊各受 120% 攻，封住蛊力 2 轮，攻 -25%（2 轮）', eff: [E('dmg', 'foe.top:2', { atk: 1.2 }), E('st', 'same', { k: 'seal', n: 2 }), E('buff', 'same', { atk: -0.25, dur: 2 })] },
-  lure: { n: '迷香', cap: 75, fx: 'spore', d: '把血最少的敌蛊拉近一格并打上印记（受伤 +25%，2 轮）', eff: [E('draw', 'foe.low', { v: 1 }), E('st', 'same', { k: 'mark', n: 2 })] },
-  gold: { n: '金身', cap: 100, fx: 'shield', d: '同一列的友蛊和自己各得本蛊 45% 血的护体', eff: [E('shield', 'self', { shape: 'col', mx: 0.45 })] },
-};
 // 旧 10 个杀招（core.js COMBOS 只有文字）的引擎侧效果；内容专家在杀招上写 when/eff 后以数据为准。新杀招的钩子在 bestiary.js
 const DEF_COMBO = {
   sanzhu: { when: 'start', eff: [E('dmg', 'foe.front', { shape: 'row', atk: 0.6 })] },
@@ -81,13 +54,13 @@ const DEF_COMBO = {
 Object.values(NEW_TRAITS).forEach(t => { if (!t.hooks) t.hooks = {}; });
 // 现有本命技是按旧的「炉口对撞、一回合一下」调的数值；新引擎里人人出手、挨打次数多得多，这里按本命技逐个折算（只缩放本命技钩子里的加攻血、护体、伤害、召唤、毒）。
 // 内容专家把本命技改写成声明式后，这张表对应的项删掉即可。
-export const NAT_K = { aegis: 2.68, beat: 0.25, blitz: 3, brief: 0.4, burrow: 3, burst: 2.67, chain: 0.2, cocoon: 1.63, drain: 0.62, execute: 2.12, frost: 0.35, gild: 3, gorge: 1.73, hex: 3, hive: 0.16, inherit: 0.7, ironskin: 0.18, leech: 0.57, lull: 3, lure: 3, miasma: 0.22, mimic: 1.55, mirage: 0.48, mirror: 3, molt: 1.5, moon: 0.6, mother: 1.43, mourn: 0.5, muster: 0.31, pair: 0.3, pit: 2, prick: 1.2, rage: 0.28, regrow: 3, roll: 2.16, rot: 0.45, royal: 0.22, scale: 2.76, storm: 1.59, sunder: 0.32, venom: 0.36, ward: 1.39, web: 3 };
+export const NAT_K = {};   // 本命技第二卷全部写成声明式（按 up 随转数涨），旧的钩子折算表作废
 const NAT_K0 = 1;   // 声明式本命技没写 hooks 时补空表，BX 派发不报错
 
 const prof = sp => {
   const s = SP[sp] || {}, d = DEF[sp] || [100, s.school === '护体' || s.school === '减伤' ? 'm' : 'm', 'pounce'];
   const reach = s.reach || (d[1] === 'r' ? 'ranged' : 'melee');
-  return { spd: s.spd || d[0], reach, aim: s.aim || d[3] || 'low', atkFx: s.atkFx || d[2] || (reach === 'ranged' ? 'needle' : 'pounce'), act: s.act !== undefined ? s.act : (DEF_ACT[sp] || null) };
+  return { spd: s.spd || d[0], reach, aim: s.aim || d[3] || 'low', atkFx: s.atkFx || d[2] || (reach === 'ranged' ? 'needle' : 'pounce'), act: s.act || null };
 };
 export const battleProfile = prof;   // 蛊卡/蛊典显示速、近远程、主动技用
 
@@ -146,6 +119,51 @@ export function layoutOf(team) {
 
 // ---------- 出手顺序预测（不结算效果，只按行动条推演） ----------
 const ivOf = spd => DIST * 100 / Math.max(20, 100 + (spd - 100) * SPD_K);
+// ----- 技能说明（蛊详情一转到五转对比、合成前预览用） -----
+// skillText(sp, rank, opts) → [{ kind: 'passive' | 'active' | 'aw3' | 'aw5', n, text, locked?, at?, lines? }]
+// text 是数据里的大白话说明（随转数变的数已换成这一转的值），后面括号补一句这一转的实际数字（按 statFor 的攻血；血按战斗里的血 = 卡面血 × HPK）。
+// 觉醒没到的标 locked: true，数字按觉醒那一转（三转 / 五转）算，方便预告。opts.est === false 时不补括号。
+const ACT_UP = 0.12;
+const scaleAt = (e, r, isAct) => 1 + (e.up != null ? e.up : isAct ? ACT_UP : 0) * Math.max(0, r - 1);
+const actPct = (t, k) => k === 1 ? t : t.replace(/(攻击|攻 ?\+|最大血量|血量的?) ?(\d+)%/g, (m, w, x) => `${w}${/\+$/.test(w) ? '' : ' '}${Math.round(+x * k)}%`.replace('  ', ' '));
+function effNote(list, r, isAct, st) {
+  const parts = [];
+  for (const e of list || []) {
+    if (parts.length >= 2) break;
+    const k = scaleAt(e, r, isAct), num = (x, base) => Math.round(base * x * k);
+    const v = Math.round(((e.atk || 0) * st.atk + (e.a0 || 0) * st.atk + (e.mx || 0) * st.mx + (e.n || 0) * st.atk + (e.tatk || 0) * st.atk + (e.tmx || 0) * st.mx) * k + (e.flat || 0));
+    const each = e.shape && e.shape !== 'one' ? '每只' : '';
+    if (e.op === 'dmg' && v > 0) parts.push(`${each}约 ${v} 伤害${(e.times || 1) > 1 ? ` × ${e.times}` : ''}`);
+    else if (e.op === 'heal' && v > 0) parts.push(`${each}约回 ${v} 血`);
+    else if (e.op === 'shield' && v > 0) parts.push(`${each}约 ${v} 护体`);
+    else if (e.op === 'buff') {
+      const b = [], A = e.atk ? num(e.atk, st.atk) : 0, H = e.hp ? num(e.hp, st.mx) : 0; if (A) b.push(`攻约 ${A > 0 ? '+' : ''}${A}`); if (H) b.push(`血约 ${H > 0 ? '+' : ''}${H}`);
+      if (b.length) parts.push(b.join('、'));
+    } else if (e.op === 'st' && v > 0 && (e.k === 'psn' || e.k === 'burn')) parts.push(e.k === 'psn' ? `毒每轮约掉 ${v} 血` : `灼每轮约烧 ${v}`);
+    else if (e.op === 'summon') parts.push(`召出的约攻 ${num(e.atk || 0.3, st.atk)}、血 ${num(e.mx || 0.3, st.mx)}`);
+    else if ((e.op === 'knock' || e.op === 'draw') && e.bump !== 0) parts.push(`撞上约 ${num(e.bump != null ? e.bump : 0.4, st.atk)}`);
+  }
+  return parts.length ? `（这一转${parts.join('，')}）` : '';
+}
+export function skillText(sp, rank, opts = {}) {
+  const s = SP[sp]; if (!s) return [];
+  const r0 = Math.max(baseRank(sp), Math.min(6, rank | 0 || baseRank(sp))), est = opts.est !== false;
+  const stAt = r => { const x = statFor(sp, r); return { atk: x.atk, mx: x.hp * HPK }; };
+  const nk = natOf(sp), nt = nk && NEW_TRAITS[nk], act = prof(sp).act, out = [];
+  const natD = r => nt ? (nt.src ? nt.src.d.replace(/〔(\d+)〕/g, (_, x) => String(Math.round(+x * natK(r)))) : nt.d ? nt.d(1, 2) : '') : '';
+  const natAw = (i, r) => nt && nt.src && nt.src.aw && nt.src.aw[i] ? nt.src.aw[i].replace(/〔(\d+)〕/g, (_, x) => String(Math.round(+x * natK(r)))) : '';
+  if (nt) out.push({ kind: 'passive', n: nt.n, trig: nt.trig || '', text: natD(r0) + (est ? effNote(nt.eff, r0, false, stAt(r0)) : '') });
+  if (act) { const k = 1 + ACT_UP * (r0 - 1); out.push({ kind: 'active', n: act.n, cap: act.cap || GP.cap, text: actPct(act.d || '', k) + (est ? effNote(act.eff, r0, true, stAt(r0)) : '') }); }
+  [3, 5].forEach((at, i) => {
+    const r = Math.max(r0, at), st = stAt(r), lines = [];
+    const pt = natAw(i, r); if (pt) lines.push({ of: 'passive', n: nt.n, text: pt + (est ? effNote(nt.awEff && nt.awEff[i], r, false, st) : '') });
+    if (act && act.awd && act.awd[i]) lines.push({ of: 'active', n: act.n, text: actPct(act.awd[i], 1 + ACT_UP * (r - 1)) + (est ? effNote(act.aw && act.aw[i], r, true, st) : '') });
+    if (!lines.length) return;
+    out.push({ kind: i ? 'aw5' : 'aw3', n: i ? '五转觉醒' : '三转觉醒', at, locked: r0 < at, lines, text: lines.map(l => `${l.of === 'active' ? '主动技' : '被动技'}「${l.n}」：${l.text}`).join('；') });
+  });
+  return out;
+}
+
 export function predictOrder(units, round, n = 8) {
   const L = units.map(u => ({ uid: u.uid, t: u.next, iv: ivOf(u.spd), spd: u.spd, side: u.side, pos: u.pos || 0 })), out = [];
   let r = round, guard = 0;
@@ -191,7 +209,7 @@ export function battle(ta, tb, seed, opts = {}) {
     return u;
   };
   const st0 = () => ({ kills: 0, hits: 0, taken: 0, killT1: 0, oneShot: 0, adjFell: 0, frontFell: 0, front: 0 });
-  const base = (side, o) => ({ side, sh: 0, tr: {}, q: [], att: [], f: {}, gp: 0, gpMax: 0, act: null, dx: [], tmp: [], dmg: 0, taken: 0, lost: 0, sup: 0, kills: 0, acts: 0, casts: 0, st: st0(), ...o });
+  const base = (side, o) => ({ side, sh: 0, tr: {}, q: [], att: [], f: {}, fl: {}, gp: 0, gpMax: 0, act: null, dx: [], tmp: [], dmg: 0, taken: 0, lost: 0, sup: 0, kills: 0, acts: 0, casts: 0, st: st0(), ...o });
   function fromGu(g, side, src) {
     const P = prof(g.sp), card = Math.max(1, g.hp | 0), mx = card * HPK, hp = g.hpNow != null ? Math.max(1, Math.min(card, Math.round(g.hpNow))) * HPK : mx;
     const act = g.noAct ? null : P.act, tr = {};
@@ -200,6 +218,7 @@ export function battle(ta, tb, seed, opts = {}) {
       rank: guRank(g), aw: awOf(g), food: g.food || null, xing: g.xing || null, spd: g.spd || P.spd, reach: P.reach, aim: P.aim, atkFx: P.atkFx, act, gpMax: act ? act.cap || GP.cap : 0 });
     // 声明式效果：食物挂件、蛊性、声明式本命技
     const fd = u.food && FOOD[u.food];
+    if ((fd && fd.noMove) || g.noMove) u.noMove = 1;
     if (fd && fd.kind === 'gear') {
       const L = (fd.eff || []).slice(), p = (fd.pct || 0) / 100;
       if (fd.gear === 'spawn') L.push(E('summon', null, { when: 'death', sp: 'pupa', atk: p || 0.4, mx: p || 0.4, at: 'here' }));
@@ -208,6 +227,7 @@ export function battle(ta, tb, seed, opts = {}) {
       if (L.length) u.dx.push({ src: { kind: 'food', key: 'fd', tag: { food: fd.id } }, list: L });
     }
     const xg = u.xing && XING[u.xing]; if (xg && xg.eff) u.dx.push({ src: { kind: 'xing', key: 'xg', tag: { xg: u.xing } }, list: xg.eff });
+    (Array.isArray(g.fx) ? g.fx : []).forEach((f, i) => { if (f && f.eff && f.eff.length) u.dx.push({ src: { kind: f.kind || 'fx', key: 'fx' + i, tag: { fx: f.id, n: f.n } }, list: f.eff }); });   // 秘境挂的天象、祝福、首领机制
     const nk = natOf(g.sp), nt = nk && NEW_TRAITS[nk];
     if (nt && nt.eff && !g.noNat) u.dx.push({ src: { kind: 'nat', key: 'nat', tag: { id: nk } }, list: [...nt.eff, ...(nt.awEff || []).slice(0, u.aw).flat()] });
     if (act && act.aw) u.actEff = [...act.eff, ...act.aw.slice(0, u.aw).flat()]; else if (act) u.actEff = act.eff;
@@ -256,17 +276,17 @@ export function battle(ta, tb, seed, opts = {}) {
   syn.forEach((sy, s) => sy.combos.forEach(c => {
     const u = S[s].find(x => x.src === c.idx), C = comboDef(COMBOS.find(x => x.id === c.id)); if (!u) return;
     u.combo = c.id; u.cname = c.n; u.cmul = c.mul; roster[u.uid].combo = { id: c.id, n: c.n, mul: c.mul };
-    if (C.eff) u.dx.push({ src: { kind: 'combo', key: 'cb', mul: c.mul, combo: 1 }, list: C.eff.map(e => ({ when: C.when, ...e })) });
+    if (C.eff) u.dx.push({ src: { kind: 'combo', key: 'cb', mul: c.mul * TUNE.combo, combo: 1 }, list: C.eff.map(e => ({ when: C.when, ...e })) });
   }));
 
   // ----- 伤害、增益、召唤（ctx 接口与 bestiary.js 文件头一致） -----
   const P = (n, p) => p > 0 ? Math.max(1, Math.round(n * p)) : 0;
   const nk = () => ctx.nat && cur ? (NAT_K[natOf(cur.sp)] != null ? NAT_K[natOf(cur.sp)] : NAT_K0) : 1;
   const nsc = (n, k) => k === 1 || !n ? n : n > 0 ? Math.max(1, Math.round(n * k)) : Math.min(-1, Math.round(n * k));
-  const buff = (u, a, h) => { if (!alive(u)) return; { const k = nk(); a = nsc(a, k); h = nsc(h, k); } u.atk = Math.max(1, Math.min(99999, u.atk + a)); u.hp = Math.min(999999, u.hp + h); u.mx += h; ev('buff', { uid: u.uid, a, h }); };
-  const shield = (u, n) => { if (!alive(u) || n <= 0) return; n = Math.round(n * nk()); if (n <= 0) return; u.sh = Math.min(Math.max(99, 2 * u.mx), u.sh + n); ev('buff', { uid: u.uid, sh: n }); };
+  const buff = (u, a, h) => { if (!alive(u)) return; { const k = nk(); a = nsc(a, k); h = nsc(h, k); } u.atk = Math.max(1, Math.min(999999, u.atk + a)); u.hp = Math.min(9999999, u.hp + h); u.mx += h; ev('buff', { uid: u.uid, a, h }); };
+  const shield = (u, n) => { if (!alive(u) || n <= 0) return; n = Math.round(n * nk()); if (n <= 0) return; u.sh = Math.min(Math.max(990, 2 * u.mx), u.sh + n); ev('buff', { uid: u.uid, sh: n }); };
   const setSpd = (u, ns) => { ns = Math.max(30, ns); if (u.next > now) { u.next = now + (u.next - now) * ivOf(ns) / ivOf(u.spd); } u.spd = ns; };
-  const gainGp = (u, n) => { if (!u.act || !alive(u) || u.f.seal > 0) return; u.gp = Math.max(0, Math.min(u.gpMax, (u.gp || 0) + n)); };
+  const gainGp = (u, n) => { if (!u.act || !alive(u) || u.f.seal > 0) return; if (u.fl.gpMul) n *= u.fl.gpMul; u.gp = Math.max(0, Math.min(u.gpMax, (u.gp || 0) + n)); };
   const comboEv = u => ev('combo', { uid: u.uid, n: u.cname });
   const ctx = { S, CAP, rng, roster, sideF, turn: 0, nat: 0, alive, allies, foes, buff, shield, deal, summon, hook, ev, has: () => false, reg, comboEv };
 
@@ -316,12 +336,16 @@ export function battle(ta, tb, seed, opts = {}) {
     return u;
   }
   const WHEN = { start: 'start', turn: 'round', hurt: 'hit', kill: 'kill', faint: 'death', ally: 'summon', attack: 'attack', prep: 'prep', front: 'front', foeFront: 'foeFront', mourn: 'allyDeath' };
+  // 受击连锁：受击反应里打出去的伤害，不再触发对方的受击效果（镜对镜照回不会无限互弹）；旧钩子最多再嵌两层
+  let hurtD = 0, echoD = 0;
   function hook(u, h, c = {}) {
     if (++ops > MAXOPS) return;
-    const prev = cur; cur = u;
-    BX.dispatch(ctx, h, u, c); syncAll();
-    const w = WHEN[h]; if (w && u.dx.length) runDecl(u, w, c);
-    cur = prev;
+    if (h === 'hurt' && hurtD >= 3) return;
+    const prev = cur; cur = u; if (h === 'hurt') hurtD++;
+    try {
+      BX.dispatch(ctx, h, u, c); syncAll();
+      const w = WHEN[h]; if (w && u.dx.length && !(h === 'hurt' && hurtD > 1)) runDecl(u, w, c);
+    } finally { if (h === 'hurt') hurtD--; cur = prev; }
   }
 
   // ----- 声明式效果（规格第 4–7 节） -----
@@ -393,7 +417,7 @@ export function battle(ta, tb, seed, opts = {}) {
       if ((e.when || blk.src.when) !== when || e.op !== 'mul') return;
       const key = blk.src.key + i, used = cntKey(u, key); if (e.max && used >= e.max) return;
       if (e.if && !cond(u, e.if, c, when === 'deal' ? c.tg : c.src, used)) return;
-      u.f.cnt[key] = used + 1; m *= e.v || 1;
+      u.f.cnt[key] = used + 1; m *= e.v != null ? e.v : 1;   // v: 0 = 这一下全免（伤害最少仍记 1）
       if (e.v !== 1 && blk.src.kind !== 'food') ev('trig', { uid: u.uid, ...blk.src.tag });
     });
     return m;
@@ -444,7 +468,9 @@ export function battle(ta, tb, seed, opts = {}) {
         ev('buff', { uid: t.uid, a: a2, h: h2, spd: s || undefined });
       }); break;
       case 'st': tgs.forEach(t => addSt(t, e.k, e.n, amount(u, t, e, c, k), u)); break;
-      case 'summon': for (let r = 0; r < (e.count || 1); r++) {
+      case 'flag': tgs.forEach(t => { t.fl[e.k] = e.v === undefined ? 1 : e.v; }); break;
+      case 'copyNat': { const t = tgs[0], key = t && natOf(t.sp), nt = key && NEW_TRAITS[key]; if (!nt || !nt.eff || u.f.copied) break; u.f.copied = key; u.dx.push({ src: { kind: 'nat', key: 'cp', tag: { id: key } }, list: [...nt.eff, ...(nt.awEff || []).slice(0, u.aw).flat()] }); ev('trig', { uid: u.uid, id: key }); break; }   // 拟态：照抄目标的被动技能，本场有效，按施放者转数算
+      case 'summon': if (u.fl.noSummon || (u.fl.noRevive && (e.when || src.when) === 'death')) break; for (let r = 0; r < (e.count || 1); r++) {
         const arr = S[u.side], i = arr.indexOf(u), at = e.at === 'front' ? 0 : e.at === 'back' ? 99 : e.at === 'here' ? (c.idx != null ? c.idx : Math.max(0, i)) : i + 1;
         summon(u.side, at, { sp: e.sp || 'pupa', atk: P(u.atk, (e.atk || 0.3) * k), hp: P(u.mx, (e.mx || 0.3) * k) }, u);
       } break;
@@ -452,9 +478,10 @@ export function battle(ta, tb, seed, opts = {}) {
       case 'adv': case 'pull': tgs.forEach(t => { t.next = Math.max(now, t.next - (e.v || 0.3) * iv(t)); ev('buff', { uid: t.uid, adv: e.v || 0.3 }); }); break;   // pull/push 是第一版的写法，等同 adv/delay
       case 'delay': case 'push': tgs.forEach(t => { t.next += (e.v || 0.3) * iv(t); ev('buff', { uid: t.uid, delay: e.v || 0.3 }); }); break;
       case 'knock': case 'draw': tgs.forEach(t => {   // 击退（往后一格）/ 拉近（往前一格）；被挡住或撞墙就撞上，双方都受伤
-        if (!alive(t)) return; const dc = e.op === 'knock' ? 1 : -1, steps = e.v || 1;
+        if (!alive(t)) return; if (t.noMove) { ev('move', { uid: t.uid, r: t.r, c: t.c, k: 'hold' }); return; }   // 镇石等：不被击退拉近、也不撞
+        const dc = e.op === 'knock' ? 1 : -1, steps = e.v || 1;
         for (let st = 0; st < steps && alive(t); st++) {
-          const nc = t.c + dc, bump = Math.max(1, Math.round(u.atk * (e.bump != null ? e.bump : 0.4) * k));
+          const nc = t.c + dc, bump = Math.max(1, Math.round(u.atk * (e.bump != null ? e.bump : 0.4) * k * (u.fl.bumpMul || 1)));
           if (nc < 0) break;
           if (nc >= COLS) { ev('move', { uid: t.uid, r: t.r, c: t.c, k: 'wall' }); deal(u, t, bump, 'bump'); break; }
           const b = at(t.side, t.r, nc);
@@ -463,10 +490,16 @@ export function battle(ta, tb, seed, opts = {}) {
         }
       }); break;
       case 'swap': tgs.forEach(t => {   // 换位：with = 'self'（和施放者换）| 'front' | 'back'（和同一行前一格 / 后一格换，空格就直接挪过去）
-        if (!alive(t)) return;
+        if (!alive(t)) return; if (t.noMove || (e.with === 'self' && u.noMove)) { ev('move', { uid: (t.noMove ? t : u).uid, r: (t.noMove ? t : u).r, c: (t.noMove ? t : u).c, k: 'hold' }); return; }
         if (e.with === 'self' && t.side === u.side) { const r0 = u.r, c0 = u.c; u.r = t.r; u.c = t.c; t.r = r0; t.c = c0; sortSide(u.side); ev('move', { uid: u.uid, r: u.r, c: u.c, k: 'swap' }); ev('move', { uid: t.uid, r: t.r, c: t.c, k: 'swap' }); return; }
         const nc = e.with === 'back' || e.to === 'back' ? COLS - 1 : 0; if (nc === t.c) return; const o = at(t.side, t.r, nc);
+        if (o && o.noMove) { ev('move', { uid: o.uid, r: o.r, c: o.c, k: 'hold' }); return; }
         if (o) { o.c = t.c; ev('move', { uid: o.uid, r: o.r, c: o.c, k: 'swap' }); } moveTo(t, t.r, nc, 'swap');
+      }); break;
+      case 'echo': tgs.forEach(t => {   // 把目标身上某个时机（k，默认亡语 death）的效果原样跑一遍，目标本身不倒（引魂香）
+        if (!alive(t) || echoD > 1) return; const w = e.k || 'death', i = S[t.side].indexOf(t); echoD++;
+        try { for (const blk of t.dx) { const L = blk.list.filter(x => (x.when || blk.src.when) === w && x.op !== 'mul' && x.op !== 'endure' && x.op !== 'echo'); if (L.length) { ev('trig', { uid: t.uid, ...blk.src.tag, echo: w }); runList(t, L, { idx: Math.max(0, i), echo: 1 }, blk.src, null, blk.list); } } }
+        finally { echoD--; }
       }); break;
       case 'eat': tgs.forEach(t => {   // 吞：血量不过 v（默认三成）的敌蛊或任意召唤物，直接吞掉，施放者得到它 gain（默认三成）的攻血
         if (!alive(t) || !(t.summon || t.hp <= t.mx * (e.v || 0.3))) return; const g = e.gain || 0.3;
@@ -480,12 +513,14 @@ export function battle(ta, tb, seed, opts = {}) {
   const heal = (t, n) => { if (!alive(t) || n <= 0) return 0; const h = Math.min(n, t.mx - t.hp); if (h <= 0) return 0; t.hp += h; ev('heal', { uid: t.uid, n: h }); if (cur && cur.side === t.side) cur.sup += h; return h; };
   function addSt(t, k, n, v, by) {
     if (!alive(t)) return;
-    if (k === 'psn') { if (v <= 0) return; t.f.psn = Math.min(Math.max(6, Math.ceil(t.mx * 0.25)), (t.f.psn || 0) + v); n = v; }
-    else if (k === 'burn') { const o = t.f.burn || { v: 0, n: 0 }; t.f.burn = { v: Math.max(o.v, v || 1), n: Math.max(o.n, n || 2) }; n = t.f.burn.n; }
+    if (Array.isArray(t.fl.immune) && t.fl.immune.includes(k === 'freeze' ? 'chill' : k)) return;
+    if (k === 'psn' && by && by.fl.psnMul) v = Math.round(v * by.fl.psnMul);
+    if (k === 'psn') { if (v <= 0) return; v = Math.max(1, Math.round(v * TUNE.psn)); t.f.psn = Math.min(Math.max(60, Math.ceil(t.mx * 0.25)), (t.f.psn || 0) + v); n = v; }
+    else if (k === 'burn') { v = Math.max(1, Math.round((v || 10) * TUNE.burn)); const o = t.f.burn || { v: 0, n: 0 }; t.f.burn = { v: Math.max(o.v, v || 1), n: Math.max(o.n, n || 2) }; n = t.f.burn.n; }
     else if (k === 'stun') t.f.stun = Math.min(4, (t.f.stun || 0) + (n || 1));
     else if (k === 'web') t.f.web = (t.f.web || 0) + (n || 1);
     else if (k === 'chill') {   // 寒：每层速 -15%，叠到 3 层冻住（眩 1 次）后清空；每轮退一层
-      const add = Math.min(n || 1, 3 - (t.f.chill || 0)); if (add > 0) { const d = Math.round(t.spd * 0.15 * add); t.f.chillS = (t.f.chillS || 0) + d; setSpd(t, t.spd - d); t.f.chill = (t.f.chill || 0) + add; }
+      const add = Math.min(n || 1, 3 - (t.f.chill || 0)); if (add > 0) { const d = Math.round(t.spd * TUNE.chill * add); t.f.chillS = (t.f.chillS || 0) + d; setSpd(t, t.spd - d); t.f.chill = (t.f.chill || 0) + add; }
       if (t.f.chill >= 3) { setSpd(t, t.spd + (t.f.chillS || 0)); t.f.chill = 0; t.f.chillS = 0; t.f.stun = Math.min(4, (t.f.stun || 0) + 1); ev('status', { uid: t.uid, k: 'freeze', n: 1, by: by ? by.uid : null }); return; }
       n = t.f.chill;
     }
@@ -496,11 +531,13 @@ export function battle(ta, tb, seed, opts = {}) {
   const revert = (t, b) => { t.atk = Math.max(1, t.atk - b.a); if (b.h) { t.mx = Math.max(1, t.mx - b.h); t.hp = Math.min(t.hp, t.mx); } if (b.s) setSpd(t, t.spd - b.s); };
   function lethalSave(u) {
     for (const blk of u.dx) for (let i = 0; i < blk.list.length; i++) {
-      const e = blk.list[i]; if ((e.when || blk.src.when) !== 'lethal' || e.op !== 'endure') continue;
+      const e = blk.list[i]; if ((e.when || blk.src.when) !== 'lethal' || e.op !== 'endure' || u.fl.noRevive) continue;
       const key = blk.src.key + i, used = cntKey(u, key); if (e.max && used >= e.max) continue; if (e.if && !cond(u, e.if, {}, null, used)) continue;
       u.f.cnt[key] = used + 1; u.hp = e.v ? Math.max(1, Math.ceil(u.mx * e.v)) : 1; u.killer = null;
       if (blk.src.combo) ev('combo', { uid: u.uid, n: u.cname }); else ev('trig', { uid: u.uid, ...blk.src.tag });
-      ev('heal', { uid: u.uid, n: u.hp }); return true;
+      ev('heal', { uid: u.uid, n: u.hp });
+      const rest = blk.list.filter(x => (x.when || blk.src.when) === 'lethal' && x.op !== 'endure' && x.op !== 'mul'); if (rest.length) runList(u, rest, {}, blk.src, null, blk.list);
+      return true;
     }
     return false;
   }
@@ -513,7 +550,7 @@ export function battle(ta, tb, seed, opts = {}) {
       for (const u of dead) {
         if (u.dead) continue;
         if (lethalSave(u)) continue;
-        if (BX.saveDeath(ctx, u)) { syncAll(); continue; }
+        if (!u.fl.noRevive && BX.saveDeath(ctx, u)) { syncAll(); continue; }
         const arr = S[u.side], idx = arr.indexOf(u), mates = arr.filter(x => x !== u && alive(x));
         const adjL = mates.filter(x => Math.abs(x.r - u.r) + Math.abs(x.c - u.c) === 1), behind = mates.filter(x => x.r === u.r && x.c > u.c).sort((a, b) => a.c - b.c)[0] || null;
         u.f.adj = adjL.map(x => x.uid); u.f.behind = behind ? behind.uid : null;
