@@ -1,0 +1,12 @@
+{
+ "_note": "每个来源的期望值 [eq 算力当量, raw 全量吞吐]，按 adapters.js 口径手算：raw = 输入 + 输出 + 缓存写入 + 缓存读取；eq 里缓存读取 × 0.1。fixtures 下全是合成数据，没有真实会话内容。__TS__ 等占位符由 verify-tokens.mjs 替换成测试时间。",
+ "sources": {
+  "claude": [7650, 60750], "claude:.claude-work": [10, 10], "codex": [1010, 2630], "gemini": [595, 1045], "qwen": [360, 1260],
+  "copilot": [2500, 5200], "cline": [1400, 10580], "roo": [850, 5350], "kilo": [560, 1100], "cline-cli": [850, 3100],
+  "opencode": [980, 3770], "zcode": [2600, 6200], "droid": [1550, 9650], "amp": [750, 2550], "kimi": [670, 2020], "aider:proj": [19230, 24000]
+ },
+ "goose_live_delta": [550, 550],
+ "claude_subagent": [1300, 9400],
+ "tools": {"edit": 3, "bash": 5, "read": 3, "web": 0, "task": 0, "other": 0},
+ "models": {"claude-opus": 6050, "glm": 3770, "claude-haiku": 50}
+}

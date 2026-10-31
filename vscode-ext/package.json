@@ -1,7 +1,7 @@
 {
   "name": "gu-code",
   "displayName": "蛊码 GuCode",
-  "description": "烧 Token，养蛊，斗道。用 Claude Code / Codex 的 token 用量养蛊的伴生自走棋（只读 usage 数字）。",
+  "description": "烧 Token，养蛊，斗道。用 Claude Code / Codex / Gemini / Copilot / Cline 等 AI 编程工具的 token 用量养蛊的伴生自走棋（只读 usage 数字）。",
   "version": "0.1.0",
   "publisher": "hacking",
   "license": "UNLICENSED",
@@ -16,6 +16,32 @@
       { "command": "gucode.share", "title": "复制坐标码 / 分享卡", "category": "蛊码" }
     ],
     "viewsContainers": { "activitybar": [ { "id": "gucode", "title": "蛊码", "icon": "media/icon.svg" } ] },
-    "views": { "gucode": [ { "type": "webview", "id": "gucode.view", "name": "空窍" } ] }
+    "views": { "gucode": [ { "type": "webview", "id": "gucode.view", "name": "空窍" } ] },
+    "configuration": {
+      "title": "蛊码",
+      "properties": {
+        "gucode.extraRoots": {
+          "type": "array", "default": [],
+          "markdownDescription": "手动追加要监听的日志目录。每项 `{ \"path\": \"~/work/.claude/projects\", \"adapter\": \"claude\", \"label\": \"公司号\" }`。adapter 可选：claude、codex、gemini、qwen、copilot、cline、roo、kilo、cline-cli、opencode、zcode、goose、droid、amp、kimi、aider。说明见 docs/adapters.md。",
+          "items": { "type": "object", "required": ["path", "adapter"], "properties": {
+            "path": { "type": "string", "description": "目录路径（可用 ~）" },
+            "adapter": { "type": "string", "enum": ["claude", "codex", "gemini", "qwen", "copilot", "cline", "roo", "kilo", "cline-cli", "opencode", "zcode", "goose", "droid", "amp", "kimi", "aider"] },
+            "label": { "type": "string", "description": "状态栏和游戏里显示的来源名" } } }
+        },
+        "gucode.bridgeFiles": {
+          "type": "array", "default": [], "items": { "type": "string" },
+          "markdownDescription": "其他机器上 `node tools/gu-bridge.mjs` 写出的桥接文件路径（放在 iCloud / Dropbox / Syncthing 等同步盘里）。插件只读文件里的累计数字，不联网。"
+        },
+        "gucode.weeklyReset": {
+          "type": "string", "default": "",
+          "markdownDescription": "每周额度的重置时间（本地时间），如 `Thu 08:00`。留空则按滚动 7 天统计。"
+        },
+        "gucode.limits": {
+          "type": "object", "default": {},
+          "markdownDescription": "可选：Claude 额度的 token 上限，用来算百分比，如 `{ \"claude5h\": 20000000, \"claudeWeek\": 300000000 }`。不填时只显示用量、不显示百分比。",
+          "properties": { "claude5h": { "type": "number" }, "claudeWeek": { "type": "number" } }
+        }
+      }
+    }
   }
 }

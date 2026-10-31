@@ -3,7 +3,8 @@
 // ═══ 集成指南 ════════════════════════════════════════════════════════════════
 // 数据来源：插件或网页本地桥 window.postMessage({ type:'ledger', v:1, days, hours, sources, windows, tools, agents, generatedAt })。
 //   两种口径：days[d].x / hours / windows[].used 是全量吞吐（raw，含每轮重复读上下文的读缓存，与 ccusage 同口径）；
-//   days[d].t / windows[].usedEq 是算力当量（eq，读缓存按 0.1 计，推进养蛊用）；days[d].s / m 是 t 的拆分。
+//   days[d].t / windows[].usedEq 是算力当量（eq，读缓存按 0.1 计，推进养蛊用）；days[d].s / m 是 t 的拆分，sx / mx 是 x 的拆分（有就优先用）。
+//   windows[].pct 插件给的是百分数（0–100），normLedger 折成 0–1.5，之后各函数都按 0–1 算。
 //   界面（日历、曲线、最强一日、年度卡）和玩法判定（灵根门槛、成就）一律用 raw；旧数据没有 x 时退回 t。
 //   normLedger(raw) 校验清洗（字段名见 normLedger）；没有真实数据时界面用 demoLedger(seed, now)，它带 demo:true，
 //   面板醒目标「演示数据」。demoLedger 同种子同 now 必出同一份数据（tools/ledger-test.mjs 有测）。
@@ -131,12 +132,13 @@ export function ledgerStats(L) {
 }
 const lgLevel = (t, q) => !(t > 0) ? 0 : t <= q[0] ? 1 : t <= q[1] ? 2 : t <= q[2] ? 3 : 4;
 // 近 n 天五行占比：每天按 m 的比例拆当天 raw，再累加
+const lgHas = o => !!(o && typeof o === 'object' && Object.keys(o).length);
 export function rootShares(L, n = ROOT_TUNE.days) {
   const end = lgEnd(L), acc = { mu: 0, huo: 0, tu: 0, jin: 0, shui: 0, hun: 0 }; let total = 0;
   for (let i = 0; i < n; i++) {
-    const dd = L && L.days && L.days[lgKey(lgAdd(end, -i))]; if (!dd || !dd.m) continue;
-    const ms = lgSum(Object.values(dd.m).map(v => +v > 0 ? +v : 0)); if (!ms) continue; const x = lgX(dd) || ms;
-    for (const f in dd.m) { const v = +dd.m[f] || 0; if (v > 0) acc[lgFamElem(f)] += x * v / ms; }
+    const dd = L && L.days && L.days[lgKey(lgAdd(end, -i))], mm = dd && (lgHas(dd.mx) ? dd.mx : dd.m); if (!mm) continue;   // 有 raw 拆分（mx）就直接用，否则按当天 raw 总量放大当量拆分
+    const ms = lgSum(Object.values(mm).map(v => +v > 0 ? +v : 0)); if (!ms) continue; const x = lgX(dd) || ms;
+    for (const f in mm) { const v = +mm[f] || 0; if (v > 0) acc[lgFamElem(f)] += x * v / ms; }
     total += x;
   }
   const shares = {}; for (const e in acc) shares[e] = total ? acc[e] / total : 0;
@@ -251,13 +253,13 @@ export function normLedger(raw) {
   const num = x => (typeof x === 'number' && isFinite(x) && x > 0) ? x : 0, str = (x, n = 40) => String(x == null ? '' : x).slice(0, n);
   const nmap = o => { const r = {}; if (o && typeof o === 'object') for (const k in o) { const v = num(o[k]); if (v) r[str(k, 40)] = v; } return r; };
   const isDay = k => /^\d{4}-\d{2}-\d{2}$/.test(k), days = {}, hours = {}, tools = {}, sources = {};
-  Object.keys(raw.days).filter(isDay).sort().slice(-400).forEach(k => { const d = raw.days[k] || {}, s = nmap(d.s), m = nmap(d.m); days[k] = { t: num(d.t) || lgSum(Object.values(s)) || lgSum(Object.values(m)), x: num(d.x), s, m }; });
+  Object.keys(raw.days).filter(isDay).sort().slice(-400).forEach(k => { const d = raw.days[k] || {}, s = nmap(d.s), m = nmap(d.m); days[k] = { t: num(d.t) || lgSum(Object.values(s)) || lgSum(Object.values(m)), x: num(d.x), s, m, sx: nmap(d.sx), mx: nmap(d.mx) }; });
   Object.keys(raw.hours || {}).filter(isDay).sort().slice(-14).forEach(k => { const a = raw.hours[k]; if (Array.isArray(a)) hours[k] = Array.from({ length: 24 }, (_, h) => num(a[h])); });
   Object.keys(raw.tools || {}).filter(isDay).sort().slice(-400).forEach(k => { const o = raw.tools[k] || {}; tools[k] = {}; LG_TOOLS.forEach(([id]) => { tools[k][id] = Math.round(num(o[id])); }); });
   for (const k in raw.sources || {}) { const s = raw.sources[k] || {}; sources[str(k)] = { label: str(s.label || k), kind: str(s.kind), account: str(s.account) }; }
   const windows = (Array.isArray(raw.windows) ? raw.windows : []).slice(0, 12).filter(w => w && w.key && (w.kind === '5h' || w.kind === 'week')).map(w => ({
     key: str(w.key), label: str(w.label || w.key), kind: w.kind, used: num(w.used), usedEq: num(w.usedEq) || null,
-    pct: typeof w.pct === 'number' && isFinite(w.pct) ? Math.max(0, Math.min(1.5, w.pct)) : null,
+    pct: typeof w.pct === 'number' && isFinite(w.pct) ? Math.max(0, Math.min(1.5, w.pct / 100)) : null,   // 插件给的是百分数（0–100，可超），这里折成 0–1.5
     resetsAt: num(w.resetsAt) || null, start: num(w.start) || null, basis: w.basis === 'estimate' ? 'estimate' : 'log' }));
   const ag = raw.agents || {};
   return { type: 'ledger', v: 1, days, hours, sources, windows, tools, agents: { active: Math.min(99, Math.floor(num(ag.active))), peakToday: Math.min(99, Math.floor(num(ag.peakToday))) }, generatedAt: num(raw.generatedAt) || Date.now() };
@@ -432,9 +434,10 @@ function lgDayHTML(L, k) {
   const head = `<div class="lg-dh"><b>${dt.getFullYear()}年${lgMD(k)}</b><small>周${'日一二三四五六'[dt.getDay()]}</small><span>${d && lgX(d) ? `${lgCN(lgX(d))} <small>token</small>` : '未修'}</span></div>`;
   if (!d || !lgX(d)) return head + '<p class="sm">这一天没有修炼记录。</p>';
   const two = `<div class="lg-two"><p><b>${lgCN(lgX(d))}</b>全量吞吐<small>含每轮重复读进来的上下文缓存，和 ccusage 等工具的口径一致</small></p><p><b>${lgCN(d.t)}</b>算力当量<small>读缓存只按一成计，养蛊吃的是这个</small></p></div>`;
-  const src = Object.entries(d.s || {}).sort((a, b) => b[1] - a[1]).map(([n, v], i) => ({ n: (L.sources && L.sources[n] && L.sources[n].label) || n, v, c: 'lg-s' + Math.min(i, 4) }));
-  const mod = LG_FAMS.filter(f => d.m && d.m[f]).map(f => ({ n: LG_FAM_NAME[f], v: d.m[f], st: `background:var(--e-${lgFamElem(f)});opacity:${f === 'claude-sonnet' ? 0.7 : f === 'claude-haiku' ? 0.45 : 1}` }));
-  return head + two + `<div class="lg-dgrid">${src.length ? `<div><h5>来源 · 按当量</h5>${lgBar(src, 'src')}</div>` : ''}${mod.length ? `<div><h5>模型 · 灵根 · 按当量</h5>${lgBar(mod, 'mod')}</div>` : ''}
+  const rs = lgHas(d.sx), rm = lgHas(d.mx), ds = rs ? d.sx : d.s || {}, dm = rm ? d.mx : d.m || {};   // 插件给了 raw 拆分（sx/mx）就按全量显示，否则按当量
+  const src = Object.entries(ds).sort((a, b) => b[1] - a[1]).map(([n, v], i) => ({ n: (L.sources && L.sources[n] && L.sources[n].label) || n, v, c: 'lg-s' + Math.min(i, 4) }));
+  const mod = LG_FAMS.filter(f => dm[f]).map(f => ({ n: LG_FAM_NAME[f], v: dm[f], st: `background:var(--e-${lgFamElem(f)});opacity:${f === 'claude-sonnet' ? 0.7 : f === 'claude-haiku' ? 0.45 : 1}` }));
+  return head + two + `<div class="lg-dgrid">${src.length ? `<div><h5>来源 · ${rs ? '全量' : '按当量'}</h5>${lgBar(src, 'src')}</div>` : ''}${mod.length ? `<div><h5>模型 · 灵根 · ${rm ? '全量' : '按当量'}</h5>${lgBar(mod, 'mod')}</div>` : ''}
   ${tl ? `<div class="lg-dtools"><h5>功课</h5><p>${LG_TOOLS.filter(([id]) => tl[id]).map(([id, n]) => `<span>${n}<b>${tl[id]}</b></span>`).join('')}</p></div>` : ''}</div>`;
 }
 

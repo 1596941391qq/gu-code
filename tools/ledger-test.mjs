@@ -1,6 +1,7 @@
 // node tools/ledger-test.mjs —— 算力履历纯函数的边界测试：rootBuffs / cycleRewards / agentBonus / ledgerAchievements，
-// 两种口径：玩法按全量吞吐 x（raw）判定，没有 x 时退回当量 t。外加统计、清洗、上限解析，以及演示数据生成器的确定性（同种子同时刻 → 同一份数据）。
-import { rootBuffs, rootFeedMul, cycleRewards, ledgerSnap, agentBonus, ledgerAchievements, ledgerStats, demoLedger, normLedger, lgParseTok, lgKey, ledgerShichen, ROOT_TUNE, AGENT_TUNE, LG_FAMS, LEDGER_ACHS, LG_ACH_TUNE, ledgerMetaRegister, ledgerApply, LG_TITLE_DEFS } from '../src/ledger.js';
+// 两种口径：玩法按全量吞吐 x（raw）判定，没有 x 时退回当量 t。外加统计、清洗、上限解析、演示数据生成器的确定性（同种子同时刻 → 同一份数据），以及和插件端 vscode-ext/ledger.js 的消息对口径。
+import { rootBuffs, rootShares, rootFeedMul, cycleRewards, ledgerSnap, agentBonus, ledgerAchievements, ledgerStats, demoLedger, normLedger, lgParseTok, lgKey, ledgerShichen, ROOT_TUNE, AGENT_TUNE, LG_FAMS, LEDGER_ACHS, LG_ACH_TUNE, ledgerMetaRegister, ledgerApply, LG_TITLE_DEFS } from '../src/ledger.js';
+import { createRequire } from 'node:module';
 import { metaInit, metaMigrate, metaEmit, achList, titleName, setTitle, ACHIEVEMENTS, TITLES } from '../src/meta.js';
 
 let pass = 0, fail = 0;
@@ -147,7 +148,7 @@ function mk({ m = null, n = 7, days = {}, hours = {}, windows = [], agents = { a
   eq(n.days['2026-10-30'].t, 12, '没有 t 时按来源求和'); eq(n.days['2026-10-30'].x, 0, '没有 x 记 0（读时退回 t）');
   eq(normLedger({ type: 'ledger', v: 1, days: { '2026-10-30': { t: 5, x: 40 } }, windows: [{ key: 'w', kind: 'week', used: 70, usedEq: 10 }] }).windows[0].usedEq, 10, 'usedEq 保留'); eq(n.days.bad, undefined, '非法日期键丢弃'); eq(n.days['2026-10-31'].t, 0, '负数当 0');
   eq(n.hours['2026-10-30'].length, 24, '逐时补齐 24 格'); eq(n.hours['2026-10-30'][2], 0, '非数字当 0');
-  eq(n.windows.map(w => [w.key, w.pct]), [['a', 1.5]], '只留 5h/week 且有 key 的窗口，pct 夹到 1.5'); eq(n.agents.active, 99, 'agent 数封顶 99');
+  eq(n.windows.map(w => [w.key, w.pct]), [['a', 0.09]], '只留 5h/week 且有 key 的窗口，pct 百分数折成小数'); eq(n.agents.active, 99, 'agent 数封顶 99');
   eq(n.sources.a.label, '<b>x</b>', '标签原样保留（渲染时再转义）');
   eq([lgParseTok('5000万'), lgParseTok('2亿'), lgParseTok('50M'), lgParseTok('1,200'), lgParseTok('1.5e8'), lgParseTok('abc'), lgParseTok('')], [5e7, 2e8, 5e7, 1200, 1.5e8, 0, 0], '上限解析');
 }
@@ -200,6 +201,25 @@ function mk({ m = null, n = 7, days = {}, hours = {}, windows = [], agents = { a
   ok(S2.lgAch.includes('lg_streak7'), '履历成就一旦达成就留着（数据窗口滚动也不丢）');
   const old = metaMigrate({ level: 3, ach: { first_node: 1 }, titles: ['t0'] }, { total: 5 });
   ok(old.ach.first_node === 1 && !old.ach.lg_streak7 && titleName(old) === '无名蛊师', '旧存档读得进来，履历成就未得');
+}
+
+// ───── 和插件端生产者（vscode-ext/ledger.js）对口径：百分数、raw 拆分、窗口键
+{
+  const LG = createRequire(import.meta.url)('../vscode-ext/ledger.js'), t = Date.now();
+  const P = LG.createLedger({ load: () => null, settings: () => ({ limits: { claude5h: 1000 } }) }); P.ready = true;
+  P.add({ key: 'claude', label: 'Claude', src: { id: 'claude', tag: '' }, ts: t - 60e3, n: 100, x: 400, model: 'claude-opus-5-5', tools: [] });
+  P.add({ key: 'codex', label: 'Codex', src: { id: 'codex', tag: '' }, ts: t - 30e3, n: 50, x: 500, model: 'gpt-5-codex', tools: [] });
+  const raw = P.message([{ key: 'claude', label: 'Claude', kind: 'claude', account: 'default' }, { key: 'codex', label: 'Codex', kind: 'codex', account: 'default' }]), n = normLedger(raw), dk = Object.keys(n.days)[0];
+  ok(!!n, '插件推来的消息能通过清洗');
+  eq([n.days[dk].x, n.days[dk].t, n.days[dk].sx, n.days[dk].mx], [900, 150, { claude: 400, codex: 500 }, { 'claude-opus': 400, gpt: 500 }], 'raw 拆分 sx/mx 保留');
+  const w5 = n.windows.find(w => w.key === 'claude:5h'); near(w5.pct, 0.4, '插件的百分数（400/1000 → 40）折成 0.4');
+  eq(ledgerAchievements(n).map(a => a.id).includes('lg_quota_full'), false, '用了四成不算周天圆满');
+  eq(normLedger({ ...raw, windows: [{ key: 'a', kind: '5h', used: 1, pct: 100 }] }).windows[0].pct, 1, '100% → 1');
+  ok(ledgerAchievements(normLedger({ ...raw, windows: [{ key: 'a', kind: '5h', used: 1, pct: 100 }] })).some(a => a.id === 'lg_quota_full'), '用满 100% 算周天圆满');
+  eq(normLedger({ ...raw, windows: [{ key: 'a', kind: '5h', used: 1, pct: 250 }] }).windows[0].pct, 1.5, '超额夹到 1.5');
+  const L = { type: 'ledger', v: 1, generatedAt: NOW, days: { [day(0)]: { t: 100, x: 1000, m: { 'claude-opus': 100 }, mx: { gpt: 1000 } } } };
+  near(rootShares(L).shares.shui, 1, '有 mx 时灵根直接按 raw 模型拆分');
+  delete L.days[day(0)].mx; near(rootShares(L).shares.jin, 1, '没有 mx 退回当量拆分');
 }
 
 console.log(`ledger-test：通过 ${pass}，失败 ${fail}`);

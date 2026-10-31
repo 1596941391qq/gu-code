@@ -1,0 +1,5 @@
+{"type":"session.start","id":"e1","timestamp":"__TS__","data":{}}
+{"type":"assistant.message","id":"e2","timestamp":"__TS__","data":{"content":"(synthetic)","outputTokens":120}}
+{"type":"tool.execution_start","id":"e3","timestamp":"__TS__","data":{"toolName":"bash"}}
+{"type":"assistant.message","id":"e4","timestamp":"__TS__","data":{"content":"(synthetic)","outputTokens":80}}
+{"type":"session.shutdown","id":"e5","timestamp":"__TS__","data":{"modelMetrics":{"claude-sonnet-4.5":{"usage":{"inputTokens":5000,"outputTokens":200,"cacheReadTokens":3000,"cacheWriteTokens":500,"reasoningTokens":0},"requests":{"count":2}}}}}
