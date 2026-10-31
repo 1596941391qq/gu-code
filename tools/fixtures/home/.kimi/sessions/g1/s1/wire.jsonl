@@ -1,0 +1,3 @@
+{"timestamp":__TSS__,"message":{"type":"StatusUpdate","payload":{"message_id":"k1","token_usage":{"input_other":300,"output":40,"input_cache_read":1000,"input_cache_creation":60}}}}
+{"type":"usage.record","usageScope":"turn","model":"kimi-k2","time":__TSS__,"usage":{"inputOther":100,"output":20,"inputCacheRead":500,"inputCacheCreation":0}}
+{"type":"usage.record","usageScope":"session","model":"kimi-k2","time":__TSS__,"usage":{"inputOther":400,"output":60,"inputCacheRead":1500,"inputCacheCreation":60}}

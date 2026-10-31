@@ -1,0 +1,1 @@
+[{"ts":2,"type":"say","say":"api_req_started","text":"{\"request\":\"(synthetic)\",\"tokensIn\":1000,\"tokensOut\":100,\"cacheWrites\":0,\"cacheReads\":600,\"cost\":0.01}"}]
