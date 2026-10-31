@@ -2606,7 +2606,7 @@ function fmtNum(n) { n = Math.round(n || 0); const a = Math.abs(n); return a >= 
 function fmtTok(n) { n = n || 0; return n >= 1e9 ? (n / 1e9).toFixed(2) + 'B' : n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(Math.round(n)); }
 
 // ---- src/battle.js（包一层，只放出 export）
-const { HPK, DIST, SPD_K, MAXROUND, RES_K, TUNE, GP, CRIT, NAT_K, battleProfile, synergyOf, encodeReplay, decodeReplay, layoutOf, liveLine, skillText, predictOrder, battle } = (() => {
+const { HPK, DIST, SPD_K, MAXROUND, OFF_MX, RES_K, TUNE, GP, CRIT, NAT_K, battleProfile, synergyOf, encodeReplay, decodeReplay, layoutOf, liveLine, skillText, predictOrder, battle } = (() => {
 // 蛊码 GuCode · 斗蛊引擎 v2（纯函数，种子随机，可复现）。规格见 docs/battle-spec.md，规则见 docs/design.md 2.5 / 3.5 / 第 8 节。
 // 双方各一块 3×3 阵盘（列 c：0 前 1 中 2 后；行 r：0–2）。速度决定出手顺序（行动条），出手和挨打攒蛊力，蛊力满了放主动技；
 // 近战打同一行最靠前的敌蛊（这一行没人打最近的一行），远程按 aim 挑；技能有形状和位移。输出事件流 + 每步快照，渲染层只负责回放。
@@ -2622,6 +2622,8 @@ const HPK = 4;
 const DIST = 100;
 const SPD_K = 0.18;
 const MAXROUND = 30;
+// OFF_MX：拿自己最大血量打人（伤害、毒灼）时血量按 1/OFF_MX 算。血量大约是攻的 8 倍，不折算的话「最大血量 16% 的伤害」会比「攻击 16%」强好几倍。和 HPK 无关，HPK 改成 1 以后照样生效
+const OFF_MX = 4;
 const ROWS = 3, COLS = 3;
 // RES_K：道共鸣数值整体折算（design.md 2.6：道共鸣只给轻量加成，配合比堆道重要）
 const RES_K = 0.5;
@@ -2740,7 +2742,8 @@ function effNote(list, r, isAct, st) {
   for (const e of list || []) {
     if (parts.length >= 2) break;
     const k = scaleAt(e, r, isAct), num = (x, base) => Math.round(base * x * k);
-    const v = Math.round(((e.atk || 0) * st.atk + (e.a0 || 0) * st.atk + (e.mx || 0) * st.mx + (e.op === 'st' ? 0 : e.n || 0) * st.atk + (e.tatk || 0) * st.atk + (e.tmx || 0) * st.mx) * k + (e.flat || 0));
+    const off = e.op === 'dmg' || e.op === 'st' ? HPK / OFF_MX : 1;   // 打人用的血量折算同引擎（st.mx 是卡面血，战斗里的血 = 卡面血 × HPK）
+    const v = Math.round(((e.atk || 0) * st.atk + (e.a0 || 0) * st.atk + (e.mx || 0) * st.mx * off + (e.op === 'st' ? 0 : e.n || 0) * st.atk + (e.tatk || 0) * st.atk + (e.tmx || 0) * st.mx) * k + (e.flat || 0));
     const each = e.shape && e.shape !== 'one' ? '每只' : '';
     if (e.op === 'dmg' && v > 0) parts.push(`${each}约 ${v} 伤害${(e.times || 1) > 1 ? ` × ${e.times}` : ''}`);
     else if (e.op === 'heal' && v > 0) parts.push(`${each}约回 ${v} 血`);
@@ -2757,7 +2760,8 @@ function effNote(list, r, isAct, st) {
 // 主动技说明换成这一下的实际数字（亮牌用）：「攻击 140%」→「28 伤害」、「最大血量 20%」→「24 点」、「攻 +15%」→「攻 +3」，去掉括号里的补充说明
 function liveLine(text, k, atk, mx) {
   const v = (b, x) => Math.max(1, Math.round(b * x / 100 * k));
-  return String(text || '').replace(/（[^）]*）/g, '').replace(/攻击 ?(\d+)%/g, (_, x) => ` ${v(atk, x)} 伤害`)
+  return String(text || '').replace(/（本蛊最大血量 ?(\d+)%）/g, (_, x) => `（每轮 ${v(mx / OFF_MX, x)}）`).replace(/（[^）]*）/g, m => /每轮 \d/.test(m) ? m : '')
+    .replace(/最大血量 ?(\d+)% ?的?伤害/g, (_, x) => ` ${v(mx / OFF_MX, x)} 伤害`).replace(/攻击 ?(\d+)%/g, (_, x) => ` ${v(atk, x)} 伤害`)
     .replace(/最大血量 ?(\d+)% ?的?/g, (_, x) => ` ${v(mx, x)} 点`).replace(/攻 ?\+ ?(\d+)%/g, (_, x) => `攻 +${v(atk, x)}`)
     .replace(/ {2,}/g, ' ').replace(/([，；：、。]) /g, '$1').trim();
 }
@@ -3024,7 +3028,7 @@ function battle(ta, tb, seed, opts = {}) {
   const scaleOf = (u, e, src) => src.mul || (1 + (e.up != null ? e.up : src.kind === 'act' ? 0.12 : 0) * Math.max(0, (u.rank || 1) - 1));
   const amount = (u, t, e, c, k) => {
     let v = 0;
-    if (e.atk) v += u.atk * e.atk; if (e.a0) v += (u.a0 || u.atk) * e.a0; if (e.mx) v += u.mx * e.mx / (e.op === 'dmg' || e.op === 'st' ? HPK : 1);   // 拿自己的最大血量打人（伤害、毒灼）按卡面血算，和攻击口径一致；护体、回血仍按战斗里的血量
+    if (e.atk) v += u.atk * e.atk; if (e.a0) v += (u.a0 || u.atk) * e.a0; if (e.mx) v += u.mx * e.mx / (e.op === 'dmg' || e.op === 'st' ? OFF_MX : 1);   // 拿自己的最大血量打人（伤害、毒灼）按 1/OFF_MX 算；护体、回血照旧按血量的百分比
     if (e.tatk && t) v += t.atk * e.tatk; if (e.tmx && t) v += t.mx * e.tmx; if (e.n) v += (c.n || 0) * e.n; if (e.flat) v += e.flat;
     return v > 0 ? Math.max(1, Math.round(v * k)) : 0;
   };
@@ -3299,7 +3303,7 @@ function battle(ta, tb, seed, opts = {}) {
   return { winner, rounds: round, turns: round, seed, sota, log, roster, units, mvp, hpA: oa.hp, hpB: ob.hp, statA: oa.st, statB: ob.st, syn, ops, capped: ops > MAXOPS || acts > MAXACT };
 }
 
-return { HPK, DIST, SPD_K, MAXROUND, RES_K, TUNE, GP, CRIT, NAT_K, battleProfile, synergyOf, encodeReplay, decodeReplay, layoutOf, liveLine, skillText, predictOrder, battle };
+return { HPK, DIST, SPD_K, MAXROUND, OFF_MX, RES_K, TUNE, GP, CRIT, NAT_K, battleProfile, synergyOf, encodeReplay, decodeReplay, layoutOf, liveLine, skillText, predictOrder, battle };
 })();
 // ---- src/art2.js（包一层，只放出 export）
 const { ART2, guSVG2 } = (() => {
