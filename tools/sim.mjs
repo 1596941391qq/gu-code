@@ -1,6 +1,6 @@
 // node tools/sim.mjs —— v2 平衡与正确性自检（口径见 docs/design.md 第 8 节）。任何一项不过就退出码 1。
 // 现在先查：战斗能跑完且可复现、坐标码往返、站位差（最佳−最差胜率差中位 ≥15 个百分点）、单种蛊胜率上限、合成与蛊市。
-import { makeRng, genTeam, encodeTeam, decodeTeam, newGu, mergeAll, placeGu, rollShop, statFor, SP, SPECIES, poolFor, teamCombos, daoCount, RANK } from '../src/core.js';
+import { makeRng, genTeam, encodeTeam, decodeTeam, newGu, mergeAll, placeGu, rollShop, statFor, SP, SPECIES, poolFor, teamCombos, daoCount, RANK, cellPos, sortTeam } from '../src/core.js';
 import { battle } from '../src/battle.js';
 
 const fails = [], t0 = Date.now();
@@ -20,12 +20,14 @@ console.log(`战斗：最长 ${maxT} 回合；不可复现 ${nondet}；坐标码
 if (nondet) fails.push('同种子不复现 ' + nondet); if (codeFail) fails.push('坐标码往返失败 ' + codeFail); if (maxT >= 60) fails.push('有对局打满回合上限');
 { const d = decodeTeam('ShuaXp-eggSAJEhwk5YaU1WgAL4IwBAYWQAAFACwECC0AAAgAEBAgUQAAFABU'); const ok = d && d.old && d.team.length === 4 && d.team[0].sp === 'drum'; console.log('旧 v2 坐标码只取物种和转数：' + (ok ? 'OK' : '失败')); if (!ok) fails.push('旧码解码失败'); }
 
-// 2. 站位：同一套蛊换排法，最佳与最差的胜率差
+// 2. 站位：同一套蛊在 3×3 阵盘上换摆法（两种阵形 × 谁站哪格），最佳与最差的胜率差
 const perms = a => a.length <= 1 ? [a] : a.flatMap((x, i) => perms([...a.slice(0, i), ...a.slice(i + 1)]).map(p => [x, ...p]));
+const SHAPES = [[0, 3, 6, 1], [0, 3, 2, 5]];   // 格号 = 行×3+列（列 0 前、1 中、2 后）：前三中一；前二后二
+const layouts = team => SHAPES.flatMap(sh => perms(team).map(p => sortTeam(p.map((g, i) => ({ ...g, pos: cellPos(sh[i]) })))));
 const spread = [];
 for (let k = 0; k < 16; k++) {
   const r = makeRng('f' + k), team = genTeam(r, { realm: 2, n: 4, up: 0.3 }), foes = Array.from({ length: 30 }, (_, j) => genTeam(makeRng('fo' + k + ':' + j), { realm: 2, n: 4, up: 0.3 }));
-  const rates = perms(team).map(p => foes.filter((f, j) => win(p, f, 'p' + j) === 'A').length / foes.length);
+  const rates = layouts(team).map(p => foes.filter((f, j) => win(p, f, 'p' + j) === 'A').length / foes.length);
   spread.push(Math.max(...rates) - Math.min(...rates));
 }
 console.log(`站位：最佳−最差胜率差 中位 ${Math.round(med(spread) * 100)} 个百分点`);
