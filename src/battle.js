@@ -295,7 +295,7 @@ export function battle(ta, tb, seed, opts = {}) {
   syn.forEach((sy, s) => sy.combos.forEach(c => {
     const u = S[s].find(x => x.src === c.idx), C = comboDef(COMBOS.find(x => x.id === c.id)); if (!u) return;
     u.combo = c.id; u.cname = c.n; u.cmul = c.mul; roster[u.uid].combo = { id: c.id, n: c.n, mul: c.mul };
-    if (C.eff) u.dx.push({ src: { kind: 'combo', key: 'cb', mul: c.mul * TUNE.combo, combo: 1 }, list: C.eff.map(e => ({ when: C.when, ...e })) });
+    if (C.eff) { u.cdecl = 1; u.dx.push({ src: { kind: 'combo', key: 'cb', mul: c.mul * TUNE.combo, combo: 1 }, list: C.eff.map(e => ({ when: C.when, ...e })) }); }   // cdecl：bestiary 的旧杀招钩子不再派发
   }));
 
   // ----- 伤害、增益、召唤（ctx 接口与 bestiary.js 文件头一致） -----
