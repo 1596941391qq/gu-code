@@ -86,6 +86,7 @@ try {
 } catch (e) { warn.push('daos.js: ' + e.message); }
 try {
   const K = await import('../src/combos2.js'), L = K.COMBOS2;
+  const SUMMON_OK = new Set(['pupa', 'shade', 'lunar', 'antling', 'aphidling', 'spiderling', 'fuzi', 'bee', 'kuilei', ...Object.keys(B2.SUMMONS2)]);
   let cross = 0;
   L.forEach(c => {
     c.need.forEach(x => { if (!B2.DAO120[x]) errs.push(`杀招 ${c.id}: 没有物种 ${x}`); });
@@ -93,7 +94,12 @@ try {
     (c.eff || []).forEach((e, i) => chkEff(`combo.${c.id}.${i}`, { when: c.when, ...e }, true));
     if (c.from) { const b = L.find(x => x.id === c.from); if (!b || !b.need.every(x => c.need.includes(x)) || b.core !== c.core) errs.push(`进阶 ${c.id}: 原杀招对不上`); }
     if (new Set(c.need.map(x => B2.DAO120[x])).size > 1) cross++;
+    if (c.core !== c.need[0]) errs.push(`杀招 ${c.id}: 核心要写在 need 第一位`);
+    if (!c.fx || !c.fx.d) errs.push(`杀招 ${c.id}: 没有 fx`);
+    (c.eff || []).forEach(e => { if (e.op === 'summon' && !(SUMMON_OK.has(e.sp))) errs.push(`杀招 ${c.id}: 召唤物 ${e.sp} 没有名字`); });
   });
+  const seenId = new Set(), seenNeed = new Map();
+  L.forEach(c => { if (seenId.has(c.id)) errs.push(`杀招 id 重复 ${c.id}`); seenId.add(c.id); const key = [...c.need].sort().join('+'); if (seenNeed.has(key)) errs.push(`杀招配方重复 ${seenNeed.get(key)} / ${c.id}`); seenNeed.set(key, c.id); });
   const base = L.filter(c => !c.from).length;
   say(`杀招 ${base} 个 + 进阶 ${L.length - base} 个，跨道 ${cross}/${L.length}`);
   if (cross * 2 < L.length) errs.push(`跨道杀招 ${cross}/${L.length}，不到一半`);
