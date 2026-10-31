@@ -710,7 +710,7 @@ const $ = (s, r = document) => r.querySelector(s);
 const el = html => { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstElementChild; };
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-const fresh = () => ({ v: 1, started: false, name: '', team: [], realm: 0, nodes: 0, compass: [], sel: null, prog: 0, wh: 0, bank: 0, repair: 0, will: 3, willT: 0, willK: 0, total: 0, muts: 0, wins: 0, losses: 0, seed: (Math.random() * 1e9) | 0, step: 0, sound: false, speed: 1 });
+const fresh = () => ({ v: 1, started: false, name: '', team: [], realm: 0, nodes: 0, compass: [], sel: null, prog: 0, wh: 0, bank: 0, repair: 0, will: 3, willT: 0, willK: 0, total: 0, muts: 0, wins: 0, losses: 0, seed: (Math.random() * 1e9) | 0, step: 0, sound: false, speed: 1, theme: 'auto' });
 
 let S = fresh(), phase = 'yang', rate = 0, hot = false, inBattle = false, booted = false, skip = false, resetArm = 0;
 const src = new TokenSource(onTick);
@@ -825,7 +825,7 @@ function startHTML() {
 }
 function mainHTML() {
   return `<header class="top"><div class="brand"><b class="logo">蛊码</b><span class="sub">烧 Token · 养蛊 · 斗道</span></div>
-  <div class="tools"><span class="realm" id="realm">${REALMS[S.realm]}</span><button class="ib" data-act="sound" id="bSound">${S.sound ? '声' : '静'}</button><button class="ib zhu" data-act="share">战帖</button></div></header>
+  <div class="tools"><span class="realm" id="realm">${REALMS[S.realm]}</span><button class="ib" data-act="theme" id="bTheme" title="主题：自动 / 日 / 夜">${{ auto: '自', light: '日', dark: '夜' }[S.theme || 'auto']}</button><button class="ib" data-act="sound" id="bSound">${S.sound ? '声' : '静'}</button><button class="ib zhu" data-act="share">战帖</button></div></header>
   <section class="vein"><canvas id="vein"></canvas><div class="vinfo"><button class="chip" data-act="src" id="srcTag"></button><span id="rateTxt"></span><span id="fireTag" class="fire"></span><span class="grow"></span><span id="totTxt"></span></div></section>
   <div class="seg" id="demo">${[['coding', '写代码中'], ['wuhuo', '武火并发'], ['rest', '停手休息']].map(([m, t]) => `<button data-act="demo" data-m="${m}">${t}</button>`).join('')}</div>
   <section class="qiao" id="qiao"><div class="qhead"><span class="lbl">空窍 <small>左为炉口</small></span><span id="qmeta"></span></div><div class="slots" id="slots"></div><p class="hint" id="hint"></p></section>
@@ -897,6 +897,18 @@ function meters() {
   const q = $('#qiao'); if (q) { q.classList.toggle('flow', rate > 0 && S.sel != null); q.classList.toggle('hot', hot && rate > 0); }
 }
 
+// ---------- 主题：自动跟随系统 / VS Code，或手动日、夜 ----------
+let veinRGB = '111,183,164';
+function applyTheme() {
+  const pref = S.theme || 'auto'; let t = pref;
+  if (pref === 'auto') {
+    const b = document.body ? document.body.classList : { contains: () => false };
+    t = VSC ? ((b.contains('vscode-light') || b.contains('vscode-high-contrast-light')) ? 'light' : 'dark') : (window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+  }
+  document.documentElement.dataset.theme = t; veinRGB = t === 'light' ? '44,110,94' : '111,183,164';
+  const btn = $('#bTheme'); if (btn) btn.textContent = { auto: '自', light: '日', dark: '夜' }[pref];
+}
+if (window.matchMedia) { const mq = matchMedia('(prefers-color-scheme: light)'); if (mq.addEventListener) mq.addEventListener('change', applyTheme); }
 // ---------- 灵脉（青绿字符流）----------
 const VP = []; let vLast = 0, vAcc = 0;
 function veinLoop(ts) {
@@ -914,9 +926,9 @@ function veinLoop(ts) {
   for (let i = VP.length - 1; i >= 0; i--) {
     const p = VP[i]; p.x += sp * p.v * dt + (rate > 0 ? 0 : 6 * dt);
     if (p.x > w + 10) { VP.splice(i, 1); continue; }
-    ctx.fillStyle = p.z ? `rgba(200,70,48,${p.a})` : `rgba(111,183,164,${p.a})`; ctx.fillText(p.c, p.x, p.y + 4);
+    ctx.fillStyle = p.z ? `rgba(200,70,48,${p.a})` : `rgba(${veinRGB},${p.a})`; ctx.fillText(p.c, p.x, p.y + 4);
   }
-  ctx.fillStyle = 'rgba(111,183,164,.14)'; ctx.fillRect(0, h - 1, w, 1);
+  ctx.fillStyle = `rgba(${veinRGB},.18)`; ctx.fillRect(0, h - 1, w, 1);
 }
 
 // ---------- 浮字、印章、震屏 ----------
@@ -1150,6 +1162,7 @@ const ACT = {
   mv(a) { const i = +a.dataset.i, j = i + +a.dataset.d; if (!S.team[j]) return; [S.team[i], S.team[j]] = [S.team[j], S.team[i]]; closeSheet(); renderSlots(); renderPhase(); save(); openGu(j); },
   demo(a) { src.demo = a.dataset.m; meters(); },
   src() { if (VSC) { src.setMode(src.mode === 'vscode' ? 'demo' : 'vscode'); renderPhase(); renderHint(); meters(); } else sheet(`<h3>真实 Token</h3><p class="sm">网页版默认是演示流。想让真实的 Claude Code / Codex 用量来养蛊，请装 VS Code 插件版（gu-code/vscode-ext），它只读会话里的 usage 数字，不读内容。</p>`); },
+  theme() { S.theme = { auto: 'light', light: 'dark', dark: 'auto' }[S.theme || 'auto']; applyTheme(); save(); },
   sound() { S.sound = !S.sound; $('#bSound').textContent = S.sound ? '声' : '静'; save(); snd('pluck'); },
   share() { openShare(); },
   trib() { startBattle('trib'); }, ghost() { startBattle('ghost'); },
@@ -1196,6 +1209,7 @@ document.addEventListener('click', e => {
 function boot(saved, pending) {
   if (saved && saved.v === 1) S = Object.assign(fresh(), saved);
   if (!document.getElementById('gu-defs')) document.body.insertAdjacentHTML('afterbegin', `<svg id="gu-defs" width="0" height="0" style="position:absolute" aria-hidden="true"><defs>${ART_DEFS}</defs></svg>`);
+  applyTheme(); if (VSC && window.MutationObserver) new MutationObserver(applyTheme).observe(document.body, { attributes: true, attributeFilter: ['class'] });
   booted = true; renderAll(); requestAnimationFrame(veinLoop);
   if (pending && pending.tokens > 0 && S.started) { feed(pending.tokens, pending.hot || 0); renderSlots(); renderPhase(); const h = $('#hint'); if (h) h.textContent = `你不在的时候，蛊吸纳了 ${fmtTok(pending.tokens)} token。`; }
   checkHash();
