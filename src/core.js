@@ -168,9 +168,6 @@ export function autoPlace(team) {
   return sortTeam(team);
 }
 export function sortTeam(team) { team.sort((a, b) => (a.pos ? a.pos.c * 3 + a.pos.r : 99) - (b.pos ? b.pos.c * 3 + b.pos.r : 99)); return team; }
-// 速：物种的 spd（100 = 标准）；物种没写时按流派给个默认值（战斗引擎以它自己的推法为准，这里只给卡面显示）
-const SCHOOL_SPD = { 爆发: 125, 开锋: 120, 斩杀: 120, 控制: 110, 群攻: 105, 毒: 105, 站位: 100, 召唤: 95, 亡语: 95, 成长: 95, 续航: 90, 反伤: 85, 护体: 80, 减伤: 80, 破甲: 110 };
-export const spdOf = g => g.spd || (SP[g.sp] && (SP[g.sp].spd || SCHOOL_SPD[SP[g.sp].school])) || 100;
 
 // ---------- 收蛊与合成 ----------
 export const sameRank = (list, sp, rk) => list.filter(g => g.sp === sp && rankOf(g) === rk).length;

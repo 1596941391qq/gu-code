@@ -1,6 +1,6 @@
 // 蛊码 GuCode · 界面与流程：洞府（养成）、斗幽灵与战帖（切磋）、战斗回放、秘境接口。规则只认 docs/design.md
-import { SPECIES, SP, TRAITS, REALMS, SLOTS, RANK, COMBOS, makeRng, hashStr, newGu, starterTeam, baseRank, rankOf, rankName, statFor, natOf, natMulFor, awOf, slotCap, poolFor, BAG, bagCap, canBuy, placeGu, mergeAll, sellValue, teamCombos, comboMissing, daoCount, COL_NAMES, cellOf, cellPos, freeCell, autoPlace, sortTeam, spdOf, daoOf, rollShop, foodCost, feedStat, PRICE, genTeam, ghostTrio, posLinks, encodeTeam, decodeTeam, EV_MS, playMs, tempoFor, fmtNum, fmtTok } from './core.js';
-import { battle } from './battle.js';
+import { SPECIES, SP, TRAITS, REALMS, SLOTS, RANK, COMBOS, COMBO, makeRng, hashStr, newGu, starterTeam, baseRank, rankOf, rankName, statFor, natOf, natMulFor, awOf, slotCap, poolFor, BAG, bagCap, canBuy, placeGu, mergeAll, sellValue, comboMissing, COL_NAMES, cellOf, cellPos, freeCell, autoPlace, sortTeam, daoOf, rollShop, foodCost, feedStat, PRICE, genTeam, ghostTrio, posLinks, encodeTeam, decodeTeam, EV_MS, playMs, tempoFor, fmtNum, fmtTok } from './core.js';
+import { battle, synergyOf, battleProfile } from './battle.js';
 import { guSVG, ART_DEFS } from './art.js';
 import { TokenSource, VSC } from './tokens.js';
 import { makeCard } from './card.js';
@@ -210,7 +210,14 @@ function startHTML() {
   <p class="fine">${VSC ? '插件模式：读取本机 Claude Code / Codex 会话的 token 用量数字（不读内容）。' : '网页版是模拟元气，存档标「试玩」，只存在本机。'}</p></div>`;
 }
 const natDesc = sp => { const k = natOf(sp); return k && TRAITS[k] ? `被动·${TRAITS[k].n}：${TRAITS[k].d(1, natMulFor(SP[sp].rank))}` : ''; };
-const actOfG = g => { const a = SP[g.sp] && SP[g.sp].act; return a ? { n: a.n, ch: a.n[0], d: a.d || '' } : null; };
+// 速、近远程、主动技以战斗引擎为准（battleProfile 里有物种没写时的默认值）
+const profOf = g => { try { return battleProfile(g.sp) || {}; } catch (e) { return {}; } };
+const spdG = g => g.spd || profOf(g).spd || 100;
+const reachG = g => (profOf(g).reach === 'ranged' ? '远程' : '近战');
+const actOfG = g => { const a = profOf(g).act; return a && a.n ? { n: a.n, ch: a.n[0], d: a.d || '' } : null; };
+// 羁绊以战斗引擎的 synergyOf 为准：line 写在空窍上方；combos[k].idx 是队伍下标，配方从 COMBO 补
+const synOf = team => { try { return synergyOf(team); } catch (e) { return { daos: [], combos: [], line: '' }; } };
+const combosBy = team => { const m = {}; synOf(team).combos.forEach(c => { m[c.idx] = { ...(COMBO[c.id] || {}), ...c, need: (COMBO[c.id] || {}).need || [c.core] }; }); return m; };
 const natOfG = g => { const k = natOf(g.sp); return k && TRAITS[k] ? { n: TRAITS[k].n, ch: TRAITS[k].ch, d: TRAITS[k].d(1, natMulFor(rankOf(g))), aw: awOf(g) } : null; };
 function mainHTML() {
   return `<header class="top"><div class="brand"><b class="logo">蛊码</b><span class="sub">烧 Token · 养蛊 · 闯秘境</span></div>
@@ -226,7 +233,7 @@ function guCard(g, combo) {
   const nat = natOfG(g), act = actOfG(g), k = cellOf(g);
   return `<button class="gu" data-act="gu" data-uid="${g.uid}" data-drag="${k}" data-tip-fn="gu">
   <span class="art">${guSVG(g.sp, { rank: rankOf(g) })}</span><span class="rk rk${rankOf(g)}">${RANK.ch[rankOf(g)]}</span>${combo ? `<span class="mseal">${esc(combo.n[0])}</span>` : ''}
-  <span class="nm">${SP[g.sp].n}</span><span class="st"><i class="a">${g.atk}</i><i class="h">${g.hp}</i><i class="v">${spdOf(g)}</i></span>
+  <span class="nm">${SP[g.sp].n}</span><span class="st"><i class="a">${g.atk}</i><i class="h">${g.hp}</i><i class="v">${spdG(g)}</i></span>
   <span class="tr">${nat ? `<span class="tc nat">${esc(nat.ch)}</span>` : ''}${act ? `<span class="tc act">${esc(act.ch)}</span>` : ''}</span></button>`;
 }
 function renderHome() {
@@ -245,7 +252,7 @@ function renderHome() {
 function renderSlots() {
   const box = $('#slots'); if (!box) return;
   autoPlace(S.team);
-  const combos = teamCombos(S.team), byUid = {}; S.team.forEach((g, i) => { byUid[g.uid] = combos[i]; });
+  const combos = combosBy(S.team), byUid = {}; S.team.forEach((g, i) => { byUid[g.uid] = combos[i]; });
   const at = {}; S.team.forEach(g => { at[cellOf(g)] = g; });
   let h = `<span class="bcol">${COL_NAMES[2]}</span><span class="bcol">${COL_NAMES[1]}</span><span class="bcol">${COL_NAMES[0]} <small>敌在右</small></span>`;
   for (let r = 0; r < 3; r++) for (const c of [2, 1, 0]) { const k = r * 3 + c, g = at[k]; h += g ? guCard(g, byUid[g.uid]) : `<div class="gu empty" data-drag="${k}"><span>空</span></div>`; }
@@ -258,9 +265,10 @@ function renderBagLine() {
 }
 function renderReso() {
   const r = $('#reso'); if (!r) return;
-  const dc = daoCount(S.team).sort((a, b) => b.tier - a.tier || b.n - a.n);
-  const on = dc.filter(x => x.tier);
-  setHTML(r, on.length ? on.map(x => `<span class="ro on" data-tip="${esc(`${DAO[x.dao].n}：空窍里 ${x.n} 只。2 只：${DAO[x.dao].r2.d}；4 只：${DAO[x.dao].r4.d}`)}">${DAO[x.dao].n}${x.n} · ${esc(x.eff.d)}</span>`).join('') : `<span class="ro">${esc(TXT.resoNone)}</span>`);
+  const sy = synOf(S.team), on = sy.daos.filter(x => x.tier), near = sy.daos.filter(x => !x.tier && x.next);
+  const tip = [...on.map(x => `${x.name}·${x.cnt}：${x.d}${x.clash < 1 ? `（和${DAO[x.clashWith] ? DAO[x.clashWith].n : ''}相冲，效果 ×${x.clash}）` : ''}${x.next ? `；再来 ${x.next} 只更强` : ''}`),
+    ...sy.combos.map(c => `杀招·${c.n}：${c.d}（核心蛊${RANK.names[c.rank] || ''}，威力 ×${c.mul}）`), ...near.map(x => `${x.name}·${x.cnt}：再来 ${x.next} 只触发共鸣`)].join('\n');
+  setHTML(r, sy.line ? `<span class="ro on" data-tip="${esc(tip)}">${esc(sy.line)}</span>` : `<span class="ro"${tip ? ` data-tip="${esc(tip)}"` : ''}>${esc(TXT.resoNone)}</span>`);
 }
 // ---------- 罗盘：回到洞府时三选一主道 ----------
 function rollCompass() { const r = R(), ids = DAOS.map(d => d.id), out = []; while (out.length < 3 && ids.length) out.push(ids.splice(r.int(ids.length), 1)[0]); S.compass = out; }
@@ -297,7 +305,7 @@ function placeNew(g, mode = 'shop') {
 // 阵容变了：重画；新成形的杀招第一次出现时全屏；合成播升转演出
 function afterChange(merged = []) {
   renderHome(); save();
-  const combos = teamCombos(S.team), seen = S.combosSeen || (S.combosSeen = []);
+  const combos = combosBy(S.team), seen = S.combosSeen || (S.combosSeen = []);
   Object.entries(combos).forEach(([i, c]) => { if (!seen.includes(c.id)) { seen.push(c.id); big('combo', TXT.comboFirst(c), TXT.comboLines(c, S.team[i])); achieve('combos', 1); } });
   merged.forEach(x => { const n = document.querySelector(`.gu[data-uid="${x.uid}"]`); if (n) { try { fuseRankUp(n, { sp: x.sp, from: rankOf(x) - 1, to: rankOf(x), calm: !!S.calm }); } catch (e) {} } });
   floorCheck();
@@ -351,11 +359,13 @@ function onTripEnd(result = {}) {
   rollCompass(); S.shop = S.shop.filter(w => w.frozen && !w.sold);
   renderAll(); save(); floorCheck();
 }
+// 进战斗前按阵盘摆好（复制一份，没位置的按 前列→中列→后列 自动摆），引擎读 g.pos
+const placed = t => autoPlace((t || []).map(g => ({ ...g, pos: g.pos ? { ...g.pos } : null })));
 // 给秘境复用的战斗回放：返回 Promise<{ res, A, B }>
 function tripPlayBattle(foeTeam, opts = {}) {
   const team = opts.team || S.team, seed = opts.seed || ((S.seed ^ Math.imul(++S.step, 2654435761)) >>> 0).toString(36);
   const sota = { A: sotaOn(), B: false };
-  const res = battle(team, foeTeam, 'r:' + seed, { ...(opts.oa || {}), sota }, opts.ob || {});
+  const res = battle(placed(team), placed(foeTeam), 'r:' + seed, { ...(opts.oa || {}), sota });
   const A = { team, name: S.name || '无名蛊师', realm: S.realm, trial: S.trial }, B = { team: foeTeam, name: opts.foeName || '秘境', realm: S.realm };
   return new Promise(resolve => playBattle({ kind: 'trip', title: opts.title || '秘境 · 斗蛊', res, A, B, sota, done: () => resolve({ res, A, B }) }));
 }
@@ -540,7 +550,7 @@ function spar(kind, foe) {
   const ca = encodeTeam(mine, { name: S.name || '无名蛊师', realm: S.realm, trial: S.trial }), cb = encodeTeam(foe.team, { name: foe.name, realm: foe.realm || S.realm, trial: !!foe.trial });
   const seed = kind === 'duel' ? (hashStr(ca + '|' + cb) >>> 0).toString(36) : ((S.seed ^ Math.imul(++S.step, 2654435761)) >>> 0).toString(36);
   const A = decodeTeam(ca), Bt = decodeTeam(cb), sota = { A: sotaOn(), B: false };
-  const res = battle(A.team, Bt.team, 'r:' + seed, { sota }, {});
+  const res = battle(placed(A.team), placed(Bt.team), 'r:' + seed, { sota });
   save(); playBattle({ kind, title: (kind === 'duel' ? '战帖 · ' : '幽灵 · ') + (foe.name || '无名'), res, A, B: Bt, sota, replay: [ca, cb, seed, kind[0], 's' + sotaFlag(sota)].join('.') });
 }
 function openGhosts() {
@@ -612,9 +622,9 @@ function sheet(html, cls = '', stack = false) {
 function closeSheet() { const a = document.querySelectorAll('.sheet-bg'); if (a.length) a[a.length - 1].remove(); }
 function miniRow(t) { return `<div class="mini">${t.map(g => `<div class="mg${g.boss ? ' boss' : ''}"><span class="art">${guSVG(g.sp, { rank: rankOf(g) })}</span><span class="rk rk${rankOf(g)}">${RANK.ch[rankOf(g)]}</span><b>${SP[g.sp] ? SP[g.sp].n : ''}</b><span class="st"><i class="a">${g.atk}</i><i class="h">${g.hp}</i></span></div>`).join('')}</div>`; }
 function guDetail(g, ctx = {}) {
-  const s = SP[g.sp], nat = natOfG(g), team = ctx.kind === 'team' ? S.team : null, i = ctx.i | 0, c = team ? teamCombos(team)[i] : null, f = g.food && FOOD[g.food];
+  const s = SP[g.sp], nat = natOfG(g), team = ctx.kind === 'team' ? S.team : null, i = ctx.i | 0, c = team ? combosBy(team)[i] : null, f = g.food && FOOD[g.food];
   const recipes = COMBOS.filter(x => x.need.includes(g.sp));
-  sheet(`<div class="detail"><div class="dart">${guSVG(g.sp, { rank: rankOf(g) })}</div><div><h3>${rankName(g)}</h3><p class="lore">${esc(s.lore)}</p><p class="dst"><i class="a">${g.atk}</i><i class="h">${g.hp}</i><i class="v">${spdOf(g)}</i> <small>${DAO[daoOf(g.sp)] ? DAO[daoOf(g.sp)].n : ''}</small></p></div></div>
+  sheet(`<div class="detail"><div class="dart">${guSVG(g.sp, { rank: rankOf(g) })}</div><div><h3>${rankName(g)}</h3><p class="lore">${esc(s.lore)}</p><p class="dst"><i class="a">${g.atk}</i><i class="h">${g.hp}</i><i class="v">${spdG(g)}</i> <small>${DAO[daoOf(g.sp)] ? DAO[daoOf(g.sp)].n : ''} · ${reachG(g)}</small></p></div></div>
   ${nat ? `<h4>被动技能</h4><p><b>${esc(nat.n)}</b> ${esc(nat.d)}</p>` : ''}${actOfG(g) ? `<h4>主动技能</h4><p><b>${esc(actOfG(g).n)}</b> ${esc(actOfG(g).d)}<br><small>蛊力攒满自动放</small></p>` : ''}${nat ? `<p class="sm">三转、五转各觉醒一次，强化技能${nat.aw ? `（已觉醒 ${nat.aw} 次）` : ''}</p>` : ''}
   ${c ? `<h4>杀招</h4><div class="skill"><span class="seal">${esc(c.n)}</span><p>${esc(c.d)}<br><small>配方：${c.need.map(x => SP[x].n).join(' + ')}</small></p></div>` : ''}
   ${f ? `<h4>挂件</h4><p><b>${esc(f.n)}</b> ${esc(f.d)}</p>` : ''}
@@ -649,9 +659,9 @@ function openSettings() {
 // ---------- 悬停提示：data-tip（文字）或 data-tip-fn（动态） ----------
 function guTip(g, team, i) {
   if (!g) return '';
-  const nat = natOfG(g), c = team ? teamCombos(team)[i] : null, f = g.food && FOOD[g.food];
+  const nat = natOfG(g), c = team ? combosBy(team)[i] : null, f = g.food && FOOD[g.food];
   const act = actOfG(g), p = g.pos;
-  return `<b>${rankName(g)}</b> <i class="a">${g.atk}</i> <i class="h">${g.hp}</i> <i class="v">${spdOf(g)}</i><br><small>${esc(SP[g.sp].lore)}${team && p ? ` · 第 ${p.r + 1} 行${COL_NAMES[p.c]}列` : ''} · 攻 / 血 / 速</small>`
+  return `<b>${rankName(g)}</b> <i class="a">${g.atk}</i> <i class="h">${g.hp}</i> <i class="v">${spdG(g)}</i><br><small>${esc(SP[g.sp].lore)}${team && p ? ` · 第 ${p.r + 1} 行${COL_NAMES[p.c]}列` : ''} · ${reachG(g)} · 攻 / 血 / 速</small>`
     + (nat ? `<p><b>被动·${esc(nat.n)}</b> ${esc(nat.d)}</p>` : '') + (act ? `<p><b>主动·${esc(act.n)}</b> ${esc(act.d)}<br><small>蛊力攒满自动放</small></p>` : '') + (c ? `<p><b>杀招·${esc(c.n)}</b> ${esc(c.d)}<br><small>配方：${c.need.map(x => SP[x].n).join(' + ')}</small></p>` : '')
     + (f ? `<p><b>挂件·${esc(f.n)}</b> ${esc(f.d)}</p>` : '') + `<small>点开看完整详情</small>`;
 }
@@ -784,7 +794,7 @@ const ACT = {
   duelInput() { openDuelInput(); },
   duelGo() { if (!openLinkText($('#duelIn').value)) $('#duelErr').textContent = '坐标码或复盘链接不对，或者被截断了。'; },
   duelFight() { closeSheet(); spar('duel', window.__guFoe); },
-  replayGo() { const rp = window.__guRp; closeSheet(); playBattle({ kind: 'replay', title: `复盘 · ${rp.B.name || '无名'} 对 ${rp.A.name || '无名'}`, res: battle(rp.A.team, rp.B.team, 'r:' + rp.seed, { sota: rp.sota }, {}), A: rp.A, B: rp.B, sota: rp.sota, replay: rp.replay }); },
+  replayGo() { const rp = window.__guRp; closeSheet(); playBattle({ kind: 'replay', title: `复盘 · ${rp.B.name || '无名'} 对 ${rp.A.name || '无名'}`, res: battle(placed(rp.A.team), placed(rp.B.team), 'r:' + rp.seed, { sota: rp.sota }), A: rp.A, B: rp.B, sota: rp.sota, replay: rp.replay }); },
   copyReplay(a) { const B = window.__guB; if (!B) return; const w = B.res.winner, an = B.A.name || '无名', bn = B.B.name || '无名', wt = w === 'draw' ? '打成平手' : (w === 'A' ? an : bn) + ' 胜'; copy(`${(B.A.trial || B.B.trial) ? TXT.trialText : ''}《蛊码》复盘：${an} 对 ${bn}，${wt}。点开看整场：\n${replayURL(B.replay)}`, a); },
   closeBattle() { closeBattle(); },
   skip() { skip = true; },
