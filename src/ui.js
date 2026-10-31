@@ -1,5 +1,5 @@
 // 蛊码 GuCode · 界面与流程：洞府（养成）、斗幽灵与战帖（切磋）、战斗回放、秘境接口。规则只认 docs/design.md
-import { SPECIES, SP, TRAITS, REALMS, SLOTS, RANK, COMBOS, makeRng, hashStr, newGu, starterTeam, baseRank, rankOf, rankName, statFor, natOf, natMulFor, awOf, slotCap, poolFor, BAG, bagCap, canBuy, placeGu, mergeAll, sellValue, teamCombos, comboMissing, daoCount, COLS, cellOf, cellPos, freeCell, autoPlace, sortTeam, spdOf, daoOf, rollShop, foodCost, feedStat, PRICE, genTeam, ghostTrio, posLinks, encodeTeam, decodeTeam, EV_MS, playMs, tempoFor, fmtNum, fmtTok } from './core.js';
+import { SPECIES, SP, TRAITS, REALMS, SLOTS, RANK, COMBOS, makeRng, hashStr, newGu, starterTeam, baseRank, rankOf, rankName, statFor, natOf, natMulFor, awOf, slotCap, poolFor, BAG, bagCap, canBuy, placeGu, mergeAll, sellValue, teamCombos, comboMissing, daoCount, COL_NAMES, cellOf, cellPos, freeCell, autoPlace, sortTeam, spdOf, daoOf, rollShop, foodCost, feedStat, PRICE, genTeam, ghostTrio, posLinks, encodeTeam, decodeTeam, EV_MS, playMs, tempoFor, fmtNum, fmtTok } from './core.js';
 import { battle } from './battle.js';
 import { guSVG, ART_DEFS } from './art.js';
 import { TokenSource, VSC } from './tokens.js';
@@ -247,7 +247,7 @@ function renderSlots() {
   autoPlace(S.team);
   const combos = teamCombos(S.team), byUid = {}; S.team.forEach((g, i) => { byUid[g.uid] = combos[i]; });
   const at = {}; S.team.forEach(g => { at[cellOf(g)] = g; });
-  let h = `<span class="bcol">${COLS[2]}</span><span class="bcol">${COLS[1]}</span><span class="bcol">${COLS[0]} <small>敌在右</small></span>`;
+  let h = `<span class="bcol">${COL_NAMES[2]}</span><span class="bcol">${COL_NAMES[1]}</span><span class="bcol">${COL_NAMES[0]} <small>敌在右</small></span>`;
   for (let r = 0; r < 3; r++) for (const c of [2, 1, 0]) { const k = r * 3 + c, g = at[k]; h += g ? guCard(g, byUid[g.uid]) : `<div class="gu empty" data-drag="${k}"><span>空</span></div>`; }
   box.innerHTML = h; box.dataset.sort = 'team'; box.dataset.group = 'main'; box.classList.add('board');
 }
@@ -651,7 +651,7 @@ function guTip(g, team, i) {
   if (!g) return '';
   const nat = natOfG(g), c = team ? teamCombos(team)[i] : null, f = g.food && FOOD[g.food];
   const act = actOfG(g), p = g.pos;
-  return `<b>${rankName(g)}</b> <i class="a">${g.atk}</i> <i class="h">${g.hp}</i> <i class="v">${spdOf(g)}</i><br><small>${esc(SP[g.sp].lore)}${team && p ? ` · 第 ${p.r + 1} 行${COLS[p.c]}列` : ''} · 攻 / 血 / 速</small>`
+  return `<b>${rankName(g)}</b> <i class="a">${g.atk}</i> <i class="h">${g.hp}</i> <i class="v">${spdOf(g)}</i><br><small>${esc(SP[g.sp].lore)}${team && p ? ` · 第 ${p.r + 1} 行${COL_NAMES[p.c]}列` : ''} · 攻 / 血 / 速</small>`
     + (nat ? `<p><b>被动·${esc(nat.n)}</b> ${esc(nat.d)}</p>` : '') + (act ? `<p><b>主动·${esc(act.n)}</b> ${esc(act.d)}<br><small>蛊力攒满自动放</small></p>` : '') + (c ? `<p><b>杀招·${esc(c.n)}</b> ${esc(c.d)}<br><small>配方：${c.need.map(x => SP[x].n).join(' + ')}</small></p>` : '')
     + (f ? `<p><b>挂件·${esc(f.n)}</b> ${esc(f.d)}</p>` : '') + `<small>点开看完整详情</small>`;
 }

@@ -11,7 +11,8 @@ let out = '/* 蛊码 GuCode —— 由 tools/build.mjs 从 src/ 生成，请改 
 for (const n of order) {
   if (OPTIONAL.has(n) && !fs.existsSync(path.join(root, 'src', n + '.js'))) continue;
   const raw = fs.readFileSync(path.join(root, 'src', n + '.js'), 'utf8');
-  const s = raw.replace(/^import .*$/gm, '').replace(/^export (?=(const|function|class|let|async))/gm, '');
+  const s = raw.replace(/^import\b[\s\S]*?['"][^'"\n]+['"];?[^\n]*$/gm, '')   // 去掉 import（含跨多行的 import { … } from '…'）
+   .replace(/^export (?=(const|function|class|let|async))/gm, '');
   if (WRAP.has(n)) {
     const names = [...raw.matchAll(/^export (?:const|let|class|function|async function)\s+([A-Za-z_$][\w$]*)/gm)].map(m => m[1]);
     out += `// ---- src/${n}.js（包一层，只放出 export）\nconst { ${names.join(', ')} } = (() => {\n${s}\nreturn { ${names.join(', ')} };\n})();\n`;
