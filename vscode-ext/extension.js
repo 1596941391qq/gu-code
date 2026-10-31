@@ -2,6 +2,7 @@
 // 1) 在 extension host 里监听 ~/.claude/projects/**/*.jsonl 与 ~/.codex/sessions/**/*.jsonl 的 usage 数字（正则只取数字，不解析/保存/外发正文）
 // 2) 用 Webview 跑同一套游戏（media/gucode.js + style.css），postMessage 推送 token
 // 3) 状态栏安静显示进度；绝不主动弹窗、不抢焦点
+// 4) media/ 里的游戏文件更新后自动重载 Webview，不用重启 VS Code
 const vscode = require('vscode');
 const fs = require('fs');
 const path = require('path');
@@ -12,7 +13,7 @@ const IDLE_MS = 30000;     // 停手判定：30 秒无新 token
 const ROOTS = [[path.join(os.homedir(), '.claude', 'projects'), 'claude'], [path.join(os.homedir(), '.codex', 'sessions'), 'codex']];
 
 let ctx, statusItem, sideView = null, panel = null, ready = false, queue = [];
-let latestSave, latestStatus, saveDirty = false;
+let latestSave, latestStatus, saveDirty = false, mediaVer = 0;
 const W = { total: 0, win: [], lastAt: 0, delta: 0, hotDelta: 0, pending: 0, pendingHot: 0, src: { claude: 0, codex: 0 }, rate: 0 };
 const files = new Map(), seen = new Map();
 
@@ -86,7 +87,7 @@ function updateStatus(hot, idle) {
 // ---------- Webview ----------
 const activeHost = () => panel || sideView;
 function gameHtml(wv) {
-  const m = f => wv.asWebviewUri(vscode.Uri.joinPath(ctx.extensionUri, 'media', f));
+  const m = f => wv.asWebviewUri(vscode.Uri.joinPath(ctx.extensionUri, 'media', f)).with({ query: 'v=' + mediaVer });
   const csp = `default-src 'none'; img-src ${wv.cspSource} data: blob:; style-src ${wv.cspSource} 'unsafe-inline'; script-src ${wv.cspSource}; font-src ${wv.cspSource};`;
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="${m('style.css')}"><style>body{padding:0}</style></head><body class="vsc"><div id="app"></div><script src="${m('gucode.js')}"></script></body></html>`;
 }
@@ -130,6 +131,20 @@ function openPanel() {
   loadGame(panel);
   panel.onDidDispose(() => { panel = null; ready = false; flush(); if (sideView) loadGame(sideView); });
 }
+// 热更新：游戏文件变了就重载当前 Webview。存档一直同步在 latestSave 里，重载后原样恢复
+function watchMedia() {
+  let t = null;
+  const bump = () => { clearTimeout(t); t = setTimeout(() => {
+    mediaVer = Date.now(); flush();
+    const h = activeHost(); if (h) { loadGame(h); vscode.window.setStatusBarMessage('$(sync) 蛊码已更新', 3000); }
+  }, 800); };
+  for (const f of ['gucode.js', 'style.css']) {
+    const p = path.join(ctx.extensionUri.fsPath, 'media', f);
+    try { mediaVer = Math.max(mediaVer, Math.floor(fs.statSync(p).mtimeMs)); } catch (e) {}
+    fs.watchFile(p, { interval: 2000 }, (a, b) => { if (a.mtimeMs !== b.mtimeMs && a.mtimeMs) bump(); });
+    ctx.subscriptions.push({ dispose: () => fs.unwatchFile(p) });
+  }
+}
 function whenReady(f) { if (ready && activeHost()) f(); else queue.push(f); }
 
 function activate(context) {
@@ -154,6 +169,7 @@ function activate(context) {
     }),
     vscode.commands.registerCommand('gucode.share', () => { openPanel(); whenReady(() => activeHost().webview.postMessage({ type: 'share' })); }),
   );
+  watchMedia();
   walkAll(true);
   const t1 = setInterval(tick, 1000), t2 = setInterval(() => walkAll(false), 10000), t3 = setInterval(flush, 5000);
   context.subscriptions.push({ dispose: () => { clearInterval(t1); clearInterval(t2); clearInterval(t3); flush(); } });
