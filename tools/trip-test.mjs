@@ -125,12 +125,13 @@ const bossLoss = (L, style, n = 80, tag = 'u') => {
   ok(g.clear > a.clear && a.clear > p.clear && g.wipe < a.wipe, '整趟下来也是配得好的通关多、全灭少');
 }
 
-if (process.env.TUNE) {   // 给每个秘境的首领算 bk（首领用掉的额度再乘几倍）：配队一般打首领输 40% 左右
+if (process.env.TUNE) {   // 给每个秘境的首领挑阵容版本 bv、算 bk（首领用掉的额度再乘几倍）：配队一般打首领输 40% 左右
   const out = {};
   for (const L of T.LANDS) {
-    const keep = L.bk, at = bk => { L.bk = bk; const v = bossLoss(L, 'avg', 240, 'tu'); L.bk = keep; return v; };
-    let best = 1, bd = 9; for (let bk = 0.5; bk <= 1.6 + 1e-9; bk += 0.05) { const v = at(bk), dd = Math.abs(v - 0.4); if (dd < bd - 0.01) { bd = dd; best = +bk.toFixed(2); } }
-    out[L.id] = best; console.log(`  ${L.n} bk=${best} → 首领用 ${Math.round(L.quota * T.TRIP_CFG.foe.boss * best)}/${L.quota} 点，输 ${(100 * at(best)).toFixed(0)}%`);
+    const keep = [L.bk, L.bv], at = (bk, bv, n = 160) => { L.bk = bk; L.bv = bv; const v = bossLoss(L, 'avg', n, 'tu'); [L.bk, L.bv] = keep; return v; };
+    let best = [1, 0], bd = 9;
+    for (let bv = 0; bv < 4 && bd > 0.03; bv++) for (let bk = 0.7; bk <= 1.3 + 1e-9; bk += 0.1) { const v = at(+bk.toFixed(2), bv, 100), dd = Math.abs(v - 0.4) + Math.abs(bk - 1) * 0.02; if (dd < bd) { bd = dd; best = [+bk.toFixed(2), bv]; } }
+    out[L.id] = best; console.log(`  ${L.n} bk=${best[0]} bv=${best[1]} → 首领用 ${Math.round(L.quota * T.TRIP_CFG.foe.boss * best[0])}/${L.quota} 点，输 ${(100 * at(best[0], best[1], 240)).toFixed(0)}%`);
   }
   console.log('  ' + JSON.stringify(out));
 }
