@@ -1,6 +1,8 @@
 // 蛊码 GuCode · 纯逻辑：种子随机、数据表、洞府养成（蛊市、合成、食物、道、杀招）、坐标码。不碰 DOM。规则见 docs/design.md
 import { NEW_SPECIES, NEW_TRAITS, NEW_COMBOS, NEW_SUMMONS, NEW_POOL, OLD_EXTRA, natMulOf } from './bestiary.js';
 import { DAOS, DAO, DAO_BY_SCHOOL } from './daos.js';
+import { SPECIES2, PATCH64, NATS, NAT_OF, SUMMONS2 } from './bestiary2.js';
+import { COMBOS2 } from './combos2.js';
 import { FOODS, FOOD } from './foods.js';
 export const natMulFor = r => natMulOf(r);   // 本命描述里〔〕数字按转数换算（界面用）
 export function hashStr(s) { s = String(s); let h = 2166136261 >>> 0; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
@@ -13,9 +15,9 @@ export function makeRng(seed) {
 }
 
 
-export const MAXV = 3, SLOTS = 7;   // MAXV：本命技层数上限（TRAITS.d(v) 用）；SLOTS：空窍最多 7 格
+export const MAXV = 3, SLOTS = 9;   // MAXV：本命技层数上限（TRAITS.d(v) 用）；SLOTS：阵盘 3×3 共 9 格，上阵几只由秘境额度决定
 export const REALMS = ['凡人', '一转', '二转', '三转', '四转', '五转'];
-export const SLOT_BY_REALM = [3, 4, 5, 6, 7, 7];   // 空窍（场上）按境界开放：凡人 3、一转 4、二转 5、三转 6、四转起 7
+export const SLOT_BY_REALM = [3, 4, 5, 6, 7, 7];   // 只给程序生成阵容当默认只数用；玩家的空窍不再按境界限格数（见 QUOTA）
 export const slotCap = r => SLOT_BY_REALM[Math.min(5, Math.max(0, r | 0))];
 // 蛊池 6 档（下标 = 境界）：旧 12 种在前三档，蛊典扩充的新蛊按档追加；六转仙蛊不进任何一档
 export const POOL_TIERS = [['boar', 'fire', 'twin', 'iron', 'thorn', 'bone'], ['mantis', 'queen', 'cicada'], ['drum', 'scorp', 'moth'], [], [], []].map((t, i) => [...t, ...NEW_POOL[i]]);
@@ -26,6 +28,13 @@ export const baseRank = sp => (SP[sp] && SP[sp].rank) || (POOL_TIERS.findIndex(t
 export const rankOf = g => g.rank || baseRank(g.sp);
 export const fuseLv = g => Math.max(0, rankOf(g) - baseRank(g.sp));     // 合成过几次（0 = 原生转数）
 export const rankName = g => RANK.names[rankOf(g)] + SP[g.sp].n;          // 「一转野猪蛊」
+// 出战额度：每个秘境写明额度，上阵蛊的转数加起来不能超过它（只限转数总和，不限只数）。下标 = 秘境所属境界
+export const QUOTA = [4, 7, 10, 14, 18, 22];
+export const quotaOf = team => (team || []).reduce((s, g) => s + rankOf(g), 0);
+export const driveCap = r => Math.min(RANK.max, (r | 0) + 1);   // 驱使上限：境界 r 只能让 r+1 转及以下的蛊上阵
+// 斗幽灵、战帖按额度分场：上阵转数总和不超过这一场的额度就能进（和秘境一样只限总和，不限只数和单只转数）
+export const ARENAS = [4, 9, 15, 22];
+export const arenaOf = team => ARENAS.find(q => quotaOf(team) <= q) || 0;   // 这队最低能进几点场（超过 22 点返回 0）
 // 各转的主色（升转外貌、转数角标用）：一转青铜、二转赤铁、三转白银、四转黄金、五转紫晶
 export const ZHENYUAN = { colors: ['#a0703f', '#a0703f', '#a4442c', '#9aa4ab', '#d9a441', '#7d62a8'] };
 // 价格（元气 = 消耗的 token）：单位是「千」，乘 tokens.js 的 unit 才是 token 数（插件 8000，网页 200）。
@@ -36,7 +45,13 @@ export const BAG = { cap: 8 };
 export const bagCap = () => BAG.cap;
 // 攻血成长表：同一种蛊每一转的攻血固定。G[r] = 该转相对一转的倍数；物种的 atk/hp 是它基础转数时的数值。
 // 物种可带 st: [[攻,血] × 6]（下标 = 转数）直接覆盖这张表。
+// 单只蛊封顶（design 第 0 节）：攻血按「每种蛊每一转」的固定表，五转封顶；加攻血的食物每只最多吃 ATE_MAX 次
 export const RANK_GROW = [0, 1, 1.8, 3, 4.6, 6.8, 9.6];
+export const ATE_MAX = 3;
+export const ateOf = g => (g && g.ate) || 0;
+export const canEat = g => !!g && ateOf(g) < ATE_MAX;
+// 这种蛊从原生转数到五转的攻血表：[{ rank, atk, hp }]
+export const statTable = sp => { const out = []; for (let r = baseRank(sp); r <= RANK.max; r++) out.push({ rank: r, ...statFor(sp, r) }); return out; };
 export function statFor(sp, rank) {
   const s = SP[sp]; if (!s) return { atk: 1, hp: 1 };
   const r = Math.max(1, Math.min(6, rank | 0)); if (s.st && s.st[r]) return { atk: s.st[r][0], hp: s.st[r][1] };
@@ -84,6 +99,17 @@ export const SPECIES = [
 // 旧 12 种补上转数 / 喂食偏好 / 流派；蛊典扩充的 52 种接在后面（坐标码按下标编码，只能往后加）
 SPECIES.forEach(s => { Object.assign(s, OLD_EXTRA[s.id]); });
 SPECIES.push(...NEW_SPECIES);
+// 蛊典第二卷（120 种）：旧 64 种打补丁（道、速、远近、主动技、每转攻血表、少数换成原著名），基础转数以攻血表为准；新 56 种接在后面
+SPECIES.forEach(s => { const p = PATCH64[s.id]; if (!p) return; Object.assign(s, p); s.nat = NAT_OF(s.id) || s.nat; const b = (s.st || []).findIndex(Boolean); if (b > 0) s.rank = b; if (b >= 6) s.immortal = true; });
+SPECIES.push(...SPECIES2.filter(s => !SPECIES.some(x => x.id === s.id)));
+// 蛊池按基础转数重排（下标 = 境界，基础 r 转进第 r−1 档；六转仙蛊不进任何一档）
+POOL_TIERS.forEach((t, i) => { t.length = 0; t.push(...SPECIES.filter(s => !s.immortal && !s.legend && (s.rank || 1) - 1 === i).map(s => s.id)); });
+// 120 种的被动技能换成声明式（战斗引擎读 NEW_TRAITS 的 eff / awEff）；keepHooks 的只换描述
+Object.entries(NATS).forEach(([k, t]) => {
+  if (t.keepHooks && NEW_TRAITS[k]) Object.assign(NEW_TRAITS[k], { n: t.n, ch: t.ch, trig: t.trig, d: t.d, aw: t.aw });
+  else NEW_TRAITS[k] = t;
+  TRAITS[k] = NEW_TRAITS[k];
+});
 export const NORMAL_SPECIES = SPECIES.filter(s => !s.immortal);   // 随机池（幽灵、天劫、招蛊）：六转仙蛊只能开茧获得
 export const SP = Object.fromEntries(SPECIES.map(s => [s.id, s]));
 export const spTraits = id => [];   // 新蛊出生不带副词条：物种的本事在本命技里（natOf），副词条靠突变、炼附、吞噬
@@ -92,7 +118,7 @@ export const natOf = sp => (SP[sp] && SP[sp].nat) || null;
 export const guRank = g => { const s = SP[g.sp]; if (!s) return 1; return s.immortal ? 6 : rankOf(g); };
 export const awOf = g => { const r = guRank(g); return r >= 5 ? 2 : r >= 3 ? 1 : 0; };
 SPECIES.forEach(s => { if (!s.dao) s.dao = DAO_BY_SCHOOL[s.school] || 'li'; });   // 物种属于哪一道（占位口径见 daos.js）
-export const SUMMON_NAMES = { pupa: '蛊蛹', shade: '分影', lunar: '月影', ...NEW_SUMMONS };
+export const SUMMON_NAMES = { pupa: '蛊蛹', shade: '分影', lunar: '月影', ...NEW_SUMMONS, ...SUMMONS2 };
 
 // 杀招：配方里的几种蛊同时在空窍，杀招就自动成形，挂在配方第一种蛊（站得最靠前的那只）身上
 export const COMBOS = [
@@ -108,6 +134,9 @@ export const COMBOS = [
   { id: 'liaoyuan', n: '天火燎原',   need: ['fire', 'scorp'],  d: '开战：流火与开锋改为波及敌方全体（流火每只按四分之一算，开锋每只减半）' },
 ];
 COMBOS.push(...NEW_COMBOS);   // 新杀招都是两蛊配方，排在旧配方之后
+// 杀招第二版（combos2.js：核心蛊、时机、声明式效果、进阶）整表替换上面的旧配方；配方里有还不存在的物种的先跳过
+export const COMBOS_SKIPPED = COMBOS2.filter(c => !c.need.every(x => SP[x])).map(c => c.id);
+COMBOS.length = 0; COMBOS.push(...COMBOS2.filter(c => c.need.every(x => SP[x])));
 export const COMBO = Object.fromEntries(COMBOS.map(c => [c.id, c]));
 
 let UIDN = 1;
@@ -132,13 +161,6 @@ export function skillOf(g, team) { const c = comboOf(g, team); return c ? { id: 
 // 配方还差哪几种（蛊典用）：have = 当前空窍物种
 export const comboMissing = (c, have) => c.need.filter(x => !have.includes(x));
 
-// ---------- 道共鸣 ----------
-// 空窍里各道有几只；返回 [{ dao, n, tier: 0/2/4, eff }]，eff = 正在生效的那档（r2 / r4）
-export function daoCount(team) {
-  const c = {}; team.forEach(g => { const d = daoOf(g.sp); c[d] = (c[d] || 0) + 1; });
-  return DAOS.filter(d => c[d.id]).map(d => { const n = c[d.id], tier = n >= 4 ? 4 : n >= 2 ? 2 : 0; return { dao: d.id, n, tier, eff: tier ? d['r' + tier] : null }; });
-}
-
 // ---------- 蛊市 ----------
 // 货架：蛊位 n 个、食物位 2 个。罗盘选中的道只让它出现的概率 +daoP（每个货位先以 daoP 的几率从这一道里挑，否则从全部里挑），
 // 蛊市照样什么道都会刷，不锁阵容。foeDaoP：程序生成的对手偏向某一道的几率（秘境房间的主题）
@@ -155,7 +177,7 @@ export function rollShop(rng, realm, dao, old = [], unlocked) {
 export const foodCost = id => (FOOD[id] ? FOOD[id].cost : 3) * PRICE.food;   // 单位同 PRICE
 
 // ---------- 阵盘：3 行 × 3 列（列 c：0 前、1 中、2 后），g.pos = { r, c } ----------
-export const COLS = ['前', '中', '后'];
+export const COL_NAMES = ['前', '中', '后'];
 export const cellOf = g => g && g.pos ? g.pos.r * 3 + g.pos.c : -1;
 export const cellPos = k => ({ r: Math.floor(k / 3), c: k % 3 });
 const CELL_ORDER = [0, 3, 6, 1, 4, 7, 2, 5, 8];   // 自动摆放：先前列（上中下），再中列，再后列
@@ -168,9 +190,6 @@ export function autoPlace(team) {
   return sortTeam(team);
 }
 export function sortTeam(team) { team.sort((a, b) => (a.pos ? a.pos.c * 3 + a.pos.r : 99) - (b.pos ? b.pos.c * 3 + b.pos.r : 99)); return team; }
-// 速：物种的 spd（100 = 标准）；物种没写时按流派给个默认值（战斗引擎以它自己的推法为准，这里只给卡面显示）
-const SCHOOL_SPD = { 爆发: 125, 开锋: 120, 斩杀: 120, 控制: 110, 群攻: 105, 毒: 105, 站位: 100, 召唤: 95, 亡语: 95, 成长: 95, 续航: 90, 反伤: 85, 护体: 80, 减伤: 80, 破甲: 110 };
-export const spdOf = g => g.spd || (SP[g.sp] && (SP[g.sp].spd || SCHOOL_SPD[SP[g.sp].school])) || 100;
 
 // ---------- 收蛊与合成 ----------
 export const sameRank = (list, sp, rk) => list.filter(g => g.sp === sp && rankOf(g) === rk).length;
@@ -187,15 +206,21 @@ export function placeGu(team, bag, g, cap, bc = BAG.cap, mode = 'shop', pick) {
 }
 // 同种同转三只合成高一转：空窍和蛊囊一起算，结果留在第一只的位置（空窍优先）。攻血直接换成新一转的表值；
 // 挂件食物保留第一只的；蛊性从三只里挑一个：pick(候选蛊性数组) → 选中的那个（不给 pick 就取第一个）。返回合成出的蛊
+// 三只同种同转合成高一转：攻血换成新一转的表值，再加上三只里吃得最多的那只的食物加成（吃的次数一并继承，所以不会超过 ATE_MAX 次）。
+// 蛊性：三只材料里有不同的蛊性时，pick(候选) 同步选一个；没给 pick 就先传第一个，并在新蛊上留 xingAsk = 候选，等界面问玩家。
 export function mergeAll(team, bag = [], pick) {
   const done = [], rm = x => { const l = team.includes(x) ? team : bag; l.splice(l.indexOf(x), 1); };
   for (let guard = 0; guard < 12; guard++) {
     let grp = null; const all = [...team, ...bag];
     for (const g of all) { const rk = rankOf(g), same = all.filter(x => x.sp === g.sp && rankOf(x) === rk); if (same.length >= 3 && rk < RANK.max && !(SP[g.sp] || {}).immortal) { grp = same.slice(0, 3); break; } }
     if (!grp) break;
-    const [a, b, c] = grp, xs = grp.map(x => x.xing).filter(Boolean);
-    a.rank = rankOf(a) + 1; const st = statFor(a.sp, a.rank); a.atk = st.atk + (a.bonusA || 0); a.hp = st.hp + (a.bonusH || 0);
-    a.xing = xs.length ? (pick && xs.length > 1 ? pick(xs) : xs[0]) : null;
+    const [a, b, c] = grp, xs = [...new Set(grp.map(x => x.xing).filter(Boolean))];
+    const fed = grp.reduce((m, x) => (ateOf(x) > ateOf(m) ? x : m), a);
+    const bA = fed.bonusA || 0, bH = fed.bonusH || 0, ate = ateOf(fed);
+    a.rank = rankOf(a) + 1; const st = statFor(a.sp, a.rank);
+    a.bonusA = bA; a.bonusH = bH; a.ate = ate; a.atk = st.atk + bA; a.hp = st.hp + bH;
+    delete a.xingAsk;
+    if (xs.length > 1 && pick) a.xing = pick(xs); else { a.xing = xs[0] || null; if (xs.length > 1) a.xingAsk = xs; }
     a.food = a.food || b.food || c.food || null;
     [b, c].forEach(rm);
     done.push(a);
@@ -205,11 +230,12 @@ export function mergeAll(team, bag = [], pick) {
 export const sellValue = g => PRICE.sell * Math.pow(3, fuseLv(g));   // 单位同 PRICE
 
 // ---------- 食物 ----------
-// 喂一个直接加攻血的食物：targets = 要加的蛊。永久加成记在 bonusA/bonusH（合成换表值时保留）
+// 喂加攻血的食物：只喂还没吃满 ATE_MAX 次的，返回真正吃到的。永久加成记在 bonusA/bonusH（合成换表值时保留）
 export function feedStat(food, targets) {
   const f = FOOD[food]; if (!f || f.kind !== 'stat') return [];
-  targets.forEach(g => { g.bonusA = (g.bonusA || 0) + (f.atk || 0); g.bonusH = (g.bonusH || 0) + (f.hp || 0); g.atk += f.atk || 0; g.hp += f.hp || 0; });
-  return targets;
+  const ok = targets.filter(canEat);
+  ok.forEach(g => { g.ate = ateOf(g) + 1; g.bonusA = (g.bonusA || 0) + (f.atk || 0); g.bonusH = (g.bonusH || 0) + (f.hp || 0); g.atk += f.atk || 0; g.hp += f.hp || 0; });
+  return ok;
 }
 
 // ---------- 程序生成阵容（幽灵、秘境的对手） ----------
@@ -217,6 +243,13 @@ export function feedStat(food, targets) {
 export function genTeam(rng, o = {}) {
   const realm = Math.max(0, Math.min(5, o.realm | 0)), n = Math.max(1, Math.min(SLOTS, o.n || slotCap(realm))), pool = poolFor(realm).filter(sp => SP[sp] && !SP[sp].immortal);
   const team = Array.from({ length: n }, () => { const sp = pickDao(rng, pool, o.dao, daoOf, SHOP.foeDaoP), r = Math.min(RANK.max, baseRank(sp) + (rng() < (o.up || 0) ? 1 : 0) + (rng() < (o.up || 0) / 3 ? 1 : 0)); return newGu(sp, r); });
+  return autoPlace(arrangeTeam(team));
+}
+// 按额度凑一队（占位：秘境专家的 foeFor 交来后以它为准）：先放尽量高转的蛊，余数补一只低转。dao 偏向的道
+export function quotaTeam(rng, quota, o = {}) {
+  const top = Math.max(1, Math.min(RANK.max, Math.ceil(quota / 4.5))), ranks = [];
+  for (let left = Math.max(1, quota | 0); left > 0 && ranks.length < SLOTS;) { const r = Math.min(top, left); ranks.push(r); left -= r; }
+  const team = ranks.map(r => { const pool = poolFor(r - 1).filter(sp => SP[sp] && !SP[sp].immortal); return newGu(pickDao(rng, pool, o.dao, daoOf, SHOP.foeDaoP), r); });
   return autoPlace(arrangeTeam(team));
 }
 
@@ -277,10 +310,6 @@ export function arrangeTeam(team) {
   team.splice(0, n, ...best); return team;
 }
 
-export function ghostTrio(rng, realm) {
-  const names = [...GHOST_NAMES], n = slotCap(realm);
-  return [['easy', '易', 0, Math.max(1, n - 1)], ['mid', '中', 0.25, n], ['hard', '难', 0.6, Math.min(SLOTS, n + 1)]].map(([tier, label, up, k]) => ({ tier, label, name: names.splice(rng.int(names.length), 1)[0], team: genTeam(rng, { realm, n: k, up }) }));
-}
 export const GHOST_NAMES = ['夜码人', '零点蛊师', '断点散人', '递归僧', '缓存道人', '并发狂徒', '栈溢出', '空指针', '热重载', '回滚真人', '合并冲突', '无限循环'];
 
 // ---------- 界壁坐标码：阵容 → 位流 → base64url ----------
@@ -295,12 +324,13 @@ function unutf8(b) { return typeof TextDecoder !== 'undefined' ? new TextDecoder
 // v1–v4 是旧玩法的码（带词条、怪癖、附蛊、道痕），照旧能读：只取物种和转数，攻血按新表换算。
 // v5（v2 玩法）：物种 7 位、转数 3 位、攻血各 10 位、挂件食物 6 位、蛊性 6 位，外加 1 位「试玩」
 // v6（阵盘）：v5 每只蛊后面再加 阵盘格 4 位（0–8，15 = 没摆）、速 8 位（0 = 按物种）。v1–v5 解出来按顺序自动摆进阵盘
+// v7（额度）：和 v6 一样，只是只数字段从 3 位改成 4 位（阵盘最多 9 只）
 const OLD_W = { 1: { sp: 4, tr: 4, q: 3, st: 8, mk: 0, rk: 0 }, 2: { sp: 4, tr: 4, q: 3, st: 8, mk: 12, rk: 2 }, 3: { sp: 6, tr: 6, q: 4, st: 10, mk: 16, rk: 3 }, 4: { sp: 6, tr: 6, q: 4, st: 10, mk: 16, rk: 3, fl: 1 } };
 const W5 = { sp: 7, rk: 3, st: 10, fd: 6, xg: 6 };
 export function encodeTeam(team, meta = {}) {
   let bits = ''; const put = (v, n) => { bits += Math.max(0, Math.min(2 ** n - 1, Math.round(v) || 0)).toString(2).padStart(n, '0'); };
   const nm = Array.from(utf8((meta.name || '').slice(0, 8))).slice(0, 31);
-  put(6, 3); put(meta.realm || 0, 3); put(Math.min(SLOTS, team.length), 3); put(nm.length, 5); nm.forEach(b => put(b, 8)); put(meta.trial ? 1 : 0, 1);
+  put(7, 3); put(meta.realm || 0, 3); put(Math.min(SLOTS, team.length), 4); put(nm.length, 5); nm.forEach(b => put(b, 8)); put(meta.trial ? 1 : 0, 1);
   const xk = XING_KEYS();
   for (const g of team.slice(0, SLOTS)) {
     put(SPI[g.sp], W5.sp); put(rankOf(g), W5.rk); put(g.atk, W5.st); put(g.hp, W5.st);
@@ -316,8 +346,8 @@ export function decodeTeam(code) {
     const m = String(code).match(/[A-Za-z0-9_-]{8,}/); if (!m) return null;
     let bits = ''; for (const ch of m[0]) { const i = B64.indexOf(ch); if (i < 0) return null; bits += i.toString(2).padStart(6, '0'); }
     let p = 0; const get = n => { if (p + n > bits.length) throw 0; const v = parseInt(bits.slice(p, p + n), 2); p += n; return v; };
-    const ver = get(3); if (ver < 1 || ver > 6) return null;
-    const realm = get(3), n = get(3), nl = get(5), nm = []; for (let i = 0; i < nl; i++) nm.push(get(8));
+    const ver = get(3); if (ver < 1 || ver > 7) return null;
+    const realm = get(3), n = get(ver >= 7 ? 4 : 3), nl = get(5), nm = []; for (let i = 0; i < nl; i++) nm.push(get(8));
     const team = []; let trial = false;
     if (ver >= 5) {
       trial = !!get(1); const xk = XING_KEYS();
