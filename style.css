@@ -236,6 +236,20 @@ body:has(#tut-layer) .sheet-bg{z-index:1001}   /* 引导进行中打开的面板
 .slots.board::before{display:none}
 .slots.board .bcol{font:13px var(--kai);text-align:center;color:var(--mu);letter-spacing:.2em}.slots.board .bcol small{font-size:10px;letter-spacing:0;color:var(--zhu2)}
 .slots.board .gu{min-height:96px}.slots.board .gu .art{width:52%}
+/* 驱使不了的蛊（境界不够）：淡墨，出征前要收进蛊囊 */
+.slots.board .gu.over{opacity:.5;filter:grayscale(.7);border-style:dashed}
+/* 选秘境：空窍上方一行，点开换秘境；额度用量在空窍标题右边 */
+.landbtn{display:grid;grid-template-columns:auto 1fr auto;grid-template-rows:auto auto;column-gap:10px;align-items:baseline;width:100%;text-align:left;padding:8px 10px;margin-bottom:10px;border:1px solid var(--line);border-radius:3px;background:var(--bg)}
+.landbtn .lbl{grid-row:1/3;align-self:center}.landbtn b{font:400 17px var(--kai)}.landbtn small{grid-column:2;font-size:12px;color:var(--mu)}
+.landbtn .lchg{grid-row:1/3;grid-column:3;align-self:center;font:13px var(--kai);color:var(--zhu2)}
+.landbtn[disabled] .lchg{color:var(--mu)}
+.qmeta.quota{font:13px var(--mono);color:var(--qing)}.qmeta.quota.over{color:var(--zhu2);font-weight:600}
+.land{border:1px solid var(--line);border-radius:3px;padding:10px;margin-top:8px;background:var(--bg)}
+.land.on{border-color:var(--zhu2)}.land.lock{opacity:.55}
+.land .lh{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}.land .lh b{font:400 17px var(--kai)}.land .lh small{font-size:12px;color:var(--mu)}
+.land details,.sheet details{margin:6px 0}.land summary,.sheet summary{cursor:pointer;font-size:13px;color:var(--mu)}
+.land > button{width:100%;padding:8px;border-radius:3px;font:15px var(--kai);margin-top:6px}
+.tip .warn{color:#9a2f22}
 .slots.board .gu.empty{background:transparent;border:1px dashed var(--faint);box-shadow:none;display:grid;place-items:center;color:var(--mu);font:12px var(--kai)}
 .slots.board .gu .st{gap:5px;font-size:11px}
 .tc.act{color:var(--zhu2);border-color:var(--zhu2)}
@@ -482,6 +496,7 @@ button.mg{font:inherit;font-size:11px;border:0;cursor:pointer;position:relative;
 .shead{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .pantry{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:10px}.pfood{font:13px var(--kai);padding:3px 9px}
 .gorow{margin:16px 0 4px}.gorow .go{width:100%;display:flex;flex-direction:column;align-items:center;gap:2px}.gorow .go small{font:12px var(--sans);opacity:.85}
+.gorow .go:disabled{background:transparent;color:var(--mu);border:1px dashed var(--line2);box-shadow:none}.gorow .go:disabled small{color:var(--zhu2);opacity:1}
 .compass2{margin-top:16px}.dopts{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}
 .dopt{display:flex;flex-direction:column;gap:4px;align-items:flex-start;text-align:left;background:var(--paper);color:var(--ink);border-radius:3px;padding:10px}
 .dopt b{font:400 20px var(--kai)}.dopt small{font-size:12px;color:#5b5244}.dopt em{font:normal 12px var(--kai);color:var(--atk)}

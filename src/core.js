@@ -13,9 +13,9 @@ export function makeRng(seed) {
 }
 
 
-export const MAXV = 3, SLOTS = 7;   // MAXV：本命技层数上限（TRAITS.d(v) 用）；SLOTS：空窍最多 7 格
+export const MAXV = 3, SLOTS = 9;   // MAXV：本命技层数上限（TRAITS.d(v) 用）；SLOTS：阵盘 3×3 共 9 格，上阵几只由秘境额度决定
 export const REALMS = ['凡人', '一转', '二转', '三转', '四转', '五转'];
-export const SLOT_BY_REALM = [3, 4, 5, 6, 7, 7];   // 空窍（场上）按境界开放：凡人 3、一转 4、二转 5、三转 6、四转起 7
+export const SLOT_BY_REALM = [3, 4, 5, 6, 7, 7];   // 只给程序生成阵容当默认只数用；玩家的空窍不再按境界限格数（见 QUOTA）
 export const slotCap = r => SLOT_BY_REALM[Math.min(5, Math.max(0, r | 0))];
 // 蛊池 6 档（下标 = 境界）：旧 12 种在前三档，蛊典扩充的新蛊按档追加；六转仙蛊不进任何一档
 export const POOL_TIERS = [['boar', 'fire', 'twin', 'iron', 'thorn', 'bone'], ['mantis', 'queen', 'cicada'], ['drum', 'scorp', 'moth'], [], [], []].map((t, i) => [...t, ...NEW_POOL[i]]);
@@ -26,6 +26,10 @@ export const baseRank = sp => (SP[sp] && SP[sp].rank) || (POOL_TIERS.findIndex(t
 export const rankOf = g => g.rank || baseRank(g.sp);
 export const fuseLv = g => Math.max(0, rankOf(g) - baseRank(g.sp));     // 合成过几次（0 = 原生转数）
 export const rankName = g => RANK.names[rankOf(g)] + SP[g.sp].n;          // 「一转野猪蛊」
+// 出战额度：每个秘境写明额度，上阵蛊的转数加起来不能超过它（只限转数总和，不限只数）。下标 = 秘境所属境界
+export const QUOTA = [4, 7, 10, 14, 18, 22];
+export const quotaOf = team => (team || []).reduce((s, g) => s + rankOf(g), 0);
+export const driveCap = r => Math.min(RANK.max, (r | 0) + 1);   // 驱使上限：境界 r 只能让 r+1 转及以下的蛊上阵
 // 各转的主色（升转外貌、转数角标用）：一转青铜、二转赤铁、三转白银、四转黄金、五转紫晶
 export const ZHENYUAN = { colors: ['#a0703f', '#a0703f', '#a4442c', '#9aa4ab', '#d9a441', '#7d62a8'] };
 // 价格（元气 = 消耗的 token）：单位是「千」，乘 tokens.js 的 unit 才是 token 数（插件 8000，网页 200）。
@@ -216,6 +220,13 @@ export function genTeam(rng, o = {}) {
   const team = Array.from({ length: n }, () => { const sp = pickDao(rng, pool, o.dao, daoOf, SHOP.foeDaoP), r = Math.min(RANK.max, baseRank(sp) + (rng() < (o.up || 0) ? 1 : 0) + (rng() < (o.up || 0) / 3 ? 1 : 0)); return newGu(sp, r); });
   return autoPlace(arrangeTeam(team));
 }
+// 按额度凑一队（占位：秘境专家的 foeFor 交来后以它为准）：先放尽量高转的蛊，余数补一只低转。dao 偏向的道
+export function quotaTeam(rng, quota, o = {}) {
+  const top = Math.max(1, Math.min(RANK.max, Math.ceil(quota / 4.5))), ranks = [];
+  for (let left = Math.max(1, quota | 0); left > 0 && ranks.length < SLOTS;) { const r = Math.min(top, left); ranks.push(r); left -= r; }
+  const team = ranks.map(r => { const pool = poolFor(r - 1).filter(sp => SP[sp] && !SP[sp].immortal); return newGu(pickDao(rng, pool, o.dao, daoOf, SHOP.foeDaoP), r); });
+  return autoPlace(arrangeTeam(team));
+}
 
 // ---------- 布阵：站位效果与敌方排阵 ----------
 // 每个下标收到哪些站位效果（界面画箭头/角标用）：[{ to, from, id, txt }]，to = -1 表示作用于敌方
@@ -292,12 +303,13 @@ function unutf8(b) { return typeof TextDecoder !== 'undefined' ? new TextDecoder
 // v1–v4 是旧玩法的码（带词条、怪癖、附蛊、道痕），照旧能读：只取物种和转数，攻血按新表换算。
 // v5（v2 玩法）：物种 7 位、转数 3 位、攻血各 10 位、挂件食物 6 位、蛊性 6 位，外加 1 位「试玩」
 // v6（阵盘）：v5 每只蛊后面再加 阵盘格 4 位（0–8，15 = 没摆）、速 8 位（0 = 按物种）。v1–v5 解出来按顺序自动摆进阵盘
+// v7（额度）：和 v6 一样，只是只数字段从 3 位改成 4 位（阵盘最多 9 只）
 const OLD_W = { 1: { sp: 4, tr: 4, q: 3, st: 8, mk: 0, rk: 0 }, 2: { sp: 4, tr: 4, q: 3, st: 8, mk: 12, rk: 2 }, 3: { sp: 6, tr: 6, q: 4, st: 10, mk: 16, rk: 3 }, 4: { sp: 6, tr: 6, q: 4, st: 10, mk: 16, rk: 3, fl: 1 } };
 const W5 = { sp: 7, rk: 3, st: 10, fd: 6, xg: 6 };
 export function encodeTeam(team, meta = {}) {
   let bits = ''; const put = (v, n) => { bits += Math.max(0, Math.min(2 ** n - 1, Math.round(v) || 0)).toString(2).padStart(n, '0'); };
   const nm = Array.from(utf8((meta.name || '').slice(0, 8))).slice(0, 31);
-  put(6, 3); put(meta.realm || 0, 3); put(Math.min(SLOTS, team.length), 3); put(nm.length, 5); nm.forEach(b => put(b, 8)); put(meta.trial ? 1 : 0, 1);
+  put(7, 3); put(meta.realm || 0, 3); put(Math.min(SLOTS, team.length), 4); put(nm.length, 5); nm.forEach(b => put(b, 8)); put(meta.trial ? 1 : 0, 1);
   const xk = XING_KEYS();
   for (const g of team.slice(0, SLOTS)) {
     put(SPI[g.sp], W5.sp); put(rankOf(g), W5.rk); put(g.atk, W5.st); put(g.hp, W5.st);
@@ -313,8 +325,8 @@ export function decodeTeam(code) {
     const m = String(code).match(/[A-Za-z0-9_-]{8,}/); if (!m) return null;
     let bits = ''; for (const ch of m[0]) { const i = B64.indexOf(ch); if (i < 0) return null; bits += i.toString(2).padStart(6, '0'); }
     let p = 0; const get = n => { if (p + n > bits.length) throw 0; const v = parseInt(bits.slice(p, p + n), 2); p += n; return v; };
-    const ver = get(3); if (ver < 1 || ver > 6) return null;
-    const realm = get(3), n = get(3), nl = get(5), nm = []; for (let i = 0; i < nl; i++) nm.push(get(8));
+    const ver = get(3); if (ver < 1 || ver > 7) return null;
+    const realm = get(3), n = get(ver >= 7 ? 4 : 3), nl = get(5), nm = []; for (let i = 0; i < nl; i++) nm.push(get(8));
     const team = []; let trial = false;
     if (ver >= 5) {
       trial = !!get(1); const xk = XING_KEYS();
