@@ -375,7 +375,7 @@ async function openShare() {
   <div class="cardbox"><img id="cardImg" alt="分享卡"><div class="row2"><button class="zhu" data-act="savePng">保存分享卡 PNG</button></div><p class="sm">${VSC ? '' : '手机上可长按图片保存。'}</p></div>`);
   $('#nm').addEventListener('change', e => { S.name = e.target.value.trim().slice(0, 8); save(); openShare(); });
   cardURL = ''; const img = $('#cardImg');
-  try { cardURL = await makeCard({ team: S.team.length ? S.team : starterTeam(), name: S.name, realm: S.realm, total: S.total, muts: S.muts, wins: S.wins, code }); if (img) img.src = cardURL; } catch (e) { if (img) img.alt = '分享卡生成失败'; }
+  try { cardURL = await makeCard({ team: S.team.length ? S.team : starterTeam(), name: S.name, realm: S.realm, total: S.total, muts: S.muts, wins: S.wins, code, url }); if (img) img.src = cardURL; } catch (e) { if (img) img.alt = '分享卡生成失败'; }
 }
 function copy(text, btn) {
   const done = () => { if (btn) { const o = btn.textContent; btn.textContent = '已复制'; setTimeout(() => { btn.textContent = o; }, 1200); } };

@@ -1,6 +1,7 @@
 // 蛊码 GuCode · 分享卡（canvas → PNG）
 import { SP, TRAITS, REALMS, skillOf, fmtTok } from './core.js';
 import { guSVG } from './art.js';
+import { qrDraw } from './qr.js';
 
 const KAI = '"Kaiti SC","STKaiti","KaiTi","BiauKai",serif';
 const SANS = '-apple-system,"PingFang SC","Microsoft YaHei",system-ui,sans-serif';
@@ -14,8 +15,8 @@ function seal(ctx, x, y, text, size, rot = -0.05) {
   chars.forEach((c, i) => ctx.fillText(c, 0, -h / 2 + fs * 0.7 + i * fs));
   ctx.restore();
 }
-export async function makeCard({ team, name, realm, total, muts, wins, code }) {
-  const W = 1080, H = 376 + team.length * 166 + 330, cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+export async function makeCard({ team, name, realm, total, muts, wins, code, url }) {
+  const W = 1080, H = 376 + team.length * 166 + 380, cv = document.createElement('canvas'); cv.width = W; cv.height = H;
   const ctx = cv.getContext('2d');
   ctx.fillStyle = '#17140f'; ctx.fillRect(0, 0, W, H);
   let s = 7; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
@@ -42,11 +43,17 @@ export async function makeCard({ team, name, realm, total, muts, wins, code }) {
     y += 166;
   });
   y += 30;
-  ctx.fillStyle = 'rgba(236,227,207,.85)'; ctx.font = `34px ${KAI}`;
-  ctx.fillText(`算力履历　累计喂养 ${fmtTok(total)} Token · 突变 ${muts || 0} 次 · 胜 ${wins || 0}`, 92, y);
-  if (skills.length) { ctx.fillStyle = '#d8553f'; ctx.fillText('杀招　' + skills.map(n => '【' + n + '】').join(''), 92, y + 52); }
-  ctx.fillStyle = 'rgba(236,227,207,.55)'; ctx.font = `26px ${SANS}`; ctx.fillText('界壁坐标码 · 打开蛊码粘贴即可应战', 92, y + 110);
-  ctx.fillStyle = '#6fb7a4'; ctx.font = `28px ui-monospace,Menlo,monospace`;
-  const per = 46; for (let i = 0; i * per < code.length && i < 3; i++) ctx.fillText(code.slice(i * per, (i + 1) * per), 92, y + 152 + i * 38);
+  const LW = W - 92 - 330;
+  ctx.fillStyle = 'rgba(236,227,207,.85)'; ctx.font = `32px ${KAI}`;
+  ctx.fillText(`算力履历　累计喂养 ${fmtTok(total)} Token`, 92, y, LW);
+  ctx.fillText(`突变 ${muts || 0} 次 · 胜 ${wins || 0} · ${REALMS[realm] || '凡人'}`, 92, y + 46, LW);
+  if (skills.length) { ctx.fillStyle = '#d8553f'; ctx.fillText('杀招 ' + skills.map(n => '【' + n + '】').join(''), 92, y + 96, LW); }
+  ctx.fillStyle = 'rgba(236,227,207,.55)'; ctx.font = `24px ${SANS}`; ctx.fillText('界壁坐标码 · 扫码或粘贴即可应战', 92, y + 150, LW);
+  ctx.fillStyle = '#6fb7a4'; ctx.font = `24px ui-monospace,Menlo,monospace`;
+  const per = 34; for (let i = 0; i * per < code.length && i < 3; i++) ctx.fillText(code.slice(i * per, (i + 1) * per), 92, y + 188 + i * 32, LW);
+  if (url) {
+    const qs = 264, qx = W - 92 - qs, qy = y - 40;
+    if (qrDraw(ctx, url, qx, qy, qs)) { ctx.fillStyle = 'rgba(236,227,207,.7)'; ctx.font = `26px ${KAI}`; ctx.textAlign = 'center'; ctx.fillText('扫码应战', qx + qs / 2, qy + qs + 36); ctx.textAlign = 'left'; }
+  }
   return cv.toDataURL('image/png');
 }
