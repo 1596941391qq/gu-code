@@ -7867,6 +7867,9 @@ const TXT = {
   landsHead: '选秘境',
   landsSub: '每个秘境写明出战额度：上阵蛊的转数加起来不能超过它。敌人按额度配，不看你的蛊池。渡过本境界任一秘境最深处的首领劫，开放下一境界的秘境。',
   landLock: '渡过上一境界的首领劫后开放',
+  gainHead: '渡劫成功可得', skyHead: '天象', jieHead: '劫数', jieNormal: '普通',
+  gainLine: lines => `渡劫成功可得：${lines.join('；')}`,
+  jieSub: '劫数越高敌人越强，规则一条条叠上去；打过这一劫，开放下一劫',
   landLine: l => `${REALMS[l.realm]} · 额度 ${l.quota} · 敌人多${DAO[l.dao] ? DAO[l.dao].n : '杂道'}`,
   quotaTip: (u, q) => `上阵蛊的转数加起来是 ${u}，这个秘境的额度是 ${q}。额度 9 可以带三只三转，也可以一只五转加两只二转；只限转数总和，不限只数。`,
   driveTip: () => `${REALMS[S.realm]}境界能驱使${RANK.names[driveCap(S.realm)]}及以下的蛊上阵；第一次渡过本境界的劫，境界加一，能驱使更高转数的蛊。`,
@@ -8129,12 +8132,12 @@ function renderHome() {
   box.classList.toggle('away', t);
   const land = curLand(), used = quotaOf(S.team), why = goWhy(land);
   box.innerHTML = `<div class="hhead"><span class="lbl" data-tip="${esc(TXT.daoTip)}">${S.dao ? TXT.daoLine(S.dao) : TXT.daoNone}</span></div><div id="reso" class="reso"></div>
-  <section class="qiao" id="qiao"><button class="landbtn" data-act="lands"${t ? ' disabled' : ''}><span class="lbl">秘境</span><b>${esc(land.n)}</b><small>${esc(TXT.landLine(land))}</small><span class="lchg">${t ? '渡劫中' : '换秘境'}</span></button>
+  <section class="qiao" id="qiao"><button class="landbtn" data-act="lands"${t ? ' disabled' : ''}><span class="lbl">秘境</span><b>${esc(land.n)}${kalpaOf(land) ? ` · ${esc(jieName(kalpaOf(land)))}` : ''}</b><small>${esc(TXT.landLine(land))}</small><span class="lchg">${t ? '渡劫中' : '换秘境'}</span></button>
   <div class="qhead"><span class="lbl">${TXT.slotsHead} <small>${TXT.slotsSub}</small></span><span class="qmeta quota${used > land.quota ? ' over' : ''}" data-tip="${esc(TXT.quotaTip(used, land.quota) + '\n' + TXT.driveTip())}">已用 ${used} / 额度 ${land.quota}</span>${t ? '' : `<button class="trybtn" data-act="tryOpen" data-tip="${esc(TXT.tryTip)}">${TXT.tryName}</button>`}</div><div class="slots" id="slots"></div>
   <div class="bagline" id="bagline"></div></section>
   <ul class="hlog" id="hlog"></ul>
   ${t ? `<p class="hint">${TXT.inTrip}</p>` : S.compass ? compassHTML() : `<section class="shop" id="shop"></section>`}
-  ${t ? '' : `<div class="gorow"><button class="trygo" data-act="tryOpen"${S.team.length ? '' : ' disabled'}>${TXT.tryGo}</button><button class="zhu big go" data-act="go"${why ? ' disabled' : ''}>${TXT.go} · ${esc(land.n)}<small>${esc(why || TXT.goSub(S.team.length, land))}</small></button></div>`}`;
+  ${t ? '' : `<div class="gorow"><button class="trygo" data-act="tryOpen"${S.team.length ? '' : ' disabled'}>${TXT.tryGo}</button><button class="zhu big go" data-act="go"${why ? ' disabled' : ''}>${TXT.go} · ${esc(land.n)}<small>${esc(why || TXT.goSub(S.team.length, land))}</small></button></div>${(() => { const L = gainLines(previewOf(land)); return L.length ? `<p class="gainline">${esc(TXT.gainLine(L))}</p>` : ''; })()}`}`;
   renderSlots(); renderBagLine(); renderShop(); renderReso(); renderLog();
 }
 // 阵盘：3 行 × 3 列，屏幕上从左到右是 后、中、前（前列朝向敌人）。9 格随便摆；能带几只看秘境额度（转数总和）
@@ -8249,6 +8252,15 @@ const landById = id => lands().find(l => l.id === id);
 const landOpen = l => l.realm <= S.realm && unlocked(l.id, 'trip');
 const curLand = () => { const l = landById(S.land); return l && landOpen(l) ? l : lands().find(x => x.realm === S.realm && landOpen(x)) || lands().find(landOpen) || lands()[0]; };
 const bossOf = l => (l.boss || []).map(b => (b.atk ? b : { ...newGu(b.sp, b.rank), ...b }));
+// 劫数（秘境一侧 TRIP.kalpa / TRIP.preview）：道途点亮「渡劫之后」才显示；每个秘境选的第几劫记在 S.landK[秘境 id]
+const kalpaOn = () => unlocked('kalpa', 'feature');
+const kalpaMax = l => (kalpaOn() && TRIP.kalpa && TRIP.kalpa.open ? TRIP.kalpa.open(S, l.id) | 0 : 0);
+const kalpaOf = l => Math.max(0, Math.min(kalpaMax(l), ((S.landK || {})[l.id]) | 0));
+const jieName = k => (k && TRIP.kalpa && TRIP.kalpa.names ? TRIP.kalpa.names[k] : TXT.jieNormal);
+// 进秘境前就能看的：天象、首领（名字、机制、阵容）、劫数规则、渡劫成功可得。同一种子进去后一模一样
+const previewOf = (l, k = kalpaOf(l)) => { try { return TRIP.preview ? TRIP.preview(S, l.id, k) : null; } catch (e) { return null; } };
+const gainLines = pv => (pv && pv.reward && pv.reward.lines ? pv.reward.lines : []);
+const gainHTML = pv => { const L = gainLines(pv); return L.length ? `<div class="gain"><span class="lbl">${TXT.gainHead}</span><ul>${L.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''; };
 // 渡劫前的检查：空窍不能空、转数总和不超过额度、每只都在驱使上限内。返回原因（能渡劫时返回空）
 function goWhy(land = curLand()) {
   if (!S.team.length) return TXT.whyEmpty;
@@ -8257,9 +8269,13 @@ function goWhy(land = curLand()) {
   return '';
 }
 function landCard(l, lock) {
-  const on = !lock && l.id === curLand().id, boss = bossOf(l);
+  const on = !lock && l.id === curLand().id, pv = lock ? null : previewOf(l), boss = pv ? pv.boss.team.map(b => (b.atk ? b : { ...newGu(b.sp, b.rank), ...b })) : bossOf(l);
+  const km = lock ? 0 : kalpaMax(l), k = kalpaOf(l);
   return `<div class="land${on ? ' on' : ''}${lock ? ' lock' : ''}"><div class="lh"><b>${esc(l.n)}</b><small>${esc(TXT.landLine(l))}${l.realm <= S.realm && !unlocked(l.id, 'trip') ? ' · 道途解锁' : ''}</small></div>${l.d ? `<p class="sm">${esc(l.d)}</p>` : ''}
-  <details><summary>首领阵容 · ${boss.length} 只，转数共 ${quotaOf(boss)}</summary>${miniRow(boss)}</details>
+  ${pv ? `<p class="sm"><span class="lbl">${TXT.skyHead}</span> <b>${esc(pv.sky.n)}</b> ${esc(pv.sky.d)}</p>` : ''}
+  <details><summary>首领${pv ? `「${esc(pv.boss.n)}」` : '阵容'} · ${boss.length} 只，转数共 ${quotaOf(boss)}</summary>${pv && pv.boss.mechs.length ? `<ul class="mechs">${pv.boss.mechs.map(m => `<li><b>${esc(m.n)}</b> ${esc(m.d)}</li>`).join('')}</ul>` : ''}${miniRow(boss)}</details>
+  ${km ? `<div class="jie"><span class="lbl">${TXT.jieHead}</span><div class="segs">${Array.from({ length: km + 1 }, (_, i) => `<button data-act="jie" data-id="${esc(l.id)}" data-k="${i}" class="${i === k ? 'on' : ''}">${esc(jieName(i))}</button>`).join('')}</div>${pv && pv.kalpa.rules.length ? `<p class="sm">${esc(pv.kalpa.rules.join('；'))}</p>` : `<p class="sm">${esc(TXT.jieSub)}</p>`}</div>` : ''}
+  ${gainHTML(pv)}
   ${lock ? '' : `<button class="${on ? '' : 'zhu'}" data-act="land" data-id="${esc(l.id)}"${on ? ' disabled' : ''}>${on ? '已选' : '选这个'}</button>`}</div>`;
 }
 function openLands() {
@@ -8272,7 +8288,7 @@ function openLands() {
 // ---------- 渡劫（秘境由另一侧实现，见 hooks.js）----------
 function goSheet() {
   const land = curLand();
-  sheet(`<h3>${TXT.go} · ${esc(land.n)}</h3><p class="sm">${esc(TXT.landLine(land))} · 已用 ${quotaOf(S.team)}</p><p>${esc(TXT.goSub(S.team.length, land))}：</p>${miniRow(S.team)}<details><summary>最深处的首领</summary>${miniRow(bossOf(land))}</details><p class="trialnote">${esc(TXT.goWarn)}</p><p class="sm">攒着的元气 ${fmtTok(S.bank)}：渡劫时先用它一口气往深处走。</p><div class="row2"><button class="zhu big" data-act="goConfirm">开始渡劫</button></div>`);
+  sheet(`<h3>${TXT.go} · ${esc(land.n)}</h3><p class="sm">${esc(TXT.landLine(land))} · 已用 ${quotaOf(S.team)}</p><p>${esc(TXT.goSub(S.team.length, land))}：</p>${miniRow(S.team)}${(() => { const pv = previewOf(land); return pv ? `<p class="sm"><span class="lbl">${TXT.skyHead}</span> <b>${esc(pv.sky.n)}</b> ${esc(pv.sky.d)}${kalpaOf(land) ? ` · ${esc(jieName(kalpaOf(land)))}` : ''}</p><details><summary>最深处的首领「${esc(pv.boss.n)}」</summary>${pv.boss.mechs.length ? `<ul class="mechs">${pv.boss.mechs.map(m => `<li><b>${esc(m.n)}</b> ${esc(m.d)}</li>`).join('')}</ul>` : ''}${miniRow(pv.boss.team.map(b => (b.atk ? b : { ...newGu(b.sp, b.rank), ...b })))}</details>${gainHTML(pv)}` : `<details><summary>最深处的首领</summary>${miniRow(bossOf(land))}</details>`; })()}<p class="trialnote">${esc(TXT.goWarn)}</p><p class="sm">攒着的元气 ${fmtTok(S.bank)}：渡劫时先用它一口气往深处走。</p><div class="row2"><button class="zhu big" data-act="goConfirm">开始渡劫</button></div>`);
 }
 function onTripEnd(result = {}) {
   const dead = new Set(result.dead || []), loot = result.loot || {}, land = landById(S.trip && S.trip.land);
@@ -8816,8 +8832,9 @@ const ACT = {
   sell(a) { const L = a.dataset.k === 'bag' ? S.bag : S.team, i = +a.dataset.i, g = L[i]; if (!g || tripOn()) return; const v = price(sellValue(g)); L.splice(i, 1); S.bank += v; note(TXT.sold(g, v)); closeSheet(); afterChange(); snd('coin'); },
   go() { if (tripOn() || goWhy()) return; goSheet(); },
   lands() { if (!tripOn()) openLands(); },
+  jie(a) { const l = landById(a.dataset.id); if (!l) return; S.landK = Object.assign({}, S.landK, { [l.id]: +a.dataset.k | 0 }); save(); renderHome(); openLands(); },
   land(a) { const l = landById(a.dataset.id); if (!l || !landOpen(l)) return; S.land = l.id; closeSheet(); renderHome(); save(); },
-  goConfirm() { closeSheet(); if (goWhy()) return; if (!TRIP.start) { note(TXT.goSoon); return; } S.trip = S.trip || { at: Date.now(), land: curLand().id }; save(); renderHome(); TRIP.start(TRIP.api); },
+  goConfirm() { closeSheet(); if (goWhy()) return; if (!TRIP.start) { note(TXT.goSoon); return; } S.trip = S.trip || { at: Date.now(), land: curLand().id, kalpa: kalpaOf(curLand()) }; save(); renderHome(); TRIP.start(TRIP.api); },
   tryOpen() { openTry(); },
   simQ(a) { simState(); S.sim.q = +a.dataset.q; S.sim.seed = (S.seed + ':' + (++S.step)).toString(36); openTry(); },
   simFoe(a) { simState(); S.sim.foe = a.dataset.k; S.sim.seed = (S.seed + ':' + (++S.step)).toString(36); openTry(); },

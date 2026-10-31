@@ -540,6 +540,12 @@ button.mg{font:inherit;font-size:11px;border:0;cursor:pointer;position:relative;
 .shead{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .pantry{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:10px}.pfood{font:13px var(--kai);padding:3px 9px}
 .gorow{margin:16px 0 4px;display:flex;gap:8px;align-items:stretch}.gorow .go{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:2px}
+/* 渡劫成功可得：渡劫按钮下一行、选秘境卡片里一块 */
+.gainline{margin:6px 2px 0;font-size:12px;color:var(--mu);line-height:1.5}
+.gain{margin:8px 0 6px;padding:6px 10px;border-left:2px solid var(--zhu2);background:rgba(181,48,31,.05)}
+.gain .lbl{color:var(--zhu2)}.gain ul{margin:3px 0 0;padding:0;list-style:none;font-size:13px}.gain li{margin:2px 0}
+.land .jie{margin:6px 0}.land .jie .segs{flex-wrap:wrap;margin:4px 0}
+.mechs{margin:4px 0;padding:0;list-style:none;font-size:12px}.mechs li{margin:2px 0}.mechs b{color:var(--zhu2);font-weight:400}
 .gorow .trygo{flex:0 0 auto;padding:0 12px;font:14px var(--kai);border:1px solid var(--line2);border-radius:3px;color:var(--tx)}.gorow .trygo:disabled{opacity:.45}
 /* 试阵面板 */
 .segs.simfoes{flex-wrap:wrap}
