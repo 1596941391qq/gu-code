@@ -2,7 +2,7 @@
 // 规则正本：docs/design.md 第 2 节。界面在 trip-ui.js。战斗引擎归战斗一侧：秘境给出场蛊带 hpNow，读回 res.hpEnd（每只剩血，0 = 倒下）
 // 和 res.statA（每只这一场的经历，判蛊性用）；引擎还没给 hpEnd 时，用最后一帧快照兜底（hpFromLog）。
 // 资源只有元气（= 消耗的 token）：房间路程、坊市、奇遇里要花的都按元气算，先花洞府攒着的（purse.bank），不够就等实时 token。
-import { makeRng, hashStr, SP, poolFor, newGu, genTeam, slotCap, baseRank, RANK, SLOTS, XING } from './core.js';
+import { makeRng, hashStr, SP, poolFor, genTeam, slotCap, baseRank, RANK, SLOTS, XING } from './core.js';
 import { FOODS } from './foods.js';
 
 // ───────────── 蛊性：秘境里打出来的经历。每只蛊最多 1 个；数值按进场攻血的百分比，后期不贬值 ─────────────
@@ -111,7 +111,7 @@ export function bossTeam(realm) {
 }
 
 // ───────────── 战利品：新蛊（物种 + 转数，回洞府时变成蛊）和食物 id ─────────────
-const foodPoolOf = t => (t && t.foodPool && t.foodPool.length ? t.foodPool : FOODS.map(f => f.id));
+const foodPoolOf = t => (t && t.foodPool && t.foodPool.length ? t.foodPool : FOODS.filter(f => f.trip !== 'stone').map(f => f.id));   // 元石已删，寻宝图不再掉
 const foodName = id => (FOODS.find(f => f.id === id) || { n: id }).n;
 function foodPick(rng, pool, d) {   // 越深越偏向贵的（稀有）
   const w = pool.map(id => Math.pow((FOODS.find(f => f.id === id) || { cost: 3 }).cost || 3, d / 4)), tot = w.reduce((a, b) => a + b, 0); let r = rng() * tot;
@@ -178,7 +178,8 @@ export function fxText(fx) {
 export function tripStart(seed, realm, team, opts = {}) {
   const fielded = team.slice(0, SLOTS);
   const t = { v: 1, seed: String(seed), realm: realm | 0, d: 0, lane: null, pick: null, prog: 0, order: fielded.map(g => g.uid), hp: {}, mx: {}, dead: [], fallen: [],
-    loot: { foods: [], gu: [] }, log: [], room: null, end: null, kills: {}, seen: [], rooms: 0, short: 1, foodPool: (opts.foods || []).slice(), pow: teamPow(fielded) };
+    loot: { foods: [], gu: [] }, log: [], room: null, end: null, kills: {}, seen: [], rooms: 0, short: 1, foodPool: (opts.foods || []).slice(), pow: teamPow(fielded),
+    pre: Math.min(1, (opts.trip || []).reduce((a, id) => { const f = FOODS.find(x => x.id === id); return a + (f && f.kind === 'trip' && f.trip === 'heal' ? (f.pct || 0) / 100 : 0); }, 0)) };   // pre = 出征食物（回春茶）：每场开打前全队回的比例
   fielded.forEach(g => { t.hp[g.uid] = g.hp; t.mx[g.uid] = g.hp; t.kills[g.uid] = 0; });
   tlog(t, `出征：${fielded.map(g => SP[g.sp] ? SP[g.sp].n : g.sp).join('、')}。共 ${TRIP_CFG.depth} 层，最深处是渡劫首领。`);
   return t;
@@ -267,6 +268,12 @@ export function tripFight(t, team, fielded, res) {
   leave(t);
   return { win, dead, loot, offers };
 }
+// 出征食物：每场开打前全队回 t.pre 比例的血。返回回了多少
+export function tripPreFight(t) {
+  if (!t || !t.pre) return 0; let sum = 0;
+  tripAlive(t).forEach(u => { const v = Math.min(t.mx[u] - t.hp[u], Math.max(1, Math.round(t.mx[u] * t.pre))); t.hp[u] += v; sum += v; });
+  return sum;
+}
 export function acceptXing(team, uid, key) { const g = team.find(x => x.uid === uid); if (g && XING[key]) { g.xing = key; return true; } return false; }
 // 奇遇：选第 i 个选项。返回 { ok, lines, offer? }
 export function tripEvent(t, team, i) {
@@ -320,8 +327,8 @@ export function tripEnd(t, why) {
   tlog(t, wiped ? '全灭。这一趟的战利品全部丢在了秘境里。' : why === 'clear' ? '渡劫成功，带着战利品回洞府。' : '撤退，带着战利品回洞府。');
   return t.end;
 }
-// 给 api.onTripEnd 的结果：新蛊在这里变成蛊对象（回洞府进蛊囊）；stone 留 0 兼容接口（元石已删）
-export const tripResult = t => t.end ? { dead: t.end.dead, survivors: t.end.survivors, loot: { stone: 0, foods: t.end.loot.foods.slice(), gu: t.end.loot.gu.map(g => newGu(g.sp, g.rank)) }, cleared: t.end.cleared, wiped: t.end.wiped, depth: t.end.depth, fallen: t.end.fallen, lost: t.end.lost } : null;
+// 给 api.onTripEnd 的结果（hooks.js）：新蛊写成 { sp, rank }，洞府放进蛊囊；规则第二版没有元石
+export const tripResult = t => t.end ? { dead: t.end.dead, survivors: t.end.survivors, loot: { foods: t.end.loot.foods.slice(), gu: t.end.loot.gu.map(g => ({ sp: g.sp, rank: g.rank })) }, cleared: t.end.cleared, wiped: t.end.wiped } : null;
 export function epitaph(f) {   // 告别词：倒在哪、这一趟斩敌几只、带着什么蛊性
   return `倒在第 ${f.d + 1} 层的${ROOMS[f.type] ? ROOMS[f.type].n : ''}${f.kills ? `，这一趟斩敌 ${f.kills} 只` : ''}${f.xing && XING[f.xing] ? `，带着「${XING[f.xing].n}」走了` : ''}。`;
 }

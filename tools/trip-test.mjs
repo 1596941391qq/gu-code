@@ -84,7 +84,7 @@ console.log('# 3 首领（渡劫）：战力不够时');
 console.log('# 4 撤退与全灭');
 {
   let a = null; for (let k = 0; k < 50 && !(a && a.t.end.why === 'retreat'); k++) a = runTrip(2, k, { retreatAt: 2 }); ok(a.t.end && a.t.end.why === 'retreat' && !a.t.end.wiped, '撤退：走到第 3 层主动撤退能结束');
-  const res = T.tripResult(a.t); ok(res && Array.isArray(res.loot.gu) && res.loot.gu.every(g => g.uid && g.sp) && res.survivors.length + res.dead.length === a.t.order.length, '撤退结果：带回战利品（新蛊是蛊对象），活着的 + 倒下的 = 出征的');
+  const res = T.tripResult(a.t); ok(res && Array.isArray(res.loot.gu) && res.loot.gu.every(g => g.sp && g.rank) && !('stone' in res.loot) && res.survivors.length + res.dead.length === a.t.order.length, '撤退结果：带回战利品（新蛊写成 {sp, rank}，没有元石），活着的 + 倒下的 = 出征的');
   let wipe = null; for (let k = 0; k < 200 && !wipe; k++) { const rng = makeRng('w' + k), weak = player(rng, 0, 0).slice(0, 1); weak[0].hp = 2; weak[0].atk = 1; const rec = runTrip(3, k, { team: weak }); if (rec.t.end && rec.t.end.wiped) wipe = rec; }
   ok(wipe && T.tripResult(wipe.t).loot.gu.length === 0 && T.tripResult(wipe.t).loot.foods.length === 0 && wipe.t.end.dead.length === wipe.t.order.length, '全灭：全员倒下，战利品全丢');
   const t = T.tripStart('qi', 0, player(makeRng('q'), 0)), purse = { bank: 5e6 };
