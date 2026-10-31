@@ -93,6 +93,14 @@ i{font-style:normal}
 .locked small{color:var(--mu);font-size:12px}
 .sfloat{position:absolute;margin-left:6px;font:700 14px var(--mono);color:var(--gold);animation:fl 1.2s ease-out forwards;pointer-events:none}
 #qmeta .stone{position:relative}
+/* 悬停提示：水墨小笺 */
+.tip{position:fixed;z-index:90;max-width:min(300px,calc(100vw - 16px));padding:9px 12px 8px;background:var(--paper);color:var(--ink);border:1px solid var(--line2);border-left:3px solid var(--zhu);border-radius:2px;box-shadow:0 6px 18px rgba(0,0,0,.35);font:13px/1.5 var(--sans);pointer-events:none;animation:tipin .14s ease}
+.tip[hidden]{display:none}
+@keyframes tipin{from{opacity:0;translate:0 3px}}
+.tip b{font:400 15px var(--kai)}.tip small{color:#5b5244;font-size:12px}.tip em{font-style:normal;color:#2c6e5e}
+.tip ul{margin:4px 0;padding:0;list-style:none}.tip li{margin:2px 0}.tip li b{font-size:14px;margin-right:4px}.tip p{margin:4px 0 2px}
+.tip .a,.tip .h{font-style:normal;font-weight:600}
+.tc{display:inline-block}
 /* 临时弹层（表现组件到位后替换） */
 .pop{position:fixed;z-index:70;pointer-events:auto;cursor:pointer;animation:popin .28s cubic-bezier(.2,1.3,.4,1) both}
 .pop.out{animation:popout .25s ease forwards}
