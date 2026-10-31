@@ -2,7 +2,8 @@
 // 这样 index.html 双击 file:// 也能跑（浏览器不允许 file:// 加载 module）。同时同步到 vscode-ext/media/。
 import fs from 'node:fs'; import path from 'node:path'; import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const order = ['core', 'battle', 'art', 'qr', 'tokens', 'card', 'meta', 'tutorial', 'ui'];
+// fx 放在 meta 前：两边都有 openCocoon/openChest，拼接后后声明的生效，界面要用 meta 的那两个
+const order = ['core', 'battle', 'art', 'qr', 'tokens', 'card', 'fx', 'meta', 'tutorial', 'ui'];
 let out = '/* 蛊码 GuCode —— 由 tools/build.mjs 从 src/ 生成，请改 src/ 再构建 */\n(() => {\n"use strict";\n';
 for (const n of order) {
   const s = fs.readFileSync(path.join(root, 'src', n + '.js'), 'utf8')
