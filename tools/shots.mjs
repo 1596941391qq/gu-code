@@ -14,7 +14,8 @@ async function grow(p, n, ms = 4300) {
     const opt = await p.$('.opt'); if (opt) { await opt.click(); await w(p, 600); }
     const node = await p.$('.node:not([disabled]):not(.opt)'); if (node) await node.click();
     await w(p, ms);
-    const buy = await p.$('.wbuy:not([disabled])'); if (buy) { await buy.click(); await w(p, 300); }
+    const ware = p.locator('.ware:not(.cant):not(.sold) .wbuy').first();
+    if (await ware.count()) { await ware.click({ force: true }).catch(() => {}); await w(p, 250); const b = p.locator('.sheet [data-act=buy]:not([disabled])'); if (await b.count()) await b.click(); else if (await p.locator('.sheet .x').count()) await p.click('.sheet .x'); await w(p, 300); }
   }
   const opt = await p.$('.opt'); if (opt) { await opt.click(); await w(p, 600); }
 }
@@ -28,9 +29,13 @@ await grow(p, 4);
 await p.screenshot({ path: out('m1-main.png') });
 await p.evaluate(() => document.querySelector('#shop').scrollIntoView({ block: 'center' })); await w(p, 200);
 await p.screenshot({ path: out('m6-shop.png') });
+await p.click('.wbuy:not([disabled]) >> nth=0'); await w(p, 300); await p.screenshot({ path: out('m13-shop-detail.png') }); await p.click('.sheet .x'); await w(p, 200);
 await p.click('[data-act=ghost]'); await w(p, 400);
 await p.screenshot({ path: out('m7-ghosts.png') });
-await p.click('[data-act=ghostGo] >> nth=1'); await w(p, 4200);
+await p.click('[data-act=ghostGo] >> nth=1'); await w(p, 1600);
+await p.screenshot({ path: out('m11-prep.png') });
+await p.click('.mini.foe .mg >> nth=0'); await w(p, 300); await p.screenshot({ path: out('m12-foe-detail.png') }); await p.click('.sheet-bg.stack .x'); await w(p, 200);
+await p.click('[data-act=fight]'); await w(p, 4200);
 await p.screenshot({ path: out('m2-battle.png') });
 await p.click('[data-act=skip]'); await w(p, 900);
 await p.screenshot({ path: out('m3-result.png') });

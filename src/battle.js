@@ -32,6 +32,10 @@ export function battle(ta, tb, seed, ma = [], mb = []) {
 
   function deal(src, tg, amt, kind, crit) {
     if (!alive(tg) || amt <= 0) return;
+    if (src && src.side !== tg.side && (kind === 'hit' || kind === 'skill') && !tg.f.guarded && !tg.tr.guard) {   // 护卫：相邻友蛊第一次挨打时代受
+      const arr = S[tg.side], i = arr.indexOf(tg), gd = [arr[i - 1], arr[i + 1]].find(x => alive(x) && x.tr.guard);
+      if (gd) { tg.f.guarded = 1; ev('trig', { uid: gd.uid, id: 'guard' }); tg = gd; }
+    }
     if (tg.q.includes('greedy')) amt += 1;
     const had = tg.sh > 0; let a = amt;
     if (tg.sh > 0) { const s = Math.min(tg.sh, a); tg.sh -= s; a -= s; }
@@ -68,6 +72,11 @@ export function battle(ta, tb, seed, ma = [], mb = []) {
         else { const fs = foes(u); if (fs.length) deal(u, rng.pick(fs), d, 'skill'); }
       }
       if (T.shell && alive(u)) { tg('shell'); shield(u, 3 * T.shell); }
+      if (T.guard && alive(u)) { tg('guard'); shield(u, 2 * T.guard); }
+      const pos = S[u.side].indexOf(u);
+      if (T.link && alive(u)) { tg('link'); [S[u.side][pos - 1], S[u.side][pos + 1]].forEach(a => { if (alive(a)) buff(a, T.link, T.link); }); }
+      if (T.vanguard && pos === 0 && alive(u)) { tg('vanguard'); buff(u, T.vanguard, 2 * T.vanguard); }
+      if (T.snipe && pos > 0 && alive(u)) { const fs = foes(u); if (fs.length) { tg('snipe'); deal(u, fs[fs.length - 1], 2 * T.snipe + 1, 'skill'); } }
       if (u.combo === 'sanzhu' && alive(u)) { comboEv(u); fired = true; const dd = Math.max(1, Math.ceil(u.atk / 2)); foes(u).slice(0, 3).forEach(f => deal(u, f, dd, 'skill')); }
       if (u.combo === 'jinjia' && alive(u)) { comboEv(u); fired = true; shield(u, 3); }
     } else if (h === 'turn') {
