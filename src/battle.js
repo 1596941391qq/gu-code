@@ -85,7 +85,9 @@ export function synergyOf(team) {
     if (k < a.clash) { a.clash = k; a.clashWith = b.dao; } if (k < b.clash) { b.clash = k; b.clashWith = a.dao; }
   }
   const sps = new Set(T.filter(Boolean).map(g => g.sp));
-  let formed = COMBOS.filter(c => c.need.every(x => sps.has(x)));
+  // 低转杀招（combos2 的 low = { 物种: 最高转数 }）：队里得有一只这种蛊的转数不超过所写转数才成形，升上去就散
+  const lowOk = c => !c.low || Object.entries(c.low).every(([sp, mx]) => T.some(g => g && g.sp === sp && guRank(g) <= mx));
+  let formed = COMBOS.filter(c => c.need.every(x => sps.has(x)) && lowOk(c));
   const replaced = new Set(formed.filter(c => c.from).map(c => c.from));
   formed = formed.filter(c => !replaced.has(c.id)).sort((a, b) => (b.from ? 1 : 0) - (a.from ? 1 : 0));
   const taken = new Set(), combos = [];
@@ -286,7 +288,11 @@ export function battle(ta, tb, seed, opts = {}) {
     return [anchor];
   }
   function moveTo(u, r, c, k) { u.r = r; u.c = c; sortSide(u.side); ev('move', { uid: u.uid, r, c, k }); }
-  const noSyn = opts.noSyn || [], syn = [tA, tB].map((T, s) => noSyn[s] ? { daos: [], combos: [], clashes: [], line: '' } : synergyOf(T));   // noSyn：模拟用，关掉某一方的羁绊做对照
+  // 模拟用对照开关：noSyn[s] 关掉某一方的全部羁绊；comboOnly[s] 是杀招 id 数组时，那一方只保留这些杀招（[] 即不成形，道共鸣照旧）
+  const noSyn = opts.noSyn || [], only = opts.comboOnly || [], syn = [tA, tB].map((T, s) => {
+    if (noSyn[s]) return { daos: [], combos: [], clashes: [], line: '' };
+    const y = synergyOf(T); return Array.isArray(only[s]) ? { ...y, combos: y.combos.filter(c => only[s].includes(c.id)) } : y;
+  });
   syn.forEach((sy, s) => sy.combos.forEach(c => {
     const u = S[s].find(x => x.src === c.idx), C = comboDef(COMBOS.find(x => x.id === c.id)); if (!u) return;
     u.combo = c.id; u.cname = c.n; u.cmul = c.mul; roster[u.uid].combo = { id: c.id, n: c.n, mul: c.mul };

@@ -297,7 +297,7 @@ import { battle, synergyOf, layoutOf, battleProfile, predictOrder, encodeReplay,
 const res = battle(teamA, teamB, seed, opts);
 ```
 
-`opts`（都可省）：`{ sota: [boolA, boolB] 或 { A, B }, maxRounds: 30, lite: false, noSyn: [a, b] }`（noSyn 只给模拟做对照：关掉某一方的羁绊）
+`opts`（都可省）：`{ sota: [boolA, boolB] 或 { A, B }, maxRounds: 30, lite: false, noSyn: [a, b], comboOnly: [idsA, idsB] }`（noSyn、comboOnly 只给模拟做对照：noSyn 关掉某一方的全部羁绊；comboOnly 某一方给杀招 id 数组时只保留这些杀招，给 `[]` 就是杀招不成形、道共鸣照旧，用来测杀招增益）
 - `battleProfile(sp)` → `{ spd, reach, aim, atkFx, act }`：蛊卡、蛊典显示速、近远程、主动技用（物种没写的字段按引擎默认值补）。
 - `sota`：design.md 3.5 的彩蛋。为 true 的那一方，所有伤害 ×1.01（四舍五入）。
 - `lite: true` 不写每步快照（模拟用，快很多）。
