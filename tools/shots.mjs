@@ -14,7 +14,7 @@ async function newPage(o = {}) {
 }
 const w = (p, ms) => p.waitForTimeout(ms);
 // 推进养蛊：有选择题先选，没有就点第一条可走的路
-async function grow(p, n, ms = 4300) {
+async function grow(p, n, ms = 12500) {   // 网页模拟灵流约 1000/s，一个节点约 8～12 秒
   for (let k = 0; k < n; k++) {
     const opt = await p.$('.opt'); if (opt) { await opt.click(); await w(p, 600); }
     const node = await p.$('.node:not([disabled]):not(.opt)'); if (node) await node.click();
@@ -29,7 +29,7 @@ const shot = process.argv[2] || 'all';
 const p = await newPage({ colorScheme: 'dark' });
 await p.goto(url); await w(p, 500);
 await p.screenshot({ path: out('m0-start.png') });
-await p.click('.starter >> nth=0'); await p.click('[data-act=demo][data-m=wuhuo]');
+await p.click('.starter >> nth=0'); await p.click('[data-act=demo][data-m=coding]');
 await grow(p, 4);
 await p.screenshot({ path: out('m1-main.png') });
 await p.evaluate(() => document.querySelector('#shop').scrollIntoView({ block: 'center' })); await w(p, 200);
@@ -54,7 +54,7 @@ await p.screenshot({ path: out('d1-main.png') });
 await p.close();
 
 const q = await newPage({ colorScheme: 'light' });
-await q.goto(url); await w(q, 300); await q.click('.starter >> nth=1'); await q.click('[data-act=demo][data-m=wuhuo]');
+await q.goto(url); await w(q, 300); await q.click('.starter >> nth=1'); await q.click('[data-act=demo][data-m=coding]');
 await grow(q, 3);
 await q.screenshot({ path: out('m5-light.png') });
 await q.close();

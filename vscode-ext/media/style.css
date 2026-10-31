@@ -173,6 +173,9 @@ i{font-style:normal}
 .vsrc{position:relative;z-index:1;display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 .vsrc[hidden]{display:none}
 .chip.demo{border-color:var(--zhu2);color:var(--on-zhu);background:var(--zhu);font-weight:600}
+.trialtag{display:inline-block;vertical-align:middle;margin-left:8px;padding:0 6px;border:1.5px solid var(--zhu2);border-radius:3px;color:var(--zhu2);font:600 12px/1.6 var(--kai);letter-spacing:.1em;transform:rotate(-4deg)}
+.trialnote{margin:6px 0 8px;padding:6px 10px;border-left:3px solid var(--zhu2);background:color-mix(in srgb,var(--zhu2) 9%,transparent);font-size:13px;line-height:1.55}
+.srclist{list-style:none;margin:8px 0;padding:0}.srclist li{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px dashed var(--line);font-size:13px}
 .sheet a.btn{display:block;text-align:center;padding:10px 16px;border-radius:3px;font:15px var(--kai);text-decoration:none}
 .sheet a.btn.zhu{background:var(--zhu);color:var(--on-zhu)}
 .schip{font:12px var(--sans);color:var(--mu);border:1px solid var(--line);border-radius:10px;padding:1px 8px;background:var(--bg)}

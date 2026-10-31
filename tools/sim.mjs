@@ -147,6 +147,14 @@ if (nondet) fails.push(`同种子不复现 ${nondet}`);
   console.log(ok ? '旧 v2 坐标码解码：OK' : '旧 v2 坐标码解码：失败 ' + JSON.stringify(d && d.team.map(g => [g.sp, g.atk, g.hp, rankOf(g)])));
   if (!ok) fails.push('旧 v2 坐标码解码失败');
 }
+{ // 试玩标志：v4 码多 1 位，网页试玩存档带上；旧 v3 码（没有这一位）照常解码，按非试玩处理
+  const d3 = decodeTeam('ZZuS4ieeJiAIAJAEBAkoAAAADIAIAwjIAAAACLAEAgjQAAAADo');
+  const ok3 = d3 && d3.name === '三版' && d3.realm === 1 && d3.trial === false && JSON.stringify(d3.team.map(g => [g.sp, g.atk, g.hp, rankOf(g)])) === '[["drum",1,4,3],["cicada",2,3,2],["moth",1,2,3]]';
+  const t = decodeTeam(encodeTeam(d3 ? d3.team : [], { name: '试玩', realm: 1, trial: true })), f = decodeTeam(encodeTeam(d3 ? d3.team : [], { name: '真', realm: 1 }));
+  const ok4 = t && t.trial === true && f && f.trial === false && t.team.length === 3;
+  console.log(ok3 && ok4 ? '试玩标志（v4）与旧 v3 码：OK' : '试玩标志/旧 v3 码：失败');
+  if (!(ok3 && ok4)) fails.push('试玩标志或旧 v3 码解码失败');
+}
 if (med(sp7.map(x => x.d)) < 0.15) fails.push(`7 格站位差中位不足 15 个百分点`);
 if (fails.length) { console.error('FAIL: ' + fails.join('；')); process.exit(1); }
 console.log('PASS');
