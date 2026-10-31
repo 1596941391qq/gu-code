@@ -9,7 +9,7 @@ import { metaInit, metaMigrate, metaEmit, isUnlocked, timelineView } from './met
 import { clearEvents } from './timeline.js';
 import { ledgerInit, openLedger, ledgerLimitRows, ledgerBindLimits } from './ledger.js';
 import { DAOS, DAO } from './daos.js';
-import { FOODS, FOOD, FOOD_KIND, lockedTrip } from './foods.js';
+import { FOODS, FOOD, FOOD_KIND } from './foods.js';
 import { TRIP } from './hooks.js';
 
 const KEY = 'gucode.v1';
@@ -71,8 +71,8 @@ const TXT = {
   foodPick: f => `把「${f.n}」喂给哪一只？`,
   gearPick: f => `把「${f.n}」挂在哪一只身上？每只最多挂 1 个，换新的旧的就没了。`,
   tripFood: f => `「${f.n}」收好了，下一次渡劫生效`,
-  tripLocked: '秘境里才能用，下个版本开放',
-  tripLockedLine: names => `渡劫用的${names}：秘境里才能用，下个版本开放`,
+  tripLocked: '下个版本开放',
+  tripLockedLine: names => `${names}：下个版本开放`,
   fed: (f, gs) => `${f.n}：${gs.map(g => SP[g.sp].n).join('、')} 攻 +${f.atk || 0} 血 +${f.hp || 0}`,
   geared: (f, g) => `${SP[g.sp].n} 挂上了「${f.n}」`,
   floor: g => `洞府里一只蛊都没有了，免费领到${rankName(g)}`,
@@ -247,8 +247,10 @@ const applyLocks = () => setComboLocks(id => unlocked(id, 'combo'));
 const allCombos = f => { setComboLocks(); try { return f(); } finally { applyLocks(); } };
 
 // ---------- 渲染 ----------
-// 渡劫用食物里秘境一侧还没接好的几种（寻路图、定魂香、各种符）：先不上架，界面写明「秘境里才能用，下个版本开放」
-let notYetSet; const notYet = id => (notYetSet || (notYetSet = new Set(lockedTrip()))).has(id);
+// 洞府还没接好的食物类别：先不上架，界面写明「下个版本开放」。渡劫用的（trip）秘境一侧已全部接上
+const FOOD_READY = { stat: 1, gear: 1, trip: 1 };
+const notYet = id => { const f = FOOD[id]; return !f || !FOOD_READY[f.kind]; };
+const notYetList = () => FOODS.filter(f => !FOOD_READY[f.kind] && isUnlocked(M(), f.id, 'food')).map(f => f.id);
 const unlocked = (id, k) => !(k === 'food' && notYet(id)) && isUnlocked(M(), id, k);
 function renderAll() {
   applyLocks();
@@ -351,7 +353,7 @@ function renderShop() {
   const box = $('#shop'); if (!box) return;
   if (!S.shop.length) newShop();
   box.innerHTML = `<div class="shead"><span class="lbl" data-tip="${esc(TXT.shopTip)}">${TXT.shopHead}</span><button class="mini-b" data-act="refresh">${TXT.refresh(fmtTok(price(PRICE.refresh)))}</button></div>
-  <div class="wares">${S.shop.map(wareHTML).join('')}</div>${S.pantry.length ? `<div class="pantry"><span class="lbl">带回的食物</span>${S.pantry.map((id, i) => `<button class="pfood" data-act="pantry" data-i="${i}" data-tip="${esc(FOOD[id] ? FOOD[id].d + (notYet(id) ? '\n' + TXT.tripLocked : '') : '')}"${notYet(id) ? ' disabled' : ''}>${esc(FOOD[id] ? FOOD[id].n : id)}</button>`).join('')}</div>` : ''}${(() => { const l = lockedTrip().filter(id => FOOD[id]); return l.length ? `<p class="sm tlocked" data-tip="${esc(l.map(id => `${FOOD[id].n}：${FOOD[id].d}`).join('\n'))}">${esc(TXT.tripLockedLine(l.map(id => '「' + FOOD[id].n + '」').join('')))}</p>` : ''; })()}${S.tripFood.length ? `<p class="sm">下一次渡劫带着：${S.tripFood.map(id => FOOD[id] ? FOOD[id].n : id).join('、')}</p>` : ''}`;
+  <div class="wares">${S.shop.map(wareHTML).join('')}</div>${S.pantry.length ? `<div class="pantry"><span class="lbl">带回的食物</span>${S.pantry.map((id, i) => `<button class="pfood" data-act="pantry" data-i="${i}" data-tip="${esc(FOOD[id] ? FOOD[id].d + (notYet(id) ? '\n' + TXT.tripLocked : '') : '')}"${notYet(id) ? ' disabled' : ''}>${esc(FOOD[id] ? FOOD[id].n : id)}</button>`).join('')}</div>` : ''}${(() => { const l = notYetList(); return l.length ? `<p class="sm tlocked" data-tip="${esc(l.map(id => `${FOOD[id].n}：${FOOD[id].d}`).join('\n'))}">${esc(TXT.tripLockedLine(l.map(id => '「' + FOOD[id].n + '」').join('')))}</p>` : ''; })()}${S.tripFood.length ? `<p class="sm">下一次渡劫带着：${S.tripFood.map(id => FOOD[id] ? FOOD[id].n : id).join('、')}</p>` : ''}`;
 }
 // 新得一只蛊：能合成先合成；蛊市买的先进空窍再进蛊囊；战利品只进蛊囊
 function placeNew(g, mode = 'shop') {
@@ -389,7 +391,7 @@ function floorCheck() {
 let FEED = null;   // 正在挑目标的食物 { id, from: 'shop'|'pantry', i }
 function useFood(id, from, i) {
   const f = FOOD[id]; if (!f) return false;
-  if (f.kind === 'trip' && notYet(id)) { note(`「${f.n}」${TXT.tripLocked}`); return false; }
+  if (notYet(id)) { note(`「${f.n}」${TXT.tripLocked}`); return false; }
   if (f.kind === 'trip') { S.tripFood.push(id); note(TXT.tripFood(f)); achieve('feeds', 1); return true; }
   if (f.kind === 'stat' && f.to !== 'one') {
     const can = S.team.filter(canEat); if (!can.length) { note(TXT.ateFull); return false; }
@@ -476,7 +478,7 @@ function tripPlayBattle(foeTeam, opts = {}) {
   const A = { team, name: S.name || '无名蛊师', realm: S.realm, trial: S.trial }, B = { team: foeTeam, name: opts.foeName || '秘境', realm: S.realm };
   return new Promise(resolve => runBattle({ kind: 'trip', title: opts.title || '秘境 · 斗蛊', res, A, B, sota, done: () => resolve({ res, A, B }) }));
 }
-TRIP.api = { S: () => S, save, get el() { return $('#trip'); }, playBattle: tripPlayBattle, onTripEnd, big, note, float: (uid, t, k) => fxFloat(uid, t, k || 'buff'), renderHome };
+TRIP.api = { S: () => S, save, unlocked: (id, k) => unlocked(id, k), get el() { return $('#trip'); }, playBattle: tripPlayBattle, onTripEnd, big, note, float: (uid, t, k) => fxFloat(uid, t, k || 'buff'), renderHome };
 function meters() {
   if (!S.started) return;
   const q = $('#qiTxt'); if (!q) return;
