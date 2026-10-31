@@ -99,7 +99,7 @@ ok(PRICE.sell < PRICE.gu, '卖价低于买价：买三只合一只再卖掉一�
 ok([1, 2, 3, 4, 5].every(r => sellValue({ sp: 'boar', rank: r }) < PRICE.gu * Math.pow(PRICE.rankK, r - 1)), '任何转数卖出都低于同转原生蛊的买价');
 ok(PRICE.refresh <= PRICE.gu / 2, `转市不超过一转蛊的一半（${PRICE.refresh} / ${PRICE.gu}），翻货架不心疼`);
 ok(Object.values(SP).filter(s => !s.immortal && baseRank(s.id) >= 5).every(s => guCost(s.id) === PRICE.gu * Math.pow(PRICE.rankK, 4)), '原生五转的蛊和 81 只一转一样贵');
-{ const tm = T.TRIP_CFG.market.price.gu, r4 = tm * (1 + 4 * T.TRIP_CFG.market.realm); console.log(`  参考：秘境坊市卖蛊 ${tm} 千起、四转境界 ${Math.round(r4)} 千（秘境专家的表）；蛊市原生五转 ${PRICE.gu * Math.pow(PRICE.rankK, 4)} 千`); }
+{ const pg = T.TRIP_CFG.market.prem.gu; ok([1, 2, 3, 4, 5].every(r => T.guPrice(r) * pg >= PRICE.gu * Math.pow(PRICE.rankK, r - 1)), `秘境坊市卖蛊按那只的转数定价，不比蛊市便宜（一转 ${Math.round(T.guPrice(1) * pg)}、五转 ${Math.round(T.guPrice(5) * pg)} 千；蛊市原生五转 ${PRICE.gu * Math.pow(PRICE.rankK, 4)} 千）`); }
 
 console.log(bad ? `\n${bad} 项没过` : '\n全部通过');
 process.exitCode = bad ? 1 : 0;
