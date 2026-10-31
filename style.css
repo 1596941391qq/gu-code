@@ -1291,3 +1291,18 @@ body:has(#lgx) :is(.float,.inkburst,.cut,.stamp,.chain){visibility:hidden}   /* 
 .tu-legend .tu-seal.t-bless{color:#3f6b3a;border-color:#3f6b3a}
 .tu-legend .tu-seal.t-elite,.tu-legend .tu-seal.t-boss{background:var(--zhu);color:var(--on-zhu);border-color:var(--zhu)}
 .tu-legend small{font-size:10px;color:var(--mu)}
+
+/* ---------- 状态说明（gloss.js）：词下面的虚线、提示框底下的小注、「状态说明」表 ---------- */
+u.gl{text-decoration:underline dotted;text-decoration-thickness:1px;text-underline-offset:3px;cursor:help}
+u.gl:focus-visible{outline:1px dashed var(--zhu2);outline-offset:1px}
+.glic{display:inline-block;font:12px/16px var(--kai);color:#fbf3e3;padding:0 4px;border-radius:2px;margin-right:6px;white-space:nowrap;vertical-align:1px}
+.glk{font-size:11px;color:var(--mu);white-space:nowrap}.glk.gl-debuff{color:var(--zhu2)}.glk.gl-buff{color:var(--qing)}
+.glnote{margin-top:6px;padding-top:5px;border-top:1px dashed var(--line2)}
+.glnote p{margin:3px 0;font-size:11.5px;line-height:1.5}.glnote .glic{font-size:11px;line-height:14px;margin-right:4px}.glnote i{font-style:normal;color:var(--mu);margin-right:4px}
+.glossary h5{font:15px var(--kai);margin:14px 0 4px;color:var(--tx)}
+.gltab{list-style:none;padding:0;margin:0}
+.gltab li{display:grid;grid-template-columns:auto 1fr;align-items:center;gap:2px 6px;padding:7px 0;border-bottom:1px dashed var(--line)}
+.gltab li p{grid-column:1/-1;margin:0;font-size:13px;line-height:1.55}
+.gltab .glk{justify-self:start}
+.tip .glk.gl-buff{color:#2c6e5e}.tip .glk.gl-debuff{color:#a82a1b}.tip .glnote{border-top-color:rgba(40,32,24,.3)}.tip .glnote i{color:#5b5244}
+.tip .glnote .glic,.tip b.glic{font:11px/14px var(--kai);color:#fbf3e3}

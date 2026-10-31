@@ -11,6 +11,7 @@ import { ledgerInit, openLedger, ledgerLimitRows, ledgerBindLimits } from './led
 import { DAOS, DAO } from './daos.js';
 import { FOODS, FOOD, FOOD_KIND } from './foods.js';
 import { resoHTML, resoGain, resoOf, daoChar, daoColor, comboStrat, comboLow } from './reso.js';
+import { glossHTML, glossNote, glossTip, glossTable } from './gloss.js';
 import { foodSVG } from './art-food.js';
 import { TRIP } from './hooks.js';
 
@@ -987,6 +988,7 @@ function guTip(g, team, i) {
     + (f ? `<p>${fi(f.id)}<b>挂件·${esc(f.n)}</b> ${esc(f.d)}</p>` : '') + (g.xing ? `<p><b>蛊性·${esc(xingName(g.xing))}</b> ${esc(xingDesc(g.xing))}</p>` : '') + (g.fz ? `<p class="sm">${esc(TXT.fuseTip(g))}</p>` : '') + `<small>${esc(TXT.ateLine(g))} · 点开看完整详情</small>`;
 }
 const TIPS = {
+  gl: t => glossTip(t.dataset.gl),
   qi: () => `<b>元气 ${fmtTok(S.bank)}</b><br><small>${esc(TXT.qiTip)}${VSC ? '' : esc(TXT.qiTrial)}</small>`,
   gu: t => { const i = S.team.findIndex(g => g.uid === t.dataset.uid); return guTip(S.team[i], S.team, i); },
   bag: () => esc(TXT.bagTip()),
@@ -1017,6 +1019,8 @@ document.addEventListener('pointerdown', e => {
 document.addEventListener('pointermove', e => { if (e.pointerType === 'touch' && tipLongT && tipFor == null) { const t = tipTarget(e); if (!t || !t._tipXY || Math.hypot(e.clientX - t._tipXY[0], e.clientY - t._tipXY[1]) > 8) clearTimeout(tipLongT); } }, true);
 document.addEventListener('pointerup', e => { if (e.pointerType === 'touch') clearTimeout(tipLongT); }, true);
 window.addEventListener('scroll', () => tipHide(), true);
+// 带虚下划线的状态词（gloss.js）：手机上点一下就弹说明（电脑上悬停已经能看），不触发外面那层按钮
+document.addEventListener('click', e => { const g = e.target.closest && e.target.closest('u.gl[data-tip-fn]'); if (!g) return; e.preventDefault(); e.stopPropagation(); tipShow(g); }, true);
 
 // ---------- 拖动换位：空窍内、蛊囊内、两者之间 ----------
 let drag = null, dragEndT = -1e9;
