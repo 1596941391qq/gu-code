@@ -6898,6 +6898,13 @@ const CSS = `
 .gbv-ctl{display:flex;gap:4px;flex:0 0 auto}
 .gbv-ctl button{min-width:34px;height:26px;padding:0 8px;border:1px solid var(--line2,rgba(233,224,204,.32));border-radius:3px;font:12px/24px var(--sans,system-ui);color:var(--tx,#ddd3bf);background:transparent;cursor:pointer}
 .gbv-ctl button.on{background:var(--tx,#ddd3bf);color:var(--bg,#15130f);border-color:transparent}
+.gbv-ctl .gbv-glb{font-family:var(--kai,serif);font-size:13px;padding:0 7px}
+.gbv-gl{position:absolute;left:0;right:0;top:34px;bottom:0;z-index:60;overflow:auto;-webkit-overflow-scrolling:touch;padding:10px 12px 16px;background:var(--pp);color:var(--ik);border-radius:2px;box-shadow:0 8px 24px rgba(0,0,0,.45);user-select:text;-webkit-user-select:text}
+.gbv-glh{position:sticky;top:-10px;display:flex;align-items:center;gap:8px;margin:-10px -12px 4px;padding:8px 12px;background:var(--pp);border-bottom:1px solid rgba(40,32,24,.2);z-index:1}
+.gbv-glh b{font:16px var(--kai,serif)}.gbv-glh small{color:#6b6150;font-size:12px}
+.gbv-glh .gbv-glx{margin-left:auto;height:28px;padding:0 10px;border:1px solid rgba(40,32,24,.35);border-radius:3px;background:transparent;color:var(--ik);font:13px var(--kai,serif);cursor:pointer}
+.gbv-gl .glossary h5{color:var(--ik)}.gbv-gl .sm{color:#4a4236;font-size:12.5px;line-height:1.55;margin:4px 0}.gbv-gl .gltab li{border-bottom-color:rgba(40,32,24,.18)}.gbv-gl .glk{color:#6b6150}.gbv-gl .glk.gl-debuff{color:#a82a1b}.gbv-gl .glk.gl-buff{color:#2c6e5e}
+.gbv-tip .glk{color:#6b6150}.gbv-tip .glk.gl-debuff{color:#a82a1b}.gbv-tip .glk.gl-buff{color:#2c6e5e}.gbv-tip .glnote{border-top-color:rgba(40,32,24,.3)}.gbv-tip .glnote i{color:#6b6150}.gbv-tip .glnote .glic{font:11px/14px var(--kai,serif);color:#fbf3e3}
 .gbv-ord{position:relative;height:60px;margin:0 0 4px;overflow:hidden;border-bottom:1px solid var(--line,rgba(233,224,204,.14))}
 .gbv-ord .gbv-lab{position:absolute;left:0;top:2px;font:10px/1 var(--sans,system-ui);color:var(--mu,#8f8775)}
 .gbv-chip{position:absolute;top:25px;width:26px;height:26px;border-radius:50%;background:var(--pp);border:2px solid var(--a);transition:transform .32s cubic-bezier(.3,.7,.3,1),opacity .25s}
@@ -6982,7 +6989,7 @@ const CSS = `
 @keyframes gbvfare{from{opacity:0;filter:blur(2px)}}
 .gbv-res .gbv-note{font-size:11px;color:var(--mu,#8f8775);text-align:center;margin:4px 0}
 .gbv-res .gbv-go{display:block;margin:10px auto 0;min-width:140px;height:38px;border-radius:3px;background:var(--zhu,#b5301f);color:var(--on-zhu,#f3ead6);font:16px var(--kai,serif);letter-spacing:.3em;cursor:pointer;border:0}
-.gbv.narrow .gbv-ic{width:122%}.gbv.narrow .gbv-ic b{font-size:9.5px;line-height:12px;padding:0 1.5px}.gbv.narrow .gbv-ic b em{font-size:8px;line-height:12px;margin-left:1px}
+.gbv.narrow .gbv-ic b{font-size:9.5px;line-height:12px;padding:0 1.5px}.gbv.narrow .gbv-ic b em{font-size:8px;line-height:12px;margin-left:1px}
 .gbv.narrow .gbv-tok{border-radius:50%}
 .gbv.narrow .gbv-tok svg{filter:brightness(0);opacity:.85}
 .gbv.calm .gbv-ban span{animation-duration:.2s}
@@ -7037,9 +7044,9 @@ const CSS = `
 @keyframes gbvspin{to{transform:rotate(360deg)}}
 .gbv-u.s-web .a-web{display:block;background:repeating-linear-gradient(45deg,rgba(235,232,222,.55) 0 1px,rgba(0,0,0,0) 1px 7px),repeating-linear-gradient(-45deg,rgba(235,232,222,.55) 0 1px,rgba(0,0,0,0) 1px 7px)}
 .gbv-u.s-seal .gbv-gp i{background:#8a8070!important;box-shadow:none!important}
-.gbv-ic{position:absolute;left:50%;bottom:100%;margin-bottom:2px;transform:translateX(-50%);display:flex;flex-wrap:wrap-reverse;justify-content:center;gap:1px;width:150%;pointer-events:none}
-.gbv-ic b{font:11px/13px var(--kai,serif);padding:0 3px;border-radius:2px;background:#5a5244;color:#fbf3e3;white-space:nowrap}
-.gbv-ic b em{font:600 9px/13px var(--sans,system-ui);font-style:normal;margin-left:2px}
+.gbv-ic{position:absolute;z-index:2;left:50%;bottom:2px;transform:translateX(-50%);display:flex;flex-wrap:nowrap;justify-content:center;gap:1px;width:100%;overflow:visible;pointer-events:none}
+.gbv-ic b{flex:0 0 auto;font:10.5px/13px var(--kai,serif);padding:0 2.5px;border-radius:2px;background:#5a5244;color:#fbf3e3;white-space:nowrap;box-shadow:0 1px 0 rgba(0,0,0,.35)}
+.gbv-ic b em{font:600 9px/13px var(--sans,system-ui);font-style:normal;margin-left:1.5px}
 .gbv-ic b.more{background:#3a352c;font:600 10px/13px var(--sans,system-ui)}.gbv-ic b.psn,.gbv-ic b.para{background:#3d7a33}.gbv-ic b.burn{background:#c2501f}.gbv-ic b.chill{background:#3d78a8}.gbv-ic b.stun,.gbv-ic b.web{background:#6a5a8a}.gbv-ic b.grd,.gbv-ic b.taunt{background:#8a7434}.gbv-ic b.mark{background:#a3302a}.gbv-ic b.seal{background:#55504a}
 /* 状态跳字：灼伤橙红带小火苗、毒绿字带气泡 */
 .gbv-fl.stk{font-size:16px;display:flex;align-items:center;gap:2px}
@@ -7131,16 +7138,28 @@ async function run(el, res, opts, resolve) {
   const R = res.roster, log = res.log, me = opts.mySide === 1 ? 1 : 0, calm = !!opts.reduceMotion;
   const names = opts.names || ['我方', '对方'];
   el.innerHTML = `<div class="gbv${calm ? ' calm' : ''}"><div class="gbv-top"><div class="gbv-tt">${esc(opts.title || '斗蛊')}<small class="gbv-rdl">开战</small></div>
-    <div class="gbv-ctl"><button data-s="1" class="on">1×</button><button data-s="2">2×</button><button data-s="skip">跳过</button></div></div>
+    <div class="gbv-ctl"><button data-s="gl" class="gbv-glb" aria-expanded="false">状态说明</button><button data-s="1" class="on">1×</button><button data-s="2">2×</button><button data-s="skip">跳过</button></div></div>
     <div class="gbv-ord"><span class="gbv-lab">出手顺序</span></div><div class="gbv-syn"><span class="gbv-syna"></span><span class="gbv-synb"></span></div>
     <div class="gbv-st"><div class="gbv-cam"><svg class="gbv-floor"></svg><svg class="gbv-fx"></svg></div></div><div class="gbv-log"></div></div>`;
   const root = el.firstElementChild, outer = root.querySelector('.gbv-st'), stage = root.querySelector('.gbv-cam'), floor = root.querySelector('.gbv-floor'), fxs = root.querySelector('.gbv-fx'), ord = root.querySelector('.gbv-ord'), logEl = root.querySelector('.gbv-log');
-  let speed = opts.speed === 2 ? 2 : 1, skip = false, wake = null;
+  let speed = opts.speed === 2 ? 2 : 1, skip = false, wake = null, paused = false, resume = null, glP = null;
+  // 「状态说明」：顶上的按钮打开整张状态表（gloss.js 的 glossTable，和蛊典里那一节同一张），看表时战斗停住，收起接着打
+  const glBtn = root.querySelector('.gbv-glb'), goOn = () => { paused = false; if (resume) { const r = resume; resume = null; r(); } };
+  const glClose = () => { if (glP) { glP.remove(); glP = null; } glBtn.classList.remove('on'); glBtn.setAttribute('aria-expanded', 'false'); goOn(); };
+  const glOpen = () => {
+    if (glP) return glClose();
+    glP = document.createElement('div'); glP.className = 'gbv-gl';
+    glP.innerHTML = `<div class="gbv-glh"><b>状态说明</b><small>战斗暂停中</small><button class="gbv-glx">收起，接着打</button></div>${glossTable()}`;
+    glP.querySelector('.gbv-glx').onclick = glClose; glP.addEventListener('click', e => e.stopPropagation());
+    root.appendChild(glP); paused = true; glBtn.classList.add('on'); glBtn.setAttribute('aria-expanded', 'true');
+  };
   root.querySelectorAll('.gbv-ctl button').forEach(b => b.onclick = () => {
-    if (b.dataset.s === 'skip') { skip = true; if (wake) wake(); return; }
-    speed = +b.dataset.s; root.querySelectorAll('.gbv-ctl button').forEach(x => x.classList.toggle('on', x === b));
+    if (b.dataset.s === 'gl') return glOpen();
+    if (b.dataset.s === 'skip') { skip = true; if (glP) glClose(); if (wake) wake(); return; }
+    speed = +b.dataset.s; root.querySelectorAll('.gbv-ctl button[data-s="1"],.gbv-ctl button[data-s="2"]').forEach(x => x.classList.toggle('on', x === b));
   });
-  const sleep = ms => skip ? Promise.resolve() : new Promise(r => { const t = setTimeout(() => { wake = null; r(); }, ms / speed); wake = () => { clearTimeout(t); wake = null; r(); }; });
+  const hold = () => paused && !skip ? new Promise(r => { resume = r; }) : undefined;
+  const sleep = ms => (skip ? Promise.resolve() : new Promise(r => { const t = setTimeout(() => { wake = null; r(); }, ms / speed); wake = () => { clearTimeout(t); wake = null; r(); }; })).then(hold);
 
   // ----- 几何：斜俯视 6×3。X = 0..5（A 方后中前 | B 方前中后），r = 0 远 … 2 近 -----
   let G = {};
@@ -7175,7 +7194,7 @@ async function run(el, res, opts, resolve) {
   function mkUnit(uid) {
     const ro = R[uid]; if (!ro) return null;
     const d = document.createElement('div'); d.className = 'gbv-u ' + (ro.side ? 'gbv-sb' : 'gbv-sa'); d.dataset.uid = uid;
-    d.innerHTML = `<div class="gbv-ic"></div><div class="gbv-tok">${guSVG(ro.sp, { rank: ro.rank || 1, still: true })}</div><div class="gbv-au"><i class="a-burn"></i><i class="a-psn"></i><i class="a-chill"></i><i class="a-grd"></i><i class="a-web"></i><i class="a-stun"></i><i class="a-mark"></i></div><div class="gbv-bar"><i class="gbv-hpi"></i><i class="gbv-shi"></i></div>${ro.act ? '<div class="gbv-gp"><i></i></div>' : ''}`;
+    d.innerHTML = `<div class="gbv-tok">${guSVG(ro.sp, { rank: ro.rank || 1, still: true })}<div class="gbv-ic"></div></div><div class="gbv-au"><i class="a-burn"></i><i class="a-psn"></i><i class="a-chill"></i><i class="a-grd"></i><i class="a-web"></i><i class="a-stun"></i><i class="a-mark"></i></div><div class="gbv-bar"><i class="gbv-hpi"></i><i class="gbv-shi"></i></div>${ro.act ? '<div class="gbv-gp"><i></i></div>' : ''}`;
     stage.appendChild(d);
     const u = { uid, ro, el: d, tok: d.querySelector('.gbv-tok'), hpI: d.querySelector('.gbv-hpi'), shI: d.querySelector('.gbv-shi'), bar: d.querySelector('.gbv-bar'), gpI: d.querySelector('.gbv-gp i'), gpB: d.querySelector('.gbv-gp'), ic: d.querySelector('.gbv-ic'), au: d.querySelector('.gbv-au'), sx: {}, r: 1, c: 0, hp: 1, mx: 1, sh: 0, gp: 0, atk: 0, alive: true };
     d.onmouseenter = () => showTip(u); d.onmouseleave = hideTip; d.onclick = e => { e.stopPropagation(); showTip(u, true); };
@@ -7186,6 +7205,7 @@ async function run(el, res, opts, resolve) {
     u.el.style.left = p.x + 'px'; u.el.style.top = (p.y + G.rh * 0.36) + 'px'; u.el.style.zIndex = 10 + u.r;
     u.tok.style.width = sz + 'px'; u.tok.style.height = Math.round(sz * (G.narrow ? 1 : 0.94)) + 'px'; u.au.style.width = sz + 'px'; u.au.style.height = u.tok.style.height;
     u.bar.style.width = Math.round(sz * 0.92) + 'px'; if (u.gpB) u.gpB.style.width = Math.round(sz * 0.92) + 'px';
+    const iw = Math.round(G.cw * s - 6); if (u.icW !== iw) { u.icW = iw; u.ic.style.width = iw + 'px'; if (u.sx) { u.sxKey = null; setSt(u, u.sx); } }   // 小牌子那一行最宽到格子宽
   }
   const center = u => { const p = cellXY(u.ro.side, u.r, u.c), s = G.sc(u.r); return { x: p.x, y: p.y + G.rh * 0.36 - Math.min(G.cw * 0.7, G.rh * 1.15) * 0.52 * s }; };
   function setBars(u) {
@@ -7197,8 +7217,13 @@ async function run(el, res, opts, resolve) {
   // 身上的状态：快照第 9 项（引擎每个事件都带），图标带层数 + 常驻效果
   function setSt(u, sx) {
     sx = sx || {}; const key = JSON.stringify(sx); if (key === u.sxKey) return; u.sxKey = key; u.sx = sx;
-    const L = ST_ORDER.filter(k => sx[k]), MAXI = 3;   // 最多显示 3 枚，多出来的写「+N」，悬停或点按看全部
-    u.ic.innerHTML = L.slice(0, MAXI).map(k => `<b class="${k}" style="background:${ST_COL[k]}">${ST_NAME[k]}<em>${stNum(k, sx[k])}</em></b>`).join('') + (L.length > MAXI ? `<b class="more">+${L.length - MAXI}</b>` : '');
+    const L = ST_ORDER.filter(k => sx[k]);   // 小牌子贴在蛊身下沿、只排一行（不往上叠，免得压到身后那只）；这一格放不下的写「+N」，悬停或点按看全部
+    u.ic.innerHTML = L.map(k => `<b class="${k}" style="background:${ST_COL[k]}">${ST_NAME[k]}<em>${stNum(k, sx[k])}</em></b>`).join('');
+    if (L.length) {
+      const max = u.ic.clientWidth, kids = [...u.ic.children], more = 16; let w = 0, n = 0;
+      for (let i = 0; i < kids.length; i++) { const kw = kids[i].offsetWidth + (i ? 1 : 0); if (w + kw + (i < kids.length - 1 ? more : 0) > max) break; w += kw; n++; }
+      n = Math.max(1, n); if (n < L.length) { kids.slice(n).forEach(x => x.remove()); u.ic.insertAdjacentHTML('beforeend', `<b class="more">+${L.length - n}</b>`); }
+    }
     ['burn', 'chill', 'stun', 'web', 'grd', 'mark', 'seal'].forEach(k => u.el.classList.toggle('s-' + k, !!sx[k]));
     u.el.classList.toggle('s-psn', !!(sx.psn || sx.para));
   }
@@ -7281,11 +7306,12 @@ async function run(el, res, opts, resolve) {
   }
   let tipEl = null;
   function showTip(u, pin) {
-    hideTip(); const ro = u.ro, t = document.createElement('div'); t.className = 'gbv-tip', sx = u.sx || {};
-    const sk = skOf(u).filter(x => !x.locked).map(x => `<span class="tk"><i>${KN[x.kind]}</i>${x.kind === 'aw3' || x.kind === 'aw5' ? '' : '「' + esc(x.n) + '」'}${esc(x.text)}</span>`).join('');
+    hideTip(); const ro = u.ro, t = document.createElement('div'), sx = u.sx || {}; t.className = 'gbv-tip';
+    const sk = skOf(u).filter(x => !x.locked).map(x => `<span class="tk"><i>${KN[x.kind]}</i>${x.kind === 'aw3' || x.kind === 'aw5' ? '' : '「' + esc(x.n) + '」'}${glossHTML(x.text, { tip: false })}</span>`).join('');
+    const skTx = skOf(u).filter(x => !x.locked).map(x => x.text).join('；') || (ro.act && ro.act.d) || '', note = glossNote(skTx, 3);
     const st = ST_ORDER.filter(k => sx[k]).map(k => { const by = sx.by && sx.by[k]; const g = GL[k]; return `<span class="ts"><b style="background:${ST_COL[k]}">${ST_NAME[k]} ${stNum(k, sx[k])}</b>${g ? `<i class="glk gl-${g.kind}">${g.kind === 'buff' ? '增益' : '减益'}</i> ` : ''}${ST_DESC[k](sx[k])}${by && R[by] ? ` · ${esc(R[by].name)}挂的` : ''}</span>`; }).join('');
     t.innerHTML = `<b>${esc(ro.name)}</b>${ro.rank ? ` · ${CN[ro.rank]}转` : ''} · ${ro.side === me ? '我方' : '敌方'}<br>攻 ${u.atk} · 血 ${Math.max(0, u.hp)}/${u.mx}${u.sh ? ` · 护体 ${u.sh}` : ''} · 速 ${u.spd || ro.spd}${ro.act ? ` · 蛊力 ${u.gp}/${ro.gpMax || 100}` : ''}`
-      + (sk || (ro.act ? `<span class="tk"><i>主动</i>「${esc(ro.act.n)}」${esc(ro.act.d || '')}</span>` : '')) + (ro.combo ? `<span class="tk"><i>杀招</i>「${esc(ro.combo.n)}」</span>` : '') + (st ? `<span class="ts" style="margin-top:5px;color:var(--mu)">身上的状态</span>${st}` : '');
+      + (sk || (ro.act ? `<span class="tk"><i>主动</i>「${esc(ro.act.n)}」${glossHTML(ro.act.d || '', { tip: false })}</span>` : '')) + (ro.combo ? `<span class="tk"><i>杀招</i>「${esc(ro.combo.n)}」</span>` : '') + note + (st ? `<span class="ts" style="margin-top:5px;color:var(--mu)">身上的状态</span>${st}` : '');
     root.appendChild(t); tipEl = t;
     const rb = root.getBoundingClientRect(), ub = u.tok.getBoundingClientRect(), tw = t.offsetWidth, th = t.offsetHeight;
     t.style.left = Math.max(2, Math.min(rb.width - tw - 2, ub.left - rb.left + ub.width / 2 - tw / 2)) + 'px';
@@ -7365,7 +7391,7 @@ async function run(el, res, opts, resolve) {
   function showCard(u, e) {
     const sd = u.ro.side, p = center(u), d = document.createElement('div');
     d.className = 'gbv-card ' + (sd === me ? 'me' : 'op');
-    d.innerHTML = `<div class="c1">${tag(sd)} · ${esc(u.ro.name)}</div><div class="c2">${esc(e.n)}</div>${e.line ? `<div class="c3">${esc(e.line)}</div>` : ''}`;
+    d.innerHTML = `<div class="c1">${tag(sd)} · ${esc(u.ro.name)}</div><div class="c2">${esc(e.n)}</div>${e.line ? `<div class="c3">${glossHTML(e.line, { tip: false })}</div>` : ''}`;
     stage.appendChild(d); const w = d.offsetWidth, h = d.offsetHeight, x = Math.max(2, Math.min(G.W - w - 2, p.x - w / 2));
     d.style.left = x + 'px'; d.style.setProperty('--px', Math.max(10, Math.min(w - 10, p.x - x)) + 'px');
     const y1 = 4 + h + 7, y2 = p.y - tokSz(u) * 0.5 - 18;
