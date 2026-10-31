@@ -1029,11 +1029,12 @@ function daoCount(team) {
 }
 
 // ---------- 蛊市 ----------
-// 货架：蛊位 n 个、食物位 2 个；主道（罗盘定）的蛊和食物大约占六成。opts.species / opts.foods = 已解锁可上架的
-const SHOP = { guSlots: [3, 3, 4, 4, 5, 5], foodSlots: 2, daoP: 0.6 };
+// 货架：蛊位 n 个、食物位 2 个。罗盘选中的道只让它出现的概率 +daoP（每个货位先以 daoP 的几率从这一道里挑，否则从全部里挑），
+// 蛊市照样什么道都会刷，不锁阵容。foeDaoP：程序生成的对手偏向某一道的几率（秘境房间的主题）
+const SHOP = { guSlots: [3, 3, 4, 4, 5, 5], foodSlots: 2, daoP: 0.05, foeDaoP: 0.6 };
 function shopSpecies(realm, unlocked) { return poolFor(realm).filter(sp => SP[sp] && !SP[sp].immortal && (!unlocked || unlocked(sp, 'species'))); }
 function shopFoods(unlocked) { return FOODS.filter(f => !unlocked || unlocked(f.id, 'food')).map(f => f.id); }
-function pickDao(rng, list, dao, of) { const main = dao ? list.filter(x => of(x) === dao) : []; return main.length && rng() < SHOP.daoP ? rng.pick(main) : rng.pick(list); }
+function pickDao(rng, list, dao, of, p = SHOP.daoP) { const main = dao ? list.filter(x => of(x) === dao) : []; return main.length && rng() < p ? rng.pick(main) : rng.pick(list); }
 function rollShop(rng, realm, dao, old = [], unlocked) {
   const sps = shopSpecies(realm, unlocked), fds = shopFoods(unlocked), keep = w => w && w.frozen && !w.sold;
   const gu = Array.from({ length: SHOP.guSlots[Math.min(5, realm | 0)] }, (_, i) => { const o = old.filter(w => w.kind === 'gu')[i]; return keep(o) ? o : { kind: 'gu', sp: pickDao(rng, sps, dao, daoOf), frozen: false, sold: false }; });
@@ -1041,6 +1042,24 @@ function rollShop(rng, realm, dao, old = [], unlocked) {
   return [...gu, ...fd];
 }
 const foodCost = id => (FOOD[id] ? FOOD[id].cost : 3) * PRICE.food;   // 单位同 PRICE
+
+// ---------- 阵盘：3 行 × 3 列（列 c：0 前、1 中、2 后），g.pos = { r, c } ----------
+const COLS = ['前', '中', '后'];
+const cellOf = g => g && g.pos ? g.pos.r * 3 + g.pos.c : -1;
+const cellPos = k => ({ r: Math.floor(k / 3), c: k % 3 });
+const CELL_ORDER = [0, 3, 6, 1, 4, 7, 2, 5, 8];   // 自动摆放：先前列（上中下），再中列，再后列
+function freeCell(team) { const used = new Set(team.map(cellOf)); return CELL_ORDER.find(k => !used.has(k)); }
+// 没有位置（或位置重复）的蛊按顺序摆进空格；然后按 列、行 排好（旧引擎按数组顺序读站位）
+function autoPlace(team) {
+  const used = new Set();
+  team.forEach(g => { const k = cellOf(g); if (k < 0 || k > 8 || used.has(k)) g.pos = null; else used.add(k); });
+  team.forEach(g => { if (!g.pos) { const k = CELL_ORDER.find(x => !used.has(x)); if (k != null) { g.pos = cellPos(k); used.add(k); } } });
+  return sortTeam(team);
+}
+function sortTeam(team) { team.sort((a, b) => (a.pos ? a.pos.c * 3 + a.pos.r : 99) - (b.pos ? b.pos.c * 3 + b.pos.r : 99)); return team; }
+// 速：物种的 spd（100 = 标准）；物种没写时按流派给个默认值（战斗引擎以它自己的推法为准，这里只给卡面显示）
+const SCHOOL_SPD = { 爆发: 125, 开锋: 120, 斩杀: 120, 控制: 110, 群攻: 105, 毒: 105, 站位: 100, 召唤: 95, 亡语: 95, 成长: 95, 续航: 90, 反伤: 85, 护体: 80, 减伤: 80, 破甲: 110 };
+const spdOf = g => g.spd || (SP[g.sp] && (SP[g.sp].spd || SCHOOL_SPD[SP[g.sp].school])) || 100;
 
 // ---------- 收蛊与合成 ----------
 const sameRank = (list, sp, rk) => list.filter(g => g.sp === sp && rankOf(g) === rk).length;
@@ -1051,7 +1070,7 @@ function canBuy(team, sp, cap, bag = [], bc = BAG.cap) { return canTake(team, ba
 // 收下一只蛊：能合成先合成；否则空窍有空位进空窍，再不行进蛊囊。mode 'bag'（战利品）只进蛊囊。返回 { where, merged }
 function placeGu(team, bag, g, cap, bc = BAG.cap, mode = 'shop', pick) {
   if (fusable(team, bag, g)) { bag.push(g); return { where: 'merge', merged: mergeAll(team, bag, pick) }; }
-  if (mode === 'shop' && team.length < cap) { team.push(g); return { where: 'team', merged: [] }; }
+  if (mode === 'shop' && team.length < cap) { g.pos = cellPos(freeCell(team)); team.push(g); sortTeam(team); return { where: 'team', merged: [] }; }
   if (bag.length < bc) { bag.push(g); return { where: 'bag', merged: mergeAll(team, bag, pick) }; }
   return { where: null, merged: [] };
 }
@@ -1086,8 +1105,8 @@ function feedStat(food, targets) {
 // realm 境界（决定蛊池与转数），n 只数，up 每只额外升转的几率，dao 偏向的道（可无）
 function genTeam(rng, o = {}) {
   const realm = Math.max(0, Math.min(5, o.realm | 0)), n = Math.max(1, Math.min(SLOTS, o.n || slotCap(realm))), pool = poolFor(realm).filter(sp => SP[sp] && !SP[sp].immortal);
-  const team = Array.from({ length: n }, () => { const sp = pickDao(rng, pool, o.dao, daoOf), r = Math.min(RANK.max, baseRank(sp) + (rng() < (o.up || 0) ? 1 : 0) + (rng() < (o.up || 0) / 3 ? 1 : 0)); return newGu(sp, r); });
-  return arrangeTeam(team);
+  const team = Array.from({ length: n }, () => { const sp = pickDao(rng, pool, o.dao, daoOf, SHOP.foeDaoP), r = Math.min(RANK.max, baseRank(sp) + (rng() < (o.up || 0) ? 1 : 0) + (rng() < (o.up || 0) / 3 ? 1 : 0)); return newGu(sp, r); });
+  return autoPlace(arrangeTeam(team));
 }
 
 // ---------- 布阵：站位效果与敌方排阵 ----------
@@ -1164,16 +1183,18 @@ function utf8(s) { return typeof TextEncoder !== 'undefined' ? new TextEncoder()
 function unutf8(b) { return typeof TextDecoder !== 'undefined' ? new TextDecoder().decode(new Uint8Array(b)) : Buffer.from(b).toString('utf8'); }
 // v1–v4 是旧玩法的码（带词条、怪癖、附蛊、道痕），照旧能读：只取物种和转数，攻血按新表换算。
 // v5（v2 玩法）：物种 7 位、转数 3 位、攻血各 10 位、挂件食物 6 位、蛊性 6 位，外加 1 位「试玩」
+// v6（阵盘）：v5 每只蛊后面再加 阵盘格 4 位（0–8，15 = 没摆）、速 8 位（0 = 按物种）。v1–v5 解出来按顺序自动摆进阵盘
 const OLD_W = { 1: { sp: 4, tr: 4, q: 3, st: 8, mk: 0, rk: 0 }, 2: { sp: 4, tr: 4, q: 3, st: 8, mk: 12, rk: 2 }, 3: { sp: 6, tr: 6, q: 4, st: 10, mk: 16, rk: 3 }, 4: { sp: 6, tr: 6, q: 4, st: 10, mk: 16, rk: 3, fl: 1 } };
 const W5 = { sp: 7, rk: 3, st: 10, fd: 6, xg: 6 };
 function encodeTeam(team, meta = {}) {
   let bits = ''; const put = (v, n) => { bits += Math.max(0, Math.min(2 ** n - 1, Math.round(v) || 0)).toString(2).padStart(n, '0'); };
   const nm = Array.from(utf8((meta.name || '').slice(0, 8))).slice(0, 31);
-  put(5, 3); put(meta.realm || 0, 3); put(Math.min(SLOTS, team.length), 3); put(nm.length, 5); nm.forEach(b => put(b, 8)); put(meta.trial ? 1 : 0, 1);
+  put(6, 3); put(meta.realm || 0, 3); put(Math.min(SLOTS, team.length), 3); put(nm.length, 5); nm.forEach(b => put(b, 8)); put(meta.trial ? 1 : 0, 1);
   const xk = XING_KEYS();
   for (const g of team.slice(0, SLOTS)) {
     put(SPI[g.sp], W5.sp); put(rankOf(g), W5.rk); put(g.atk, W5.st); put(g.hp, W5.st);
     put(g.food && FDI[g.food] != null ? FDI[g.food] + 1 : 0, W5.fd); const xi = g.xing ? xk.indexOf(g.xing) : -1; put(xi + 1, W5.xg); put(g.boss ? 1 : 0, 1);
+    const k = cellOf(g); put(k >= 0 && k <= 8 ? k : 15, 4); put(g.spd || 0, 8);
   }
   while (bits.length % 6) bits += '0';
   let out = ''; for (let i = 0; i < bits.length; i += 6) out += B64[parseInt(bits.slice(i, i + 6), 2)];
@@ -1184,15 +1205,16 @@ function decodeTeam(code) {
     const m = String(code).match(/[A-Za-z0-9_-]{8,}/); if (!m) return null;
     let bits = ''; for (const ch of m[0]) { const i = B64.indexOf(ch); if (i < 0) return null; bits += i.toString(2).padStart(6, '0'); }
     let p = 0; const get = n => { if (p + n > bits.length) throw 0; const v = parseInt(bits.slice(p, p + n), 2); p += n; return v; };
-    const ver = get(3); if (ver < 1 || ver > 5) return null;
+    const ver = get(3); if (ver < 1 || ver > 6) return null;
     const realm = get(3), n = get(3), nl = get(5), nm = []; for (let i = 0; i < nl; i++) nm.push(get(8));
     const team = []; let trial = false;
-    if (ver === 5) {
+    if (ver >= 5) {
       trial = !!get(1); const xk = XING_KEYS();
       for (let i = 0; i < n; i++) {
         const sp = SPECIES[get(W5.sp)]; if (!sp) return null;
         const rank = Math.max(1, Math.min(6, get(W5.rk))), g = { uid: nuid(), sp: sp.id, rank, atk: Math.max(1, get(W5.st)), hp: Math.max(1, get(W5.st)), food: null, xing: null };
         const fi = get(W5.fd); if (fi && FOODS[fi - 1]) g.food = FOODS[fi - 1].id; const xi = get(W5.xg); if (xi && xk[xi - 1]) g.xing = xk[xi - 1]; if (get(1)) g.boss = 1;
+        if (ver >= 6) { const k = get(4); if (k <= 8) g.pos = cellPos(k); const sp2 = get(8); if (sp2) g.spd = sp2; }
         team.push(g);
       }
     } else {
@@ -1209,6 +1231,7 @@ function decodeTeam(code) {
       }
     }
     if (!team.length) return null;
+    autoPlace(team);
     return { team, realm, name: unutf8(nm), trial, old: ver < 5 };
   } catch (e) { return null; }
 }
@@ -2128,10 +2151,10 @@ async function makeCard({ team, name, realm, total, muts, wins, code, url, endle
   ctx.fillStyle = 'rgba(236,227,207,.6)'; ctx.font = `34px ${KAI}`; ctx.fillText('烧 Token · 养蛊 · 斗道', 98, 256);
   seal(ctx, 930, 170, REALMS[realm] || '凡人', 64, 0.06);
   if (endless) { ctx.save(); ctx.fillStyle = '#d8553f'; ctx.font = `30px ${KAI}`; ctx.textAlign = 'center'; ctx.fillText(`无尽 ${endless} 层`, 930, 300); ctx.restore(); }
-  if (trial) {   // 试玩存档：网页模拟灵流养的蛊，卡面盖一枚醒目的「试玩」章
+  if (trial) {   // 试玩存档：网页模拟元气养的蛊，卡面盖一枚醒目的「试玩」章
     ctx.save(); ctx.translate(690, 150); ctx.rotate(-0.12); ctx.strokeStyle = '#d8553f'; ctx.lineWidth = 5; ctx.strokeRect(-92, -50, 184, 100); ctx.lineWidth = 2; ctx.strokeRect(-82, -40, 164, 80);
     ctx.fillStyle = '#d8553f'; ctx.font = `64px ${KAI}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('试玩', 0, 4); ctx.restore();
-    ctx.save(); ctx.fillStyle = 'rgba(216,85,63,.85)'; ctx.font = `24px ${KAI}`; ctx.textAlign = 'center'; ctx.fillText('网页模拟灵流', 690, 236); ctx.restore();
+    ctx.save(); ctx.fillStyle = 'rgba(216,85,63,.85)'; ctx.font = `24px ${KAI}`; ctx.textAlign = 'center'; ctx.fillText('网页模拟元气', 690, 236); ctx.restore();
   }
   ctx.fillStyle = '#ece3cf'; ctx.font = `44px ${KAI}`; ctx.fillText(`${name || '无名蛊师'} 的空窍`, 92, 340);
   if (title) { const w = ctx.measureText(`${name || '无名蛊师'} 的空窍`).width; ctx.save(); ctx.font = `28px ${KAI}`; ctx.fillStyle = '#d9a441'; ctx.fillText(`「${title}」`, 104 + w, 338); ctx.restore(); }
@@ -3700,19 +3723,19 @@ const TXT = {
   qiTrial: '网页版是模拟元气（存档标「试玩」）。',
   sota: '你正在用 Claude，蛊的伤害 +1%',
   slotsHead: '空窍',
-  slotsSub: '场上 · 出征时全部跟去 · 左边先出手',
+  slotsSub: '场上 · 出征时全部跟去',
   bagHead: '蛊囊',
   bagSub: '场下 · 凑合成用 · 不出征，绝对安全',
   bagTip: () => `蛊囊 ${S.bag.length}/${BC()}：场下的蛊放这里，不上场、不出征，所以绝对安全。主要用来凑合成：空窍和蛊囊里同种同转的蛊凑够三只，自动合成高一转。拖进空窍就上场。`,
   shopHead: '蛊市',
-  shopTip: '花元石买蛊和食物。主道的蛊和食物大约占六成。转市换一批，冻结的货下次还在。',
+  shopTip: '花元气买蛊和食物。什么道的蛊都会刷，罗盘选中的道出现得稍多一点（+5%）。转市换一批，冻结的货下次还在。',
   refresh: c => `转市 · ${c}`,
   freeze: on => on ? '解冻' : '冻结',
   daoNone: '还没定主道',
   daoLine: d => `本轮主道：${DAO[d] ? DAO[d].n : d}`,
-  daoTip: '每次回到洞府转一次罗盘，三选一定下本轮蛊市的主道：货架上大约六成的蛊和食物出自这一道。罗盘不加属性。',
+  daoTip: '每次回到洞府转一次罗盘，三选一：选中的道在本轮蛊市出现的概率 +5%。只是轻轻偏一下，蛊市照样什么道都会刷。罗盘不加属性。',
   compassHead: '罗盘 · 三选一主道',
-  compassSub: '选一道，本轮蛊市大约六成的蛊和食物出自这一道。',
+  compassSub: '选一道，它在本轮蛊市出现的概率 +5%。只是轻轻偏一下，什么道都还会刷。',
   resoNone: '道共鸣：同一道的蛊在空窍里有 2 只、4 只时触发',
   go: '出征',
   goSub: n => `空窍里的 ${n} 只蛊全部出征`,
@@ -3739,13 +3762,13 @@ const TXT = {
   achFirst: a => `道途 · ${a.n}`,
   achLines: a => [a.d + '：达成', ...(a.unlock || []).map(u => `解锁${{ species: '新蛊', food: '新食物', trip: '新秘境', feature: '新玩法' }[u.k] || ''}：${u.n}`)],
   trial: '试玩',
-  trialShare: '这是网页试玩存档（模拟灵流养的蛊），坐标码、分享卡、战帖和复盘都会标「试玩」。装 VS Code 插件、用真实 token 养的蛊不带这个标。',
-  trialFoe: '对方是试玩存档（网页模拟灵流养的蛊，不是真实 token 养出来的）',
+  trialShare: '这是网页试玩存档（模拟元气养的蛊），坐标码、分享卡、战帖和复盘都会标「试玩」。装 VS Code 插件、用真实 token 养的蛊不带这个标。',
+  trialFoe: '对方是试玩存档（网页模拟元气养的蛊，不是真实 token 养出来的）',
   trialText: '【试玩存档】',
-  srcLive: '实时 token', srcDemo: '模拟灵流 ?', srcHead: '灵流从哪来',
-  srcFrom: '插件读取本机 Claude Code、Codex 等 AI 工具日志里的 token 用量数字，不读对话和代码内容。插件里只认真实 token，不能切到模拟灵流。',
-  srcNone: '现在没有工具在烧 token，灵流为 0。开始写代码就会涨。',
-  demoHead: '这里是模拟灵流',
+  srcLive: '实时 token', srcDemo: '模拟元气 ?', srcHead: '元气从哪来',
+  srcFrom: '插件读取本机 Claude Code、Codex 等 AI 工具日志里的 token 用量数字，不读对话和代码内容。插件里只认真实 token，不能切到模拟元气。',
+  srcNone: '现在没有工具在烧 token，元气暂时不涨。开始写代码就会涨。',
+  demoHead: '这里是模拟元气',
   demoFrom: '网页读不到你电脑上的 AI 用量，这里按真实写代码时的常见流速（每秒约 500～1500 token）模拟。上面的「写代码中 / 停手休息」切换模拟状态。',
   demoTrial: '网页存档是试玩存档：分享出去的坐标码、分享卡、战帖和复盘都会标「试玩」，也不能导入插件。',
   demoInstall: '想用真实 token 养蛊，装 VS Code 插件。插件只读本机 Claude Code、Codex 等工具日志里的用量数字，不读对话和代码内容。',
@@ -3772,7 +3795,7 @@ function save() {
   if (saveT) return;   // 节流而非防抖：持续有 token 流入时也能按时落盘
   saveT = setTimeout(() => {
     saveT = null; codexScan(); S.seen = Date.now();
-    if (VSC) VSC.postMessage({ type: 'save', data: S, status: { started: S.started, node: tripOn() ? '秘境' : null, cost: 0, prog: 0, realm: S.realm } });
+    if (VSC) VSC.postMessage({ type: 'save', data: S, status: { started: S.started, where: tripOn() ? (S.trip && S.trip.d != null ? `秘境第 ${(S.trip.d | 0) + 1} 层` : '秘境') : '洞府', qi: S.bank, realm: S.realm } });
     else try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {}
   }, 400);
 }
@@ -3885,42 +3908,47 @@ function startHTML() {
   <h2 class="step">三选一，领第一只蛊</h2><div class="starters">${picks.map(id => { const s = SP[id], st = statFor(id, 1); return `<button class="starter" data-act="pick" data-sp="${id}"><div class="sart">${guSVG(id)}</div><b>${s.n}</b><span class="sst"><i class="a">${st.atk}</i><i class="h">${st.hp}</i></span><span class="strig">${esc(natDesc(id))}</span><em>${esc(s.lore)}</em></button>`; }).join('')}</div>
   <p class="fine">${VSC ? '插件模式：读取本机 Claude Code / Codex 会话的 token 用量数字（不读内容）。' : '网页版是模拟元气，存档标「试玩」，只存在本机。'}</p></div>`;
 }
-const natDesc = sp => { const k = natOf(sp); return k && TRAITS[k] ? `本命·${TRAITS[k].n}：${TRAITS[k].d(1, natMulFor(SP[sp].rank))}` : ''; };
+const natDesc = sp => { const k = natOf(sp); return k && TRAITS[k] ? `被动·${TRAITS[k].n}：${TRAITS[k].d(1, natMulFor(SP[sp].rank))}` : ''; };
+const actOfG = g => { const a = SP[g.sp] && SP[g.sp].act; return a ? { n: a.n, ch: a.n[0], d: a.d || '' } : null; };
 const natOfG = g => { const k = natOf(g.sp); return k && TRAITS[k] ? { n: TRAITS[k].n, ch: TRAITS[k].ch, d: TRAITS[k].d(1, natMulFor(rankOf(g))), aw: awOf(g) } : null; };
 function mainHTML() {
   return `<header class="top"><div class="brand"><b class="logo">蛊码</b><span class="sub">烧 Token · 养蛊 · 闯秘境</span></div>
   <div class="tools"><span class="realm" id="realm" data-tip="${esc(`境界：${REALMS[S.realm]}。秘境最深处是渡劫首领，赢了境界加一：多开一格空窍，蛊市进新档，罗盘出新的道。`)}">${REALMS[S.realm]}</span><button class="ib gear" data-act="settings" title="设置" aria-label="设置"><svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.7" d="M12 8.6a3.4 3.4 0 1 0 0 6.8 3.4 3.4 0 0 0 0-6.8zm7.4 4.6.1-1.2-.1-1.2 2-1.6-2-3.4-2.4 1a7.6 7.6 0 0 0-2-1.2L14.6 3h-4l-.4 2.6a7.6 7.6 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6-.1 1.2.1 1.2-2 1.6 2 3.4 2.4-1c.6.5 1.3.9 2 1.2l.4 2.6h4l.4-2.6c.7-.3 1.4-.7 2-1.2l2.4 1 2-3.4z"/></svg></button><button class="ib zhu" data-act="share">战帖</button></div></header>
-  <section class="vein"><canvas id="vein"></canvas><div class="vread"><div class="vrate" data-tip-fn="qi"><span class="vlab">元气</span><b id="qiTxt">0</b><span id="sota" class="sota" data-tip="${esc(TXT.sota)}" hidden>SOTA</span></div><div class="vtot"><span id="totTxt"></span><button class="chip" data-act="src" id="srcTag"></button></div></div><div class="vsrc" id="srcRates" hidden></div></section>
+  <section class="vein"><div class="vread"><div class="vrate" data-tip-fn="qi"><span class="vlab">元气</span><b id="qiTxt">0</b><span id="sota" class="sota" data-tip="${esc(TXT.sota)}" hidden>SOTA</span></div><div class="vtot"><span id="totTxt"></span><button class="chip" data-act="src" id="srcTag"></button></div></div><div class="vsrc" id="srcRates" hidden></div></section>
   <div class="seg" id="demo">${[['coding', '写代码中'], ['rest', '停手休息']].map(([m, t]) => `<button data-act="demo" data-m="${m}">${t}</button>`).join('')}</div>
   <section class="home" id="home"></section>
   <section class="trip" id="trip"></section>
   <footer class="foot"><button data-act="duelInput">粘贴坐标码应战</button><button data-act="ghost">斗幽灵</button><button data-act="codex">蛊典</button><button data-act="path">道途</button><button data-act="ledger">履历</button><button data-act="reset" id="bReset">重开一局</button></footer>`;
 }
-function guCard(g, i, combos) {
-  const c = combos && combos[i], nat = natOfG(g), f = g.food && FOOD[g.food];
-  return `<button class="gu${i === 0 ? ' lead' : ''}" data-act="gu" data-i="${i}" data-uid="${g.uid}" data-drag="${i}" data-tip-fn="gu">
-  <span class="art">${guSVG(g.sp, { rank: rankOf(g) })}</span><span class="rk rk${rankOf(g)}">${RANK.ch[rankOf(g)]}</span>${c ? `<span class="mseal">${esc(c.n[0])}</span>` : ''}
-  <span class="nm">${SP[g.sp].n}</span><span class="st"><i class="a">${g.atk}</i><i class="h">${g.hp}</i></span>
-  <span class="tr">${nat ? `<span class="tc nat">${esc(nat.ch)}</span>` : ''}${f ? `<span class="tc food">${esc(f.n[0])}</span>` : ''}${g.xing ? `<span class="tc xing">${esc(String(g.xing)[0])}</span>` : ''}</span></button>`;
+// 卡面只放攻、血、速三个数，加被动技、主动技两个小印（没有主动技就不显示）；杀招成形时右上角亮朱印
+function guCard(g, combo) {
+  const nat = natOfG(g), act = actOfG(g), k = cellOf(g);
+  return `<button class="gu" data-act="gu" data-uid="${g.uid}" data-drag="${k}" data-tip-fn="gu">
+  <span class="art">${guSVG(g.sp, { rank: rankOf(g) })}</span><span class="rk rk${rankOf(g)}">${RANK.ch[rankOf(g)]}</span>${combo ? `<span class="mseal">${esc(combo.n[0])}</span>` : ''}
+  <span class="nm">${SP[g.sp].n}</span><span class="st"><i class="a">${g.atk}</i><i class="h">${g.hp}</i><i class="v">${spdOf(g)}</i></span>
+  <span class="tr">${nat ? `<span class="tc nat">${esc(nat.ch)}</span>` : ''}${act ? `<span class="tc act">${esc(act.ch)}</span>` : ''}</span></button>`;
 }
 function renderHome() {
   const box = $('#home'); if (!box) return;
   const t = tripOn();
   box.classList.toggle('away', t);
   box.innerHTML = `<div class="hhead"><span class="lbl" data-tip="${esc(TXT.daoTip)}">${S.dao ? TXT.daoLine(S.dao) : TXT.daoNone}</span><span id="reso" class="reso"></span></div>
-  <section class="qiao" id="qiao"><div class="qhead"><span class="lbl">${TXT.slotsHead} <small>${TXT.slotsSub}</small></span><span class="qmeta">${S.team.length}/${slotCap(S.realm)}</span></div><div class="slots" id="slots"></div>
+  <section class="qiao" id="qiao"><div class="qhead"><span class="lbl">${TXT.slotsHead} <small>${TXT.slotsSub}</small></span><span class="qmeta" data-tip="能上阵几只按境界算（3 到 7 只），摆在 9 格里哪里都行，空格也是一种布置">上阵 ${S.team.length}/${slotCap(S.realm)}</span></div><div class="slots" id="slots"></div>
   <div class="bagline" id="bagline"></div></section>
   <ul class="hlog" id="hlog"></ul>
   ${t ? `<p class="hint">${TXT.inTrip}</p>` : S.compass ? compassHTML() : `<section class="shop" id="shop"></section>`}
   ${t ? '' : `<div class="gorow"><button class="zhu big go" data-act="go"${S.team.length ? '' : ' disabled'}>${TXT.go}<small>${TXT.goSub(S.team.length)}</small></button></div>`}`;
   renderSlots(); renderBagLine(); renderShop(); renderReso(); renderLog();
 }
+// 阵盘：3 行 × 3 列，屏幕上从左到右是 后、中、前（前列朝向敌人）。能上阵几只按境界算，摆在哪格随你
 function renderSlots() {
   const box = $('#slots'); if (!box) return;
-  const cap = slotCap(S.realm), n = Math.min(SLOTS, Math.max(S.team.length, cap)), combos = teamCombos(S.team);
-  box.style.setProperty('--cn', Math.min(n, 7));
-  box.innerHTML = Array.from({ length: n }, (_, i) => S.team[i] ? guCard(S.team[i], i, combos) : `<div class="gu empty" data-drag="${i}"><span>${i < cap ? '空' : '未开'}</span></div>`).join('');
-  box.dataset.sort = 'team'; box.dataset.group = 'main';
+  autoPlace(S.team);
+  const combos = teamCombos(S.team), byUid = {}; S.team.forEach((g, i) => { byUid[g.uid] = combos[i]; });
+  const at = {}; S.team.forEach(g => { at[cellOf(g)] = g; });
+  let h = `<span class="bcol">${COLS[2]}</span><span class="bcol">${COLS[1]}</span><span class="bcol">${COLS[0]} <small>敌在右</small></span>`;
+  for (let r = 0; r < 3; r++) for (const c of [2, 1, 0]) { const k = r * 3 + c, g = at[k]; h += g ? guCard(g, byUid[g.uid]) : `<div class="gu empty" data-drag="${k}"><span>空</span></div>`; }
+  box.innerHTML = h; box.dataset.sort = 'team'; box.dataset.group = 'main'; box.classList.add('board');
 }
 function renderBagLine() {
   const b = $('#bagline'); if (!b) return;
@@ -4036,7 +4064,7 @@ function meters() {
   const q = $('#qiTxt'); if (!q) return;
   q.textContent = fmtTok(S.bank);
   const so = $('#sota'); if (so) so.hidden = !sotaOn();
-  $('#totTxt').innerHTML = `灵流 <b>${rate > 0 ? fmtTok(rate) : 0}</b>/s · 今日 <b>${fmtTok(S.todayKey === today() ? S.todayTok : 0)}</b>`;
+  $('#totTxt').innerHTML = `元气 +<b>${rate > 0 ? fmtTok(rate) : 0}</b>/s · 今日 <b>${fmtTok(S.todayKey === today() ? S.todayTok : 0)}</b>`;
   const sr = $('#srcRates'), sl = srcList(bySrc); sr.hidden = sl.length < 2;
   if (sl.length >= 2) setHTML(sr, sl.map(x => `<span class="schip${x.rate > 0 ? '' : ' off'}">${esc(x.name)} <b>${fmtTok(x.rate)}/s</b></span>`).join(''));
   const st = $('#srcTag'); st.textContent = VSC ? TXT.srcLive : TXT.srcDemo; st.classList.toggle('demo', !VSC);
@@ -4285,18 +4313,20 @@ function miniRow(t) { return `<div class="mini">${t.map(g => `<div class="mg${g.
 function guDetail(g, ctx = {}) {
   const s = SP[g.sp], nat = natOfG(g), team = ctx.kind === 'team' ? S.team : null, i = ctx.i | 0, c = team ? teamCombos(team)[i] : null, f = g.food && FOOD[g.food];
   const recipes = COMBOS.filter(x => x.need.includes(g.sp));
-  sheet(`<div class="detail"><div class="dart">${guSVG(g.sp, { rank: rankOf(g) })}</div><div><h3>${rankName(g)}</h3><p class="lore">${esc(s.lore)}</p><p class="dst"><i class="a">${g.atk}</i><i class="h">${g.hp}</i> <small>${DAO[daoOf(g.sp)] ? DAO[daoOf(g.sp)].n : ''}</small></p></div></div>
-  ${nat ? `<h4>本命技</h4><p><b>${esc(nat.n)}</b> ${esc(nat.d)}</p><p class="sm">三转、五转各觉醒一次${nat.aw ? `（已觉醒 ${nat.aw} 次）` : ''}</p>` : ''}
+  sheet(`<div class="detail"><div class="dart">${guSVG(g.sp, { rank: rankOf(g) })}</div><div><h3>${rankName(g)}</h3><p class="lore">${esc(s.lore)}</p><p class="dst"><i class="a">${g.atk}</i><i class="h">${g.hp}</i><i class="v">${spdOf(g)}</i> <small>${DAO[daoOf(g.sp)] ? DAO[daoOf(g.sp)].n : ''}</small></p></div></div>
+  ${nat ? `<h4>被动技能</h4><p><b>${esc(nat.n)}</b> ${esc(nat.d)}</p>` : ''}${actOfG(g) ? `<h4>主动技能</h4><p><b>${esc(actOfG(g).n)}</b> ${esc(actOfG(g).d)}<br><small>蛊力攒满自动放</small></p>` : ''}${nat ? `<p class="sm">三转、五转各觉醒一次，强化技能${nat.aw ? `（已觉醒 ${nat.aw} 次）` : ''}</p>` : ''}
   ${c ? `<h4>杀招</h4><div class="skill"><span class="seal">${esc(c.n)}</span><p>${esc(c.d)}<br><small>配方：${c.need.map(x => SP[x].n).join(' + ')}</small></p></div>` : ''}
   ${f ? `<h4>挂件</h4><p><b>${esc(f.n)}</b> ${esc(f.d)}</p>` : ''}
   ${g.xing ? `<h4>蛊性</h4><p>${esc(String(g.xing))}</p>` : ''}
   ${recipes.length ? `<h4>能凑的杀招</h4><ul>${recipes.map(x => `<li><b>${esc(x.n)}</b> ${x.need.map(y => SP[y].n).join(' + ')}</li>`).join('')}</ul>` : ''}
-  ${ctx.kind === 'team' || ctx.kind === 'bag' ? `<div class="row2">${ctx.kind === 'team' ? `<button data-act="toBag" data-i="${i}"${S.bag.length < BC() && !tripOn() ? '' : ' disabled'}>收进蛊囊</button>` : `<button class="zhu" data-act="fromBag" data-i="${i}"${S.team.length < curCap() && !tripOn() ? '' : ' disabled'}>上场</button>`}<button data-act="sell" data-k="${ctx.kind}" data-i="${i}"${tripOn() ? ' disabled' : ''}>卖出 · 退回 ${fmtTok(price(sellValue(g)))}</button></div>` : ''}`);
+  ${ctx.kind === 'team' || ctx.kind === 'bag' ? `<div class="row2">${ctx.kind === 'team' ? `<button data-act="toBag" data-k="${cellOf(g)}"${S.bag.length < BC() && !tripOn() ? '' : ' disabled'}>收进蛊囊</button>` : `<button class="zhu" data-act="fromBag" data-i="${i}"${S.team.length < slotCap(S.realm) && !tripOn() ? '' : ' disabled'}>上阵</button>`}<button data-act="sell" data-k="${ctx.kind}" data-i="${i}"${tripOn() ? ' disabled' : ''}>卖出 · 退回 ${fmtTok(price(sellValue(g)))}</button></div>` : ''}`);
 }
 function openCodex() {
   const have = S.team.map(g => g.sp);
   sheet(`<h3>蛊典</h3><p class="sm">见过 ${Object.keys(S.codex).length} / ${SPECIES.length} 种。</p>
-  <h4>杀招配方</h4><ul class="recipes">${COMBOS.map(c => { const miss = comboMissing(c, have); return `<li class="${miss.length ? '' : 'on'}"><b>${esc(c.n)}</b> ${c.need.map(x => `<span class="${have.includes(x) ? 'got' : ''}">${SP[x] ? SP[x].n : x}</span>`).join(' + ')}${miss.length ? `<small>还差：${miss.map(x => SP[x] ? SP[x].n : x).join('、')}</small>` : '<small>已成形</small>'}<br><small>${esc(c.d)}</small></li>`; }).join('')}</ul>
+  <h4>杀招图鉴</h4><p class="sm">没凑出来过的杀招只露出核心蛊，其余几只只告诉你属于哪一道；第一次成形后完整揭晓。</p><ul class="recipes">${COMBOS.map(c => { const seen = (S.combosSeen || []).includes(c.id), core = SP[c.need[0]], rest = c.need.slice(1);
+    if (!seen) return `<li class="hid"><b>？？？</b> 核心：<span class="${have.includes(c.need[0]) ? 'got' : ''}">${core ? core.n : '？'}</span> + ${rest.map(x => `<span>某只${DAO[daoOf(x)] ? DAO[daoOf(x)].n : ''}的蛊</span>`).join(' + ')}</li>`;
+    const miss = comboMissing(c, have); return `<li class="${miss.length ? '' : 'on'}"><b>${esc(c.n)}</b> ${c.need.map(x => `<span class="${have.includes(x) ? 'got' : ''}">${SP[x] ? SP[x].n : x}</span>`).join(' + ')}${miss.length ? '' : '<small>已成形</small>'}<br><small>${esc(c.d)}</small></li>`; }).join('')}</ul>
   <h4>道</h4><ul>${DAOS.map(d => `<li><b>${d.n}</b> ${esc(d.d)}<br><small>2 只：${esc(d.r2.d)}；4 只：${esc(d.r4.d)}</small></li>`).join('')}</ul>
   <h4>蛊</h4><div class="codexgrid">${SPECIES.filter(s => !s.immortal).map(s => `<div class="cx${S.codex[s.id] ? '' : ' unseen'}" data-tip="${esc(S.codex[s.id] ? `${s.n}（${RANK.names[baseRank(s.id)]} · ${DAO[daoOf(s.id)] ? DAO[daoOf(s.id)].n : ''}）\n${natDesc(s.id)}` : '还没见过')}">${guSVG(s.id)}<small>${S.codex[s.id] ? s.n : '？'}</small></div>`).join('')}</div>`, 'codex');
 }
@@ -4319,16 +4349,17 @@ function openSettings() {
 function guTip(g, team, i) {
   if (!g) return '';
   const nat = natOfG(g), c = team ? teamCombos(team)[i] : null, f = g.food && FOOD[g.food];
-  return `<b>${rankName(g)}</b> <i class="a">${g.atk}</i> <i class="h">${g.hp}</i><br><small>${esc(SP[g.sp].lore)}${team ? ` · 第 ${i + 1} 位` : ''}</small>`
-    + (nat ? `<p><b>本命·${esc(nat.n)}</b> ${esc(nat.d)}</p>` : '') + (c ? `<p><b>杀招·${esc(c.n)}</b> ${esc(c.d)}<br><small>配方：${c.need.map(x => SP[x].n).join(' + ')}</small></p>` : '')
+  const act = actOfG(g), p = g.pos;
+  return `<b>${rankName(g)}</b> <i class="a">${g.atk}</i> <i class="h">${g.hp}</i> <i class="v">${spdOf(g)}</i><br><small>${esc(SP[g.sp].lore)}${team && p ? ` · 第 ${p.r + 1} 行${COLS[p.c]}列` : ''} · 攻 / 血 / 速</small>`
+    + (nat ? `<p><b>被动·${esc(nat.n)}</b> ${esc(nat.d)}</p>` : '') + (act ? `<p><b>主动·${esc(act.n)}</b> ${esc(act.d)}<br><small>蛊力攒满自动放</small></p>` : '') + (c ? `<p><b>杀招·${esc(c.n)}</b> ${esc(c.d)}<br><small>配方：${c.need.map(x => SP[x].n).join(' + ')}</small></p>` : '')
     + (f ? `<p><b>挂件·${esc(f.n)}</b> ${esc(f.d)}</p>` : '') + `<small>点开看完整详情</small>`;
 }
 const TIPS = {
   qi: () => `<b>元气 ${fmtTok(S.bank)}</b><br><small>${esc(TXT.qiTip)}${VSC ? '' : esc(TXT.qiTrial)}</small>`,
-  gu: t => guTip(S.team[+t.dataset.i], S.team, +t.dataset.i),
+  gu: t => { const i = S.team.findIndex(g => g.uid === t.dataset.uid); return guTip(S.team[i], S.team, i); },
   bag: () => esc(TXT.bagTip()),
   bg: t => { const g = S.bag[+t.dataset.i]; return g ? guTip(g) + '<small>在蛊囊里：不上场、不出征，拖进空窍才上场</small>' : ''; },
-  ware: t => { const w = S.shop[+t.dataset.i]; if (!w) return ''; if (w.kind === 'food') { const f = FOOD[w.id]; return `<b>${esc(f.n)}</b> · ${FOOD_KIND[f.kind]}<br>${esc(f.d)}<br><small>价格 ${fmtTok(price(foodCost(w.id)))} 元气</small>`; } const n = owned(w.sp); return guTip(newGu(w.sp)) + `<small>价格 ${fmtTok(price(PRICE.gu))} 元气</small>` + (n >= 2 ? `<p>你已有 ${n} 只${RANK.names[baseRank(w.sp)]}${SP[w.sp].n}，买下当场合成${RANK.names[baseRank(w.sp) + 1]}</p>` : ''); },
+  ware: t => { const w = S.shop[+t.dataset.i]; if (!w) return ''; if (w.kind === 'food') { const f = FOOD[w.id]; return `<b>${esc(f.n)}</b> · ${FOOD_KIND[f.kind]}<br>${esc(f.d)}<br><small>价格 ${fmtTok(price(foodCost(w.id)))} 元气</small>`; } const n = owned(w.sp); return guTip(newGu(w.sp)).replace('<small>点开看完整详情</small>', '') + `<small>价格 ${fmtTok(price(PRICE.gu))} 元气 · 点开看完整详情</small>` + (n >= 2 ? `<p>你已有 ${n} 只${RANK.names[baseRank(w.sp)]}${SP[w.sp].n}，买下当场合成${RANK.names[baseRank(w.sp) + 1]}</p>` : ''); },
 };
 let tipT = 0, tipEl = null, tipFor = null, tipLongT = 0, tipLongAt = -1e9;
 function tipShow(t) {
@@ -4358,14 +4389,21 @@ window.addEventListener('scroll', () => tipHide(), true);
 // ---------- 拖动换位：空窍内、蛊囊内、两者之间 ----------
 let drag = null, dragEndT = -1e9;
 const moveIdx = (arr, f, t) => { const [x] = arr.splice(f, 1); arr.splice(t, 0, x); };
+// 阵盘用格号（0–8），蛊囊用下标。阵盘内换格；蛊囊和阵盘之间互换或移动；上阵满了不能再往空格放
 function moveGu(fromKey, fi, toKey, ti) {
   if (tripOn()) return false;
-  const A = fromKey === 'bag' ? S.bag : S.team, B = toKey === 'bag' ? S.bag : S.team, g = A[fi]; if (!g) return false;
-  if (A === B) { if (ti >= A.length) ti = A.length - 1; moveIdx(A, fi, ti); return true; }
-  const capB = toKey === 'bag' ? BC() : curCap(), other = B[ti];
-  if (other) { A[fi] = other; B[ti] = g; }
-  else { if (B.length >= capB) return false; A.splice(fi, 1); B.splice(Math.min(ti, B.length), 0, g); }
-  return true;
+  const atCell = k => S.team.find(g => cellOf(g) === k);
+  if (fromKey === 'team' && toKey === 'team') { const g = atCell(fi), o = atCell(ti); if (!g) return false; if (o) o.pos = cellPos(fi); g.pos = cellPos(ti); sortTeam(S.team); return true; }
+  if (fromKey === 'bag' && toKey === 'bag') { if (!S.bag[fi]) return false; moveIdx(S.bag, fi, Math.min(ti, S.bag.length - 1)); return true; }
+  if (fromKey === 'bag') {
+    const g = S.bag[fi], k = ti == null || ti < 0 ? freeCell(S.team) : ti, o = atCell(k); if (!g || k == null) return false;
+    if (o) { S.bag[fi] = o; o.pos = null; } else { if (S.team.length >= slotCap(S.realm)) { note(`上阵已满（${slotCap(S.realm)} 只）：拖到一只蛊身上就能换下它`); return false; } S.bag.splice(fi, 1); }
+    g.pos = cellPos(k); S.team.push(g); sortTeam(S.team); return true;
+  }
+  const g = atCell(fi), o = S.bag[ti]; if (!g) return false;
+  if (o) { S.bag[ti] = g; o.pos = g.pos; S.team.splice(S.team.indexOf(g), 1, o); g.pos = null; }
+  else { if (S.bag.length >= BC()) return false; S.team.splice(S.team.indexOf(g), 1); g.pos = null; S.bag.push(g); }
+  sortTeam(S.team); return true;
 }
 document.addEventListener('pointerdown', e => {
   const it = e.target.closest('[data-drag]'), box = it && it.closest('[data-sort]');
@@ -4428,10 +4466,10 @@ const ACT = {
   refresh() { if (tripOn() || !pay(PRICE.refresh)) return; newShop(); renderShop(); meters(); save(); snd('tick'); },
   pantry(a) { const i = +a.dataset.i, id = S.pantry[i], f = FOOD[id]; if (!f) return; if (f.kind === 'gear' || (f.kind === 'stat' && f.to === 'one')) { useFood(id, 'pantry', i); return; } if (useFood(id, 'pantry', i)) { S.pantry.splice(i, 1); renderHome(); save(); } },
   feedTo(a) { const all = [...S.team, ...S.bag]; feedTo(all[+a.dataset.k]); },
-  gu(a) { const i = +a.dataset.i; if (S.team[i]) guDetail(S.team[i], { kind: 'team', i }); },
+  gu(a) { const i = S.team.findIndex(g => g.uid === a.dataset.uid); if (i >= 0) guDetail(S.team[i], { kind: 'team', i }); },
   bagGu(a) { const i = +a.dataset.i; if (S.bag[i]) guDetail(S.bag[i], { kind: 'bag', i }); },
-  toBag(a) { if (moveGu('team', +a.dataset.i, 'bag', S.bag.length)) { closeSheet(); afterChange(); } },
-  fromBag(a) { if (moveGu('bag', +a.dataset.i, 'team', S.team.length)) { closeSheet(); afterChange(); } },
+  toBag(a) { if (moveGu('team', +a.dataset.k, 'bag', S.bag.length)) { closeSheet(); afterChange(); } },
+  fromBag(a) { if (moveGu('bag', +a.dataset.i, 'team', -1)) { closeSheet(); afterChange(); } },
   sell(a) { const L = a.dataset.k === 'bag' ? S.bag : S.team, i = +a.dataset.i, g = L[i]; if (!g || tripOn()) return; const v = price(sellValue(g)); L.splice(i, 1); S.bank += v; note(TXT.sold(g, v)); closeSheet(); afterChange(); snd('coin'); },
   go() { if (!S.team.length || tripOn()) return; goSheet(); },
   goConfirm() { closeSheet(); if (!TRIP.start) { note(TXT.goSoon); return; } S.trip = S.trip || { at: Date.now() }; save(); renderHome(); TRIP.start(TRIP.api); },
@@ -4459,7 +4497,7 @@ const ACT = {
   setCalm() { S.calm = !S.calm; applyCalm(); save(); openSettings(); },
   demo(a) { if (VSC) return; src.demo = a.dataset.m === 'rest' ? 'rest' : 'coding'; meters(); },
   src() {
-    if (VSC) { const sl = srcList(bySrc); sheet(`<h3>${TXT.srcHead}</h3><p>${TXT.srcFrom}</p><p class="sm">当前灵流 <b>${fmtTok(rate)}/s</b></p>${sl.length ? `<ul class="srclist">${sl.map(x => `<li><span>${esc(x.name)}</span><b>${fmtTok(x.rate)}/s</b></li>`).join('')}</ul>` : `<p class="sm">${rate > 0 ? '' : TXT.srcNone}</p>`}`, 'srcinfo'); return; }
+    if (VSC) { const sl = srcList(bySrc); sheet(`<h3>${TXT.srcHead}</h3><p>${TXT.srcFrom}</p><p class="sm">当前元气 +<b>${fmtTok(rate)}</b>/s</p>${sl.length ? `<ul class="srclist">${sl.map(x => `<li><span>${esc(x.name)}</span><b>${fmtTok(x.rate)}/s</b></li>`).join('')}</ul>` : `<p class="sm">${rate > 0 ? '' : TXT.srcNone}</p>`}`, 'srcinfo'); return; }
     sheet(`<h3>${TXT.demoHead}</h3><p>${TXT.demoFrom}</p><p class="sm">${TXT.demoTrial}</p><p>${TXT.demoInstall}</p><div class="row2"><a class="btn zhu" href="${INSTALL_URL}" target="_blank" rel="noopener">看插件安装方法</a></div><p class="sm">${esc(INSTALL_URL)}</p>`, 'demoinfo');
   },
   reset(a) {
