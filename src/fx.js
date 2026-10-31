@@ -29,11 +29,25 @@
 //   floatText(anchorEl, text, kind = 'info')                      飘字。kind：gain（金，+12◈）、qi（青，+灵气）、heal（青，伤愈）、dmg、crit、info。
 //   SFX                                                           { coin, reelTick, reelStop, jackpot, crack, rarity0..4, levelUp, toast, chestThud,
 //                                                                   seal, miss, unlock, whoosh }，每个是 (ctx, t, out, k?) => void
-//   fxConfig({ calm, onSound })                                   全局默认，返回当前配置。
+//   fxConfig({ calm, onSound })                                   全局默认，返回当前配置。calm 同时给 <html> 加/去 gu-calm，停住五转墨气。
+//   fuseRankUp(host, { artBefore, artAfter, name, rank, onSound })
+//                                                                升转演出：三只同种飞向中间 → 合成一团墨打转 → 顿帧炸开 → 新外貌弹出 →
+//                                                                盖「二转」…「五转」/「仙蛊」印。rank 是升转后的转数 2..6。点一下跳到最终态。
+//
+// 升转外貌（src/art.js）
+//   guSVG(sp, { rank, rarity, still })：rank 1..5，6 = 仙蛊。在任何物种（含以后新加的）原画上叠通用图层：
+//     二转飞白墨纹、体型略大；三转身后真元色晕染（core.js ZHENYUAN.colors）；四转金线勾边、晕染更浓、足下小印；
+//     五转头光 + 墨气缓动（still:true 或 html.gu-calm 或 prefers-reduced-motion 时不动）；六转金朱背光、双线描金、金箔、仙印。
+//     rarity 不画在虫身上，只写进 data-rar；卡片用 rarityFrame(rarity) 返回的 class（rf rfN）出边框和角标。
+//     rankLayers(rank, bbox) 是叠加层本体，新物种可在 RANK_BOX / 默认外框上直接套用。
+//   接法示例：fuseRankUp(document.body, { artBefore: guSVG(g.sp, { rank: s0 }), artAfter: guSVG(g.sp, { rank: s0 + 1 }), name: SP[g.sp].n, rank: s0 + 1 })
 // ────────────────────────────────────────────────────────────────────────
 
 const FXC = { calm: false, onSound: null };
-export function fxConfig(o) { if (o) Object.assign(FXC, o); return FXC; }
+export function fxConfig(o) {
+  if (o) { Object.assign(FXC, o); if ('calm' in o && typeof document !== 'undefined') document.documentElement.classList.toggle('gu-calm', !!o.calm); }
+  return FXC;
+}
 const FX_RN = ['凡', '良', '珍', '绝', '天'], FX_CN = ['木', '铜', '银', '金', '玄'], FX_AN = ['铜', '银', '金'];
 const fxRM = () => !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
 const fxCalm = o => !!(o && o.calm != null ? o.calm : FXC.calm) || fxRM();
@@ -610,6 +624,65 @@ export function floatText(anchorEl, text, kind = 'info') {
     { transform: 'translate(-50%,-250%) scale(.96)', opacity: 0 },
   ], { duration: kind === 'crit' ? 1300 : 1050, easing: 'cubic-bezier(.2,.8,.3,1)', fill: 'forwards' });
   return new Promise(res => { a.onfinish = () => { f.remove(); res(); }; });
+}
+
+// ---------- 9. 升转演出 ----------
+const FX_RANK = ['', '一', '二', '三', '四', '五', '仙'], FX_ZY = ['#a0703f', '#a0703f', '#a4442c', '#9aa4ab', '#d9a441', '#7d62a8', '#d9a441'];   // 真元色，同 core.js ZHENYUAN.colors
+export async function fuseRankUp(host, o = {}) {
+  const r = fxCl(o.rank | 0 || 2, 2, 6), rm = fxRM(), k = rm ? .35 : 1, col = FX_ZY[r], big = r >= 5;
+  const { st, run } = fxStage(host, r >= 6 ? 'fx-fuse fx-r4' : 'fx-fuse', o);
+  const seal = r >= 6 ? '仙蛊' : FX_RANK[r] + '转', spots = [[-112, -52, -14], [112, -52, 14], [0, 92, 0]];
+  st.innerHTML = `<div class="fx-wash"></div><div class="fx-col">
+<div class="fx-fpit">${spots.map(([dx, dy]) => `<div class="fx-fz" style="--dx:${dx}px;--dy:${dy}px">${o.artBefore || ''}</div>`).join('')}
+<div class="fx-orb fx-pre"><svg viewBox="0 0 200 200" aria-hidden="true"><g filter="url(#fx-sumi)"><circle cx="100" cy="100" r="66" style="fill:${col}" fill-opacity=".9"/><circle cx="100" cy="100" r="52" style="fill:var(--paper)"/><circle cx="100" cy="100" r="40" fill="#1c1915"/></g><path d="M78 92 Q96 70 120 86 Q132 100 116 116 Q100 124 94 108" fill="none" style="stroke:var(--paper)" stroke-width="3" stroke-linecap="round" opacity=".55" filter="url(#fx-ink)"/><g fill="none" stroke="${col}" stroke-linecap="round" filter="url(#fx-ink)"><path d="M100 30 A70 70 0 0 1 168 92" stroke-width="5"/><path d="M100 170 A70 70 0 0 1 32 108" stroke-width="5"/><path d="M60 52 A58 58 0 0 1 150 70" stroke-width="2.4" opacity=".7"/></g></svg></div>
+<div class="fx-cardbox fx-pre"><div class="fx-card" style="--rc:${col}"><div class="fx-art">${o.artAfter || ''}</div></div>${fxBigSeal(seal, 'var(--zhu)')}</div></div>
+<div class="fx-rkn fx-pre" style="--rcol:${col}"><span>${fxInk(o.name || '', 0, 70)}</span><small>${fxInk(seal, 160, 90)}</small></div></div>
+<div class="fx-hint">点击跳过</div>`;
+  const q = s => st.querySelector(s), fz = [...st.querySelectorAll('.fx-fz')], orb = q('.fx-orb'), card = q('.fx-cardbox');
+  // 一、三只同种依次亮相
+  fz.forEach((f, i) => run.anim(f, [{ scale: .5, opacity: 0 }, { scale: 1.06, opacity: 1, offset: .6 }, { scale: 1, opacity: 1 }], { duration: rm ? 100 : 300, delay: i * 70 * k, easing: 'cubic-bezier(.2,.9,.3,1.2)' }));
+  run.snd('reelTick'); await run.wait(140 * k); run.snd('reelTick'); await run.wait(140 * k); run.snd('reelTick');
+  await run.wait(260 * k);
+  // 二、蓄势：往外一缩、一抖
+  fz.forEach(f => run.anim(f, [{ transform: 'none' }, { transform: 'scale(.94) rotate(-4deg)' }, { transform: 'scale(.96) rotate(4deg)' }, { transform: 'none' }], { duration: 200 }));
+  await run.wait(200 * k);
+  // 三、飞向中间（越飞越快），撞进一团墨
+  run.snd('whoosh');
+  fz.forEach((f, i) => run.anim(f, [{ translate: `${spots[i][0]}px ${spots[i][1]}px`, transform: 'none', opacity: 1 }, { translate: '0px 0px', transform: `scale(.42) rotate(${spots[i][2] * 3}deg)`, opacity: .2 }], { duration: rm ? 120 : 460, delay: i * 45 * k, easing: 'cubic-bezier(.55,0,.85,.4)' }));
+  await run.wait(520 * k);
+  fz.forEach(f => { f.style.visibility = 'hidden'; });
+  run.show(orb);
+  const c = fxAt(st, orb);
+  fxShake(st, 3, 200, o); fxShards(st, run, c.x, c.y, 10, ['var(--fx-edge)', col], .7);
+  run.anim(orb, [{ scale: .3, opacity: 0 }, { scale: 1.08, opacity: 1, offset: .6 }, { scale: 1, opacity: 1 }], { duration: rm ? 100 : 300, easing: 'cubic-bezier(.2,.9,.3,1.2)' });
+  const spin = run.anim(orb, [{ rotate: '0deg' }, { rotate: '360deg' }], { duration: 640, iterations: Infinity, fill: 'none' });
+  // 四、墨团打转，一下比一下紧（期待段）
+  for (let i = 0; i < 3; i++) {
+    run.snd('crack', i + 1); fxRing(st, run, c.x, c.y, 150 + i * 30, col);
+    run.anim(orb, [{ transform: 'scale(1)' }, { transform: `scale(${1.06 + i * .04})` }, { transform: 'scale(1)' }], { duration: 160 });
+    await run.wait((220 - i * 40) * k);
+  }
+  if (spin) spin.pause();
+  await run.wait(rm ? 0 : 85);   // 顿帧
+  if (spin) spin.cancel();
+  // 五、炸开：墨晕一闪、碎墨、金箔、震屏，新外貌弹出
+  run.anim(orb, [{ scale: 1, opacity: 1 }, { scale: 1.7, opacity: 0 }], { duration: 280, easing: 'ease-out' });
+  fxBloom(st, run, c.x, c.y, 320 + r * 30, col, .55, 900, o);
+  fxShards(st, run, c.x, c.y, 16, ['var(--fx-edge)', 'var(--fx-silk2)', col], 1.3);
+  fxFlakes(st, run, c.x, c.y, [0, 0, 6, 10, 18, 24, 34][r], r >= 4 ? ['var(--fx-gold)', 'var(--fx-gold2)', col] : [col, 'var(--fx-gold)'], 1);
+  if (big) { fxDrops(st, run, c.x, c.y, 12, 'var(--zhu)', 1.2); fxWash(st, run, r >= 6 ? ['var(--fx-w4a)', 'var(--fx-w4b)'] : ['var(--fx-w3a)', 'var(--fx-w3b)'], false); }
+  fxShake(st, [0, 0, 3, 4, 5, 7, 9][r], 300, o);
+  run.snd('rarity' + [0, 0, 0, 1, 2, 4, 4][r]);
+  run.show(card);
+  run.anim(card, [{ transform: 'scale(.5)', opacity: 0, easing: 'cubic-bezier(.2,.9,.3,1.25)' }, { transform: 'translateY(-14px) scale(1.05)', opacity: 1, offset: .5, easing: 'cubic-bezier(.3,0,.2,1)' }, { transform: 'none', opacity: 1 }], { duration: rm ? 160 : 520 });
+  await run.wait(380 * k);
+  // 六、盖转数印
+  run.show(q('.fx-bigseal')); run.snd('seal');
+  await run.wait(rm ? 0 : 200);
+  fxShake(st, 4, 200, o);
+  const s = fxAt(st, q('.fx-bigseal')); fxDrops(st, run, s.x, s.y, 7, 'var(--zhu)', .6);
+  run.show(q('.fx-rkn'));
+  return fxClose(st, run, o, '点击收下');
 }
 
 // ---------- 8. 音色（WebAudio 合成；古琴拨弦、磬、编钟、锣、木鱼、钱币）----------

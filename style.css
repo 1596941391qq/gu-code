@@ -715,3 +715,35 @@ button.realm{cursor:pointer;border:0}
 @keyframes fx-sealfall{0%{opacity:0;scale:2.8;translate:0 -24px}70%{opacity:1;scale:.92;translate:0 0}100%{scale:1}}
 @keyframes fx-splat{0%{opacity:0;scale:.4}100%{opacity:.8;scale:1}}
 @keyframes fx-tense{50%{outline-offset:5px}}
+
+/* ==== 升转外貌 ==== */
+/* guSVG(sp, { rank }) 的五转墨气（.g-qi）缓缓流动；calm（html.gu-calm）与 prefers-reduced-motion 下停住。品质边框用 rarityFrame(r) → .rf .rf0..4 */
+.g-qi{transform-box:view-box;transform-origin:50% 60%;animation:g-qi 5.6s ease-in-out infinite}
+.g-qi path{stroke-dasharray:20 7 5 7;animation:g-flow 8s linear infinite}
+@keyframes g-qi{50%{opacity:.55;transform:translateY(-1.6px) scale(1.025)}}
+@keyframes g-flow{to{stroke-dashoffset:-78}}
+.gu-calm .g-qi,.gu-calm .g-qi path{animation:none!important}
+@media (prefers-reduced-motion:reduce){.g-qi,.g-qi path{animation:none!important}}
+.rf{position:relative}
+.rf::before{content:"";position:absolute;inset:3px;z-index:2;border-radius:2px;pointer-events:none}
+.rf1::before{border:1.5px solid #2c6e5e}
+.rf2::before{border:1.5px solid #2f4f8a}
+.rf3::before{border:4px double #6b3f8e}
+.rf4::before{border:4px double #a8741a;box-shadow:0 0 0 1px #b5301f}
+.rf1::after,.rf2::after,.rf3::after,.rf4::after{position:absolute;left:4px;top:4px;z-index:3;padding:2px 2px 1px;border-radius:1px;font:11px/1 var(--kai);color:#f3ead6;pointer-events:none}
+.rf3::after,.rf4::after{left:6px;top:6px}
+.rf1::after{content:"良";background:#2c6e5e}
+.rf2::after{content:"珍";background:#2f4f8a}
+.rf3::after{content:"绝";background:#6b3f8e}
+.rf4::after{content:"天";background:#b5301f;box-shadow:0 0 0 1px #d9a441}
+/* 升转演出 fuseRankUp */
+.fx-fpit{position:relative;display:grid;place-items:center;width:min(320px,92vw);height:270px}
+.fx-fpit>*{grid-area:1/1}
+.fx-fz{position:relative;z-index:2;width:84px;height:84px;padding:4px;background:var(--paper);border-radius:3px;box-shadow:0 1px 0 var(--shadow),0 6px 16px var(--shadow);translate:var(--dx) var(--dy)}
+.fx-fz svg,.fx-orb svg{display:block;width:100%;height:100%}
+.fx-orb{position:relative;z-index:3;width:150px;height:150px;pointer-events:none}
+.fx-fuse .fx-cardbox{z-index:4}
+.fx-fuse .fx-card{outline-color:var(--rc)}
+.fx-rkn{display:flex;align-items:baseline;gap:10px;margin-top:8px;font:400 20px var(--kai);color:var(--strong);letter-spacing:.12em}
+.fx-rkn small{font-size:15px;color:var(--rcol,var(--zhu2));letter-spacing:.3em}
+.fx-rkn.on i{display:inline-block;font-style:normal;animation:fx-inkin .36s ease-out both}
