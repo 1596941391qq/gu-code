@@ -1,5 +1,5 @@
 // node tools/sim.mjs [场数]  —— 随机阵容对战压测：死循环、回合数、物种/杀招胜率、可复现性、坐标码往返
-import { makeRng, genTeam, comboOf, SP, applyNode, newGu, encodeTeam, decodeTeam, QUIRKS, COMBOS, addTrait, MARK_KEYS, MARKS, playMs, tempoFor, poolFor, rollCompass, nodeChoices, rollShop, buyGu, canBuy, sellValue, tribTeam, endlessTeam, rollMarks, slotCap, ECON, ghostTrio, REALMS } from '../src/core.js';
+import { makeRng, genTeam, comboOf, SP, applyNode, newGu, encodeTeam, decodeTeam, QUIRKS, COMBOS, addTrait, MARK_KEYS, MARKS, playMs, tempoFor, poolFor, rollCompass, nodeChoices, rollShop, buyGu, canBuy, sellValue, tribTeam, endlessTeam, rollMarks, slotCap, ECON, ghostTrio, REALMS, arrangeTeam, spTraits } from '../src/core.js';
 import { battle } from '../src/battle.js';
 
 const N = +process.argv[2] || 1000;
@@ -53,7 +53,7 @@ for (const c of COMBOS) {
     const rng = makeRng(c.id + i), p = 2 + rng.int(10);
     const ta = genTeam(rng, p), tb = genTeam(rng, p);
     const g = ta[0]; g.sp = c.need[0]; g.att = c.need.slice(1);
-    g.tr = [[SP[g.sp].t, SP[g.sp].v]]; g.att.forEach(a => addTrait(g, SP[a].t, SP[a].v, true));
+    g.tr = spTraits(g.sp); g.att.forEach(a => addTrait(g, SP[a].t, SP[a].v, true));
     const r = battle(ta, tb, 'f' + i); w += r.winner === 'A' ? 1 : r.winner === 'draw' ? 0.5 : 0;
   }
   forced.push(`${c.n} ${(100 * w / M).toFixed(1)}%`);
@@ -64,6 +64,7 @@ console.log('杀招强制胜率（同阶，300 场/招）:', forced.join('  '));
 // 预算 STEPS 个节点（≈ 演示模式 30 分钟 / 真实 Vibe Coding 若干天）；每 2 节点斗一次幽灵，每 3 节点试一次渡劫/无尽劫
 const RUNS = 1000, STEPS = 150;
 const reach = new Array(6).fill(0), stepAt = [[], [], [], [], [], []], floors = []; let runCap = 0;
+const ar = t => arrangeTeam(t.slice());   // 机器人开战前按规则排阵（不改原阵）
 const pow = g => g.atk + g.hp + g.tr.reduce((a, t) => a + t[1] * 2, 0);
 for (let run = 0; run < RUNS; run++) {
   const rng = makeRng('run' + run); let team = [newGu(rng.pick(poolFor(0)))], realm = 0, stone = 5, marks = [], shop = rollShop(rng, 0, []), floor = 1, best = 0, endLoss = 0;
@@ -84,14 +85,14 @@ for (let run = 0; run < RUNS; run++) {
       if (stone >= cost + ECON.refresh) { stone -= marks.includes('shiJing') ? 0 : ECON.refresh; shop = rollShop(rng, realm, []); } else break;
     }
     team.forEach(g => { g.wound = 0; });
-    if (step % 2 === 0) { const t = ghostTrio(rng, step + realm, realm)[1]; const r = battle(team, t.team, 'g' + run + ':' + step, marks); stone += r.winner === 'A' ? ECON.win.mid : ECON.lose; }
+    if (step % 2 === 0) { const t = ghostTrio(rng, step + realm, realm)[1]; const r = battle(ar(team), t.team, 'g' + run + ':' + step, marks); stone += r.winner === 'A' ? ECON.win.mid : ECON.lose; }
     if (step % 3 === 0) {
       if (realm < 5) {
-        const r = battle(team, tribTeam(realm), 't' + run + ':' + step, marks);
+        const r = battle(ar(team), tribTeam(realm), 't' + run + ':' + step, marks);
         if (r.capped) runCap++;
         if (r.winner === 'A') { reach[realm]++; stepAt[realm].push(step); realm++; team.forEach(g => { g.atk++; g.hp++; }); marks.push(rng.pick(rollMarks(rng, marks))); stone += ECON.win.trib; shop = rollShop(rng, realm, []); }
       } else {
-        const r = battle(team, endlessTeam(floor), 'e' + run + ':' + step, marks);
+        const r = battle(ar(team), endlessTeam(floor), 'e' + run + ':' + step, marks);
         if (r.winner === 'A') { best = floor; floor++; endLoss = 0; stone += ECON.win.endless; } else endLoss++;
       }
     }
@@ -103,6 +104,21 @@ console.log(`== 整局模拟 ${RUNS} 局 × ${STEPS} 节点（含蛊市买卖、
 console.log('各阶通关率（渡劫成功占全部局）:', REALMS.slice(0, 5).map((n, r) => `${n}→${REALMS[r + 1]} ${(100 * reach[r] / RUNS).toFixed(1)}%（中位第 ${med(stepAt[r])} 节点）`).join('  '));
 console.log(`无尽劫：登顶 ${floors.length} 局，平均 ${floors.length ? (floors.reduce((a, b) => a + b, 0) / floors.length).toFixed(1) : 0} 层，最高 ${floors.length ? Math.max(...floors) : 0} 层；整局触发上限 ${runCap}`);
 if (runCap) capped += runCap;
+
+// ---------- 布阵：20 套常见阵容 × 全部排列，对同阶敌阵（敌方按规则排阵）各打 80 场 ----------
+const permsOf = a => a.length <= 1 ? [a] : a.flatMap((x, i) => permsOf([...a.slice(0, i), ...a.slice(i + 1)]).map(q => [x, ...q]));
+const spreads = []; const tF = Date.now();
+for (let k = 0; spreads.length < 20; k++) {
+  const rng = makeRng('form' + k), p = 8 + rng.int(14), team = genTeam(rng, p, 5); if (team.length < 4) continue;
+  const foes = Array.from({ length: 40 }, (_, j) => genTeam(makeRng('formfoe' + k + ':' + j), p, 5));
+  const wr = perm => { let w = 0; foes.forEach((f, j) => { for (const sd of ['a', 'b']) { const r = battle(perm, f, 'fs' + sd + j); w += r.winner === 'A' ? 1 : r.winner === 'draw' ? 0.5 : 0; } }); return w / (foes.length * 2); };
+  const all = permsOf(team).map(wr), best = Math.max(...all), worst = Math.min(...all);
+  spreads.push({ n: team.length, best, worst, d: best - worst, ai: wr(arrangeTeam(team.slice())), names: team.map(g => SP[g.sp].ab).join('') });
+}
+const big = spreads.filter(x => x.d >= 0.15).length, pp = x => (100 * x).toFixed(0);
+console.log(`== 布阵 20 套阵容 × 全部排列 × 80 场，用时 ${Date.now() - tF}ms`);
+console.log('每套 最佳/最差/规则排阵:', spreads.map(x => `${x.names} ${pp(x.best)}/${pp(x.worst)}/${pp(x.ai)}`).join('  '));
+console.log(`最佳−最差胜率差 中位 ${pp(med(spreads.map(x => x.d)))} 个百分点；≥15 个百分点的 ${big}/20；规则排阵平均比最佳低 ${pp(spreads.reduce((a, x) => a + x.best - x.ai, 0) / 20)} 个百分点`);
 
 // CI 闸门：死循环 / 编解码不一致 / 同种子不复现 任何一项出现就失败退出
 const fails = [];
