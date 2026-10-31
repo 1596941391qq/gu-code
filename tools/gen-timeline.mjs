@@ -7,25 +7,25 @@ const S = 'species', FD = 'food', CB = 'combo', TR = 'trip', FT = 'feature';
 const DAOS = ['li', 'yan', 'bing', 'jin', 'mu', 'tu', 'lei', 'guang', 'an', 'xue', 'du', 'zhi', 'hun', 'nu', 'yu', 'zhou'];
 const STARTERS = ['boar', 'tiger', 'fire', 'fireant', 'snowsilk', 'iron', 'yupi', 'thorn', 'stick', 'shengji', 'dung', 'stonecase', 'static', 'firefly', 'yueguang', 'ink', 'leech', 'hairy', 'cent', 'webspider', 'bone', 'twin', 'ant', 'aphid', 'inch', 'asahi',
   'mantis', 'queen', 'cicada', 'mole', 'gecko', 'scorp', 'drum', 'moth'];
-const FREE_FOOD = ['meat', 'dew', 'scale', 'shuangye'];
+const FREE_FOOD = ['meat', 'dew', 'shuangye', 'gutang', 'zhanjiu', 'huxin', 'qiangxian', 'kaifeng', 'duzhen', 'scale', 'guijia', 'egg', 'huanhun', 'jifeng', 'xuelian', 'helian', 'huanwei', 'zhuanshi', 'tea', 'xuming'];   // 开局就能刷到的 20 种：加攻血 4、只管这一场 3、挂件 8（攻防续杂各 2）、功能 2、影响蛊市 1、渡劫用 2
 // [id, 名, 怎么达成, need, after, [[k, id], …], 组]
 const N = [
   // —— 入门 ——
-  ['first_buy', '开张', '在蛊市买下第一只蛊', { buys: 1 }, null, [[S, 'jingzhe'], [FD, 'tea']], '入门'],
-  ['first_trip', '初入秘境', '第一次渡劫（进秘境打完回来就算，输了也算）', { trips: 1 }, null, [[S, 'snowflea'], [S, 'will'], [FD, 'gutang']], '入门'],
+  ['first_buy', '开张', '在蛊市买下第一只蛊', { buys: 1 }, null, [[S, 'jingzhe']], '入门'],
+  ['first_trip', '初入秘境', '第一次渡劫（进秘境打完回来就算，输了也算）', { trips: 1 }, null, [[S, 'snowflea'], [S, 'will']], '入门'],
   ['first_merge', '三蛊归一', '第一次把三只同种同转的蛊合成一只', { merges: 1 }, null, [[S, 'tick'], [S, 'bloodant']], '入门'],
-  ['first_combo', '杀招初成', '第一次让一个杀招成形', { combos: 1 }, 'first_merge', [[S, 'jiuchong'], [FD, 'egg']], '入门'],
+  ['first_combo', '杀招初成', '第一次让一个杀招成形', { combos: 1 }, 'first_merge', [[S, 'jiuchong']], '入门'],
   ['feeder', '养蛊人', '喂食 5 次（各类食物都算）', { feeds: 5 }, null, [[FD, 'map']], '入门'],
-  ['buyer10', '蛊市熟客', '买蛊 10 次', { buys: 10 }, 'first_buy', [[S, 'strider'], [FD, 'yuelan'], [FD, 'zhuanshi']], '入门'],
+  ['buyer10', '蛊市熟客', '买蛊 10 次', { buys: 10 }, 'first_buy', [[S, 'strider'], [FD, 'yuelan']], '入门'],
   // —— 境界 ——
   ['realm1', '一转蛊师', '渡劫成功一次（打赢本境界任一秘境最深处的首领）', { realm: 1 }, 'first_trip', [[S, 'wasp'], [S, 'spider'], [S, 'qingfu'], [S, 'bomb']], '境界'],
   ['realm2', '二转蛊师', '境界到二转', { realm: 2 }, 'realm1', [[S, 'qant'], [S, 'flea'], [S, 'bfly'], [S, 'sleep'], [FD, 'juqi']], '境界'],
   ['realm3', '三转蛊师', '境界到三转', { realm: 3 }, 'realm2', [[S, 'mirror'], [S, 'hive'], [S, 'fly'], [S, 'bury'], [FD, 'duji'], [FD, 'zhenshi']], '境界'],
-  ['realm4', '四转蛊师', '境界到四转', { realm: 4 }, 'realm3', [[S, 'xiongli'], [S, 'magma'], [S, 'hail'], [S, 'cordy'], [FD, 'huanhun']], '境界'],
+  ['realm4', '四转蛊师', '境界到四转', { realm: 4 }, 'realm3', [[S, 'xiongli'], [S, 'magma'], [S, 'hail'], [S, 'cordy']], '境界'],
   ['realm5', '五转蛊师', '境界到五转', { realm: 5 }, 'realm4', [[S, 'thunder'], [S, 'tortoise'], [S, 'puppet'], [S, 'hairworm']], '境界'],
   // —— 渡劫 ——
-  ['trips3', '三进三出', '渡劫 3 次', { trips: 3 }, 'first_trip', [[S, 'silk'], [S, 'mosq'], [FD, 'zhanjiu'], [FD, 'huxin']], '渡劫'],
-  ['trips6', '常走秘境', '渡劫 6 次', { trips: 6 }, 'trips3', [[S, 'click'], [S, 'sheli'], [S, 'bat'], [FD, 'qiangxian'], [FD, 'zhuanggu']], '渡劫'],
+  ['trips3', '三进三出', '渡劫 3 次', { trips: 3 }, 'first_trip', [[S, 'silk'], [S, 'mosq']], '渡劫'],
+  ['trips6', '常走秘境', '渡劫 6 次', { trips: 6 }, 'trips3', [[S, 'click'], [S, 'sheli'], [S, 'bat'], [FD, 'zhuanggu']], '渡劫'],
   ['trips10', '十进秘境', '渡劫 10 次', { trips: 10 }, 'trips6', [[S, 'cloud'], [S, 'shine'], [S, 'amber'], [S, 'ring'], [FD, 'duwu'], [FD, 'siwei']], '渡劫'],
   ['trips15', '识途老蛊', '渡劫 15 次', { trips: 15 }, 'trips10', [[S, 'xueyue'], [S, 'widow'], [S, 'blink']], '渡劫'],
   ['trips20', '踏遍山河', '渡劫 20 次', { trips: 20 }, 'trips15', [[S, 'orchid'], [S, 'taisui'], [S, 'yue'], [S, 'jinchan']], '渡劫'],
@@ -33,15 +33,15 @@ const N = [
   ['clears4', '连破四关', '通关秘境 4 次', { clears: 4 }, 'clears2', [[S, 'flint'], [S, 'coldcicada'], [S, 'baiyu'], [FD, 'yinhun'], [FD, 'jinggu']], '渡劫'],
   ['clears6', '六关在握', '通关秘境 6 次', { clears: 6 }, 'clears4', [[S, 'moveshan'], [S, 'magstorm'], [S, 'eclipse'], [FD, 'baibao']], '渡劫'],
   ['clears8', '八方来朝', '通关秘境 8 次', { clears: 8 }, 'clears6', [[S, 'urn'], [S, 'hex'], [S, 'saw'], [S, 'dfly']], '渡劫'],
-  ['clears10', '十关无阻', '通关秘境 10 次', { clears: 10 }, 'clears8', [[FD, 'xuming'], [FD, 'dinghun']], '渡劫'],
+  ['clears10', '十关无阻', '通关秘境 10 次', { clears: 10 }, 'clears8', [[FD, 'dinghun']], '渡劫'],
   // —— 合成与养蛊 ——
-  ['merges5', '合蛊五次', '合成 5 次', { merges: 5 }, 'first_merge', [[S, 'rhino'], [S, 'gold'], [FD, 'helian']], '养蛊'],
-  ['merges12', '炼蛊有成', '合成 12 次', { merges: 12 }, 'merges5', [[S, 'pyre'], [S, 'icesnail'], [S, 'lockarm'], [FD, 'huanwei']], '养蛊'],
+  ['merges5', '合蛊五次', '合成 5 次', { merges: 5 }, 'first_merge', [[S, 'rhino'], [S, 'gold']], '养蛊'],
+  ['merges12', '炼蛊有成', '合成 12 次', { merges: 12 }, 'merges5', [[S, 'pyre'], [S, 'icesnail'], [S, 'lockarm']], '养蛊'],
   ['merges25', '炼蛊大家', '合成 25 次', { merges: 25 }, 'merges12', [[S, 'frost'], [S, 'lure'], [S, 'antlion'], [S, 'mayfly']], '养蛊'],
   ['merges40', '千炼成器', '合成 40 次', { merges: 40 }, 'merges25', [[S, 'glacier'], [S, 'fusang'], [S, 'solar']], '养蛊'],
-  ['feeds12', '投喂有方', '喂食 12 次', { feeds: 12 }, 'feeder', [[FD, 'duzhen'], [FD, 'huorong'], [FD, 'guijia'], [FD, 'kaifeng']], '养蛊'],
-  ['feeds20', '百味蛊厨', '喂食 20 次', { feeds: 20 }, 'feeds12', [[FD, 'bingpo'], [FD, 'yeming'], [FD, 'xuelian'], [FD, 'lingxi']], '养蛊'],
-  ['feeds30', '食谱齐全', '喂食 30 次', { feeds: 30 }, 'feeds20', [[FD, 'taoya'], [FD, 'shanjiao'], [FD, 'jifeng'], [FD, 'chuanxin']], '养蛊'],
+  ['feeds12', '投喂有方', '喂食 12 次', { feeds: 12 }, 'feeder', [[FD, 'huorong']], '养蛊'],
+  ['feeds20', '百味蛊厨', '喂食 20 次', { feeds: 20 }, 'feeds12', [[FD, 'bingpo'], [FD, 'yeming'], [FD, 'lingxi']], '养蛊'],
+  ['feeds30', '食谱齐全', '喂食 30 次', { feeds: 30 }, 'feeds20', [[FD, 'taoya'], [FD, 'shanjiao'], [FD, 'chuanxin']], '养蛊'],
   ['buys30', '常客', '买蛊 30 次', { buys: 30 }, 'buyer10', [[S, 'cricket'], [S, 'locust'], [S, 'char']], '养蛊'],
   ['buys60', '蛊市贵客', '买蛊 60 次', { buys: 60 }, 'buys30', [[FD, 'huotan'], [FD, 'lingzhi'], [FD, 'leizao'], [FD, 'xuejing']], '养蛊'],
   // —— 杀招 ——
