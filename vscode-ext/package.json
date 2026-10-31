@@ -1,0 +1,21 @@
+{
+  "name": "gu-code",
+  "displayName": "蛊码 GuCode",
+  "description": "烧 Token，养蛊，斗道。用 Claude Code / Codex 的 token 用量养蛊的伴生自走棋（只读 usage 数字）。",
+  "version": "0.1.0",
+  "publisher": "hacking",
+  "license": "UNLICENSED",
+  "engines": { "vscode": "^1.80.0" },
+  "categories": ["Other"],
+  "main": "./extension.js",
+  "activationEvents": ["onStartupFinished", "onView:gucode.view", "onCommand:gucode.open", "onCommand:gucode.duel", "onCommand:gucode.share"],
+  "contributes": {
+    "commands": [
+      { "command": "gucode.open", "title": "打开空窍", "category": "蛊码" },
+      { "command": "gucode.duel", "title": "粘贴坐标码应战", "category": "蛊码" },
+      { "command": "gucode.share", "title": "复制坐标码 / 分享卡", "category": "蛊码" }
+    ],
+    "viewsContainers": { "activitybar": [ { "id": "gucode", "title": "蛊码", "icon": "media/icon.svg" } ] },
+    "views": { "gucode": [ { "type": "webview", "id": "gucode.view", "name": "空窍" } ] }
+  }
+}

@@ -1,0 +1,7 @@
+.DS_Store
+node_modules/
+*.vsix
+shots/d1-main.png
+shots/d2-battle.png
+shots/m0-start.png
+shots/m3-result.png
