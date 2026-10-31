@@ -1,3 +1,4 @@
+import { ZHENYUAN } from './core.js';
 // 蛊码 GuCode · 程序水墨蛊虫。头朝右，viewBox 0 0 100 100。墨色主体 + 一抹淡彩，毛笔边靠 #ink/#wash 滤镜。
 const INK = '#1c1915', PAPER = '#efe7d4';
 const aE = (cx, cy, rx, ry, f = INK, r = 0, ex = '') => `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="${f}"${r ? ` transform="rotate(${r} ${cx} ${cy})"` : ''}${ex}/>`;
@@ -7,7 +8,7 @@ const aF = (d, f = INK, ex = '') => `<path d="${d}" fill="${f}"${ex}/>`;
 const aLegs = arr => arr.map(([x, y, kx, ky, dx, dy, w]) => aP(`M${x} ${y} L${x + kx} ${y + ky} L${x + dx} ${y + dy}`, w || 1.8)).join('');
 const eye = (x, y, r = 1.7) => aC(x, y, r, PAPER);
 
-export const ART_DEFS = `<filter id="ink" x="-15%" y="-15%" width="130%" height="130%"><feTurbulence type="fractalNoise" baseFrequency="0.045" numOctaves="2" seed="7" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="3.4" xChannelSelector="R" yChannelSelector="G"/></filter><filter id="wash" x="-30%" y="-30%" width="160%" height="160%"><feTurbulence type="fractalNoise" baseFrequency="0.09" numOctaves="3" seed="3" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="9" xChannelSelector="R" yChannelSelector="G"/><feGaussianBlur stdDeviation="0.9"/></filter>`;
+export const ART_DEFS = `<filter id="ink" x="-15%" y="-15%" width="130%" height="130%"><feTurbulence type="fractalNoise" baseFrequency="0.045" numOctaves="2" seed="7" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="3.4" xChannelSelector="R" yChannelSelector="G"/></filter><filter id="wash" x="-30%" y="-30%" width="160%" height="160%"><feTurbulence type="fractalNoise" baseFrequency="0.09" numOctaves="3" seed="3" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="9" xChannelSelector="R" yChannelSelector="G"/><feGaussianBlur stdDeviation="0.9"/></filter><filter id="grim" x="-12%" y="-12%" width="124%" height="124%" color-interpolation-filters="sRGB"><feMorphology in="SourceAlpha" operator="dilate" radius="1.2" result="a"/><feMorphology in="SourceAlpha" operator="dilate" radius="2.4" result="b"/><feComposite in="b" in2="a" operator="out" result="r"/><feFlood flood-color="#c08a2e"/><feComposite in2="r" operator="in" result="g"/><feMerge><feMergeNode in="g"/><feMergeNode in="SourceGraphic"/></feMerge></filter><filter id="grim6" x="-14%" y="-14%" width="128%" height="128%" color-interpolation-filters="sRGB"><feMorphology in="SourceAlpha" operator="dilate" radius="1.2" result="a"/><feMorphology in="SourceAlpha" operator="dilate" radius="2.8" result="b"/><feComposite in="b" in2="a" operator="out" result="r"/><feFlood flood-color="#d9a441"/><feComposite in2="r" operator="in" result="g"/><feMorphology in="SourceAlpha" operator="dilate" radius="3.6" result="c"/><feMorphology in="SourceAlpha" operator="dilate" radius="4.2" result="d"/><feComposite in="d" in2="c" operator="out" result="r2"/><feFlood flood-color="#b5301f"/><feComposite in2="r2" operator="in" result="z"/><feMerge><feMergeNode in="z"/><feMergeNode in="g"/><feMergeNode in="SourceGraphic"/></feMerge></filter><filter id="gyun" x="-30%" y="-30%" width="160%" height="160%" color-interpolation-filters="sRGB"><feTurbulence type="fractalNoise" baseFrequency="0.06" numOctaves="2" seed="21" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="14" xChannelSelector="R" yChannelSelector="G" result="d"/><feGaussianBlur in="d" stdDeviation="2.2" result="b"/><feTurbulence type="fractalNoise" baseFrequency="0.13" numOctaves="2" seed="5" result="m"/><feColorMatrix in="m" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  2.2 0 0 0 -0.45" result="ma"/><feComposite in="b" in2="ma" operator="in"/></filter>`;
 
 const mothWings = (c1 = INK) => aF('M52 52 Q40 18 18 20 Q8 34 26 46 Q36 52 52 54 Z', c1, ' fill-opacity=".9"') + aF('M52 56 Q36 60 24 76 Q36 82 46 70 Q52 62 54 58 Z', c1, ' fill-opacity=".8"');
 
@@ -104,9 +105,83 @@ const A = {
 A.shade = () => { const t = A.twin(); return { w: '', b: `<g opacity=".5">${t.b}</g>` }; };
 A.lunar = () => { const t = A.moth(); return { w: t.w, b: `<g opacity=".55">${t.b}</g>` }; };
 
+// ---------- 升转外貌：在任何物种的原画上叠程序化图层，不改原画 ----------
+// 一转原样；二转飞白墨纹、体型略大；三转身后一圈真元色晕染；四转金线勾边、晕染更浓、脚下一方小印；
+// 五转头光、周身墨气缓缓流动（.g-qi，可被 calm / prefers-reduced-motion 关掉）；六转仙蛊：金朱背光、双线描金、金箔、仙印。
+// 品质（rarity）不画在虫身上，用 rarityFrame(r) 给卡片加边框和角标。
+const GU_BOX = [12, 28, 78, 52];   // 没登记的物种（含以后新加的）用这个外框 [x, y, w, h]
+export const RANK_BOX = { boar: [16, 33, 74, 49], fire: [12, 39, 83, 35], twin: [4, 13, 80, 65], iron: [20, 28, 72, 52], thorn: [10, 43, 85, 33], mantis: [12, 12, 79, 67], bone: [16, 48, 66, 29], queen: [7, 20, 84, 57], cicada: [12, 47, 79, 31], drum: [26, 21, 67, 63], scorp: [17, 25, 75, 56], moth: [14, 20, 68, 76], pupa: [26, 47, 60, 26], shade: [4, 13, 80, 65], lunar: [14, 20, 68, 76] };
+const RANK_HEAD = { boar: [74, 53], fire: [82, 57], twin: [69, 50], iron: [86, 60], thorn: [87, 56], mantis: [73, 31], bone: [71, 56], queen: [76, 49], cicada: [79, 54], drum: [76, 59], scorp: [64, 62], moth: [67, 48], pupa: [74, 58], shade: [69, 50], lunar: [67, 48] };
+export const RANK_CN = ['', '一', '二', '三', '四', '五', '仙'];
+export const rankColor = r => (r >= 6 ? '#d9a441' : ZHENYUAN.colors[Math.max(1, Math.min(5, r | 0))]);
+export const rarityFrame = r => `rf rf${Math.max(0, Math.min(4, r | 0))}`;
+const rn = v => +v.toFixed(1), rcl = (v, a, b) => Math.max(a, Math.min(b, v));
+const GLYPH = {   // 小印里的笔画：四、五、仙（几像素大，只取其意）
+  4: 'M-2.3 -2 h4.6 v4.1 h-4.6 z M-.8 -2 q.2 1.6 -.6 2.6 M.8 -2 v2 q0 .7 .9 .7',
+  5: 'M-2.2 -2.3 h4.4 M-.5 -2.3 l-.7 4.4 M-1.7 -.1 h3.3 v2.3 M-2.6 2.2 h5.2',
+  6: 'M-1.6 -2.6 q-.6 1.6 -1.3 2.4 M-2 -.6 v3.2 M.9 -2.6 v4.8 M-.4 -.6 v2.8 h2.7 v-2.8',
+};
+function rankSeal(x, y, r) {
+  const bg = r >= 6 ? '#b5301f' : '#a82a1b', edge = r >= 6 ? '#d9a441' : PAPER;
+  return `<g transform="translate(${rn(x)} ${rn(y)}) rotate(-7)"><rect x="-4.6" y="-4.6" width="9.2" height="9.2" rx=".5" fill="${bg}"/><rect x="-3.5" y="-3.5" width="7" height="7" fill="none" stroke="${edge}" stroke-width=".55"/><path d="${GLYPH[Math.min(6, r)]}" fill="none" stroke="${PAPER}" stroke-width=".75" stroke-linecap="round" stroke-linejoin="round" transform="scale(.82)"/></g>`;
+}
+export function rankLayers(rank, bbox = GU_BOX, o = {}) {
+  const r = rcl(rank | 0, 1, 6), [x, y, w, h] = bbox, cx = x + w / 2, cy = y + h / 2, col = rankColor(r);
+  const L = { back: '', front: '', rim: r >= 4 ? (r >= 6 ? 'grim6' : 'grim') : '', scale: [1, 1, 1.04, 1.06, 1.08, 1.09, 1.1][r] };
+  if (r < 2) return L;
+  // 二转起：飞白——两道干笔，每道是几根错开断开的纸色细丝，裁在虫身轮廓里，只在墨上露白
+  const DA = ['7 1.6 11 2.4 4 1.2', '12 2.8 5 1.4 9 2', '4 1.2 9 3 13 1.6', '10 1.8 3 2.6 8 1.4'];
+  let fb = '';
+  [[.04, .4, .96, .3, .5], [.14, .66, .9, .58, .58]].forEach(([a, b, c, d, cm], j) => {
+    for (let i = 0; i < 4; i++) {
+      const off = i * 1.15 - 1.7, x1 = x + w * a, y1 = y + h * b + off, x2 = x + w * c, y2 = y + h * d + off, mx = x + w * cm, my = Math.min(y1, y2) - h * .1 + off;
+      fb += `<path d="M${rn(x1 + i * 1.5)} ${rn(y1)} Q${rn(mx)} ${rn(my)} ${rn(x2 - i * 2)} ${rn(y2)}" stroke-width="${[.9, .6, .75, .5][i]}" stroke-dasharray="${DA[(i + j) % 4]}" stroke-dashoffset="${i * 3 + j * 5}"/>`;
+    }
+  });
+  L.front += `<g clip-path="url(#${o.clip})"><g stroke="${PAPER}" fill="none" stroke-linecap="round" opacity="${r >= 4 ? .85 : .75}" filter="url(#ink)">${fb}</g></g>`;
+  // 三转起：身后真元色晕染，一转比一转浓
+  if (r >= 3) {
+    const ax = Math.min(42, w * .56 + 6), ay = Math.min(40, h * .56 + 8), k = [0, 0, 0, .6, .8, .9, 1][r];
+    const ring = (s, op, c) => `<ellipse cx="${rn(cx)}" cy="${rn(cy)}" rx="${rn(ax * s)}" ry="${rn(ay * s)}" fill="${c}" fill-opacity="${op}"/>`;
+    L.back += `<g filter="url(#gyun)" opacity="${k}">${ring(1, .32, col)}${ring(.78, .38, col)}${ring(.54, .42, col)}${r >= 6 ? ring(.62, .42, '#b5301f') + ring(.36, .5, '#d9a441') : ''}</g>`;
+  }
+  // 四转起：脚下一方小印（金线勾边由 rim 滤镜做）
+  if (r >= 4) L.front += rankSeal(Math.min(91, x + w * .82), Math.min(92, y + h + 4), r);
+  // 五转起：头光 + 墨气
+  if (r >= 5) {
+    const [hx, hy] = o.head || [x + w * .8, y + h * .4], hr = r >= 6 ? 14 : 12;
+    L.back += `<g fill="none" filter="url(#ink)"><circle cx="${hx}" cy="${hy}" r="${hr}" fill="${PAPER}" fill-opacity=".55"/><circle cx="${hx}" cy="${hy}" r="${hr}" fill="${col}" fill-opacity="${r >= 6 ? .28 : .24}"/><circle cx="${hx}" cy="${hy}" r="${hr}" stroke="${col}" stroke-width="1.6"/><circle cx="${hx}" cy="${hy}" r="${hr + 2.6}" stroke="${col}" stroke-width=".7" opacity=".75"/></g>`;
+    // 墨气：绕身两三道断续的弧，像气在身周打转
+    const qc = r >= 6 ? '#b8862b' : '#1c1915', ex = Math.min(46, w * .56 + 5), ey = Math.min(44, h * .56 + 7);
+    const arc = (a0, a1, s, sw, op) => { let d = ''; for (let i = 0; i <= 24; i++) { const t = (a0 + (a1 - a0) * i / 24) * Math.PI / 180, k = s * (1 + .06 * Math.sin(i * .9)); d += `${i ? 'L' : 'M'}${rn(rcl(cx + Math.cos(t) * ex * k, 2, 98))} ${rn(rcl(cy + Math.sin(t) * ey * k, 2, 98))} `; } return `<path d="${d}" stroke-width="${sw}" opacity="${op}"/>`; };
+    const wisps = arc(150, 250, 1, 1.8, .55) + arc(320, 410, .96, 1.5, .5) + arc(60, 120, 1.06, 1.1, .4) + arc(255, 300, .9, .9, .35);
+    L.back += `<g class="${o.still ? '' : 'g-qi'}" fill="none" stroke="${qc}" stroke-linecap="round" filter="url(#wash)">${wisps}</g>`;
+  }
+  // 六转仙蛊：金色背光（火焰纹）+ 金箔
+  if (r >= 6) {
+    const ax = Math.min(47, w * .64 + 4), ay = Math.min(46, Math.max(30, h * .72 + 6));
+    let d = '';
+    for (let i = 0; i <= 96; i++) { const t = i / 96 * 6.2832, k = 1 + .07 * Math.pow(Math.abs(Math.sin(t * 6)), 3); d += `${i ? 'L' : 'M'}${rn(cx + Math.cos(t) * ax * k)} ${rn(cy + Math.sin(t) * ay * k)} `; }   // 尖焰
+    L.back = `<g fill="none" filter="url(#ink)"><path d="${d}Z" stroke="#d9a441" stroke-width="1.1" opacity=".9"/><ellipse cx="${rn(cx)}" cy="${rn(cy)}" rx="${rn(ax * .86)}" ry="${rn(ay * .86)}" stroke="#b5301f" stroke-width=".6" opacity=".7"/></g>` + L.back;
+    const leaf = [[.02, .1], [.9, .04], [1.02, .7], [-.04, .82], [.46, -.12], [.7, 1.08], [.2, 1.04]];
+    L.front += leaf.map(([a, b], i) => { const px = rcl(x + w * a, 3, 96), py = rcl(y + h * b, 3, 96), s = 1.4 + (i % 3) * .5; return `<path d="M${rn(px)} ${rn(py - s)} L${rn(px + s * .8)} ${rn(py)} L${rn(px)} ${rn(py + s * .9)} L${rn(px - s * .7)} ${rn(py + .2)} Z" fill="${i % 2 ? '#e8c76a' : '#c08a2e'}"/>`; }).join('');
+  }
+  return L;
+}
+
 export function guSVG(sp, o = {}) {
   const f = A[sp] || A.pupa, { w, b } = f();
   const size = o.size ? ` width="${o.size}" height="${o.size}"` : '';
-  const defs = o.standalone ? `<defs>${ART_DEFS}</defs>` : '';
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"${size} class="gsvg" aria-hidden="true">${defs}<g filter="url(#wash)" opacity=".5">${w}</g><g filter="url(#ink)">${b}</g></svg>`;
+  const r = Math.max(1, Math.min(6, o.rank | 0 || 1)), rar = o.rarity != null ? ` data-rar="${Math.max(0, Math.min(4, o.rarity | 0))}"` : '';
+  if (r === 1) {   // 一转：原画原样
+    const defs = o.standalone ? `<defs>${ART_DEFS}</defs>` : '';
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"${size} class="gsvg" aria-hidden="true"${rar}>${defs}<g filter="url(#wash)" opacity=".5">${w}</g><g filter="url(#ink)">${b}</g></svg>`;
+  }
+  const key = A[sp] ? sp : 'pupa', box = RANK_BOX[key] || GU_BOX, clip = 'gc-' + key;
+  const L = rankLayers(r, box, { head: RANK_HEAD[key], clip, still: o.still || o.standalone });
+  const cx = rn(box[0] + box[2] / 2), cy = rn(box[1] + box[3] / 2);
+  const T = L.scale !== 1 ? ` transform="translate(${cx} ${cy}) scale(${L.scale}) translate(${-cx} ${-cy})"` : '';
+  const defs = `<defs>${o.standalone ? ART_DEFS : ''}<clipPath id="${clip}">${b.replace(/<\/?g\b[^>]*>/g, '')}</clipPath></defs>`;
+  const body = L.rim ? `<g filter="url(#${L.rim})">${b}</g>` : b;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"${size} class="gsvg gr${r}" aria-hidden="true"${rar}>${defs}<g${T}>${L.back}<g filter="url(#wash)" opacity=".5">${w}</g><g filter="url(#ink)">${body}</g>${L.front}</g></svg>`;
 }
