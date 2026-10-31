@@ -1,7 +1,7 @@
 // 蛊码 GuCode · 状态和效果的名字与说明。全游戏只用这一套名字（洞府、秘境、试阵、斗幽灵、蛊典、战斗画面共用），纯数据 + 纯函数，不 import 任何文件。
 //   GLOSS            每个词一行：{ id 引擎里的键, n 名字, kind 'buff' 增益 | 'debuff' 减益 | 'act' 招式效果 | 'rule' 战斗规则 | 'term' 说明用词, col 图标颜色, d 一句大白话 }
 //   GL / GL_BY_NAME  按 id、按名字查
-//   ST_NAME          引擎状态键 → 名字（战斗画面头顶图标、战斗记录、悬停都用它）
+//   ST_NAME          引擎状态键 → 名字（战斗画面蛊身上的小牌子、战斗记录、悬停都用它）
 //   glossHTML(text)  把一段纯文字转义成 HTML，并给里面的这些词加虚下划线（.gl，悬停或点一下看说明，ui.js 的提示框接 data-tip-fn="gl"）
 //   glossNote(text)  这段文字里出现了哪些词，逐个写「名字 · 增益或减益：说明」（悬停提示框里用：提示框本身不能再悬停，就把说明直接列在下面）
 //   glossTip(id)     一个词的提示框内容
@@ -58,6 +58,6 @@ export function glossTip(id) {
 export function glossTable() {
   const row = g => `<li><b class="glic" style="background:${g.col || '#5a5244'}">${g.n}</b><span class="glk gl-${g.kind}">${glEsc(glossKind(g))}</span><p>${glEsc(g.d)}</p></li>`;
   const sec = (k, h) => { const L = GLOSS.filter(g => g.kind === k); return L.length ? `<h5>${glEsc(h)}</h5><ul class="gltab">${L.map(row).join('')}</ul>` : ''; };
-  return `<div class="glossary"><p class="sm">蛊身上挂的状态分两种：<b>增益</b>是对它有利的，<b>减益</b>是对它不利的。头顶的小牌子写着状态名和数字（层数、次数、轮数或每轮掉多少血），悬停或点一下蛊能看全部。</p>`
+  return `<div class="glossary"><p class="sm">蛊身上挂的状态分两种：<b>增益</b>是对它有利的，<b>减益</b>是对它不利的。战斗里蛊身下沿的小牌子写着状态名和数字（层数、次数、轮数或每轮掉多少血），一格放不下的合成「+几」，悬停或点一下蛊能看全部。文字里带虚线的词，悬停或点一下也能看说明。</p>`
     + sec('debuff', '减益（对它不利）') + sec('buff', '增益（对它有利）') + sec('act', '招式效果（当场生效，不挂在身上）') + sec('rule', '战斗规则') + '</div>';
 }

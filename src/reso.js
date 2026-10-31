@@ -1,7 +1,7 @@
 // 蛊码 GuCode · 道共鸣和杀招的常驻显示（洞府空窍上方、秘境队伍上方共用这一套，别各写一套）。只出 HTML 字符串，不碰 DOM。
 //   resoHTML(team, opts)  一排横排自动折行的小签：已触发的共鸣一道一签描朱「炎道 2/2 · 攻 +15%」（相冲写「相冲五折」）；
 //                         还没触发的道合成一枚灰签「金·力·奴·血 各 1/2」，悬停逐道写「再 1 只：…」；成形的杀招各一签。
-//                         悬停（data-tip）写每只蛊实际加了多少，例如「赤焰蛊 攻 20 → 23（+3）」。
+//                         悬停（data-tip-fn="gtx"，ui.js 的提示框，状态名带说明）写每只蛊实际加了多少，例如「赤焰蛊 攻 20 → 23（+3）」。
 //     opts.near   = false 离下一档差一只的签不描虚线（默认描）
 //     opts.lone   = false 不列还没触发的那枚灰签（默认列）
 //     opts.combos = false 不列杀招（默认列）
@@ -91,17 +91,17 @@ export function resoHTML(team, opts = {}) {
     const txt = [`${x.name} ${x.cnt}/${x.cap}`, x.sum, clash ? '相冲' + zhe(x.clash).replace(/^打/, '') : ''].filter(Boolean).join(' · ');
     const tip = [`${x.name}共鸣（${x.tier} 只）：${x.d}${clash ? `（${clash}）` : ''}`, ...x.gus,
       x.next === 1 && x.nextD ? `再 1 只：${x.nextD}` : x.next > 1 ? `再 ${x.next} 只升一档` : ''].filter(Boolean).join('\n');
-    chips.push(`<span class="rz on${clash ? ' clash' : ''}${near && x.next === 1 ? ' near' : ''}" style="--dc:${esc(x.color)}" data-tip="${esc(tip)}"><b>${esc(x.ch)}</b>${esc(txt)}</span>`);
+    chips.push(`<span class="rz on${clash ? ' clash' : ''}${near && x.next === 1 ? ' near' : ''}" style="--dc:${esc(x.color)}" data-tip-fn="gtx" data-d="${esc(tip)}"><b>${esc(x.ch)}</b>${esc(txt)}</span>`);
   }
   // 还没触发的道（阵上各 1 只）合成一枚灰签：「金·力·奴·血 各 1/2」，悬停逐道写「再 1 只：…」
   if (lone.length && opts.lone !== false) {
     const cnt = [...new Set(lone.map(x => `${x.cnt}/${x.cap}`))], txt = `${lone.map(x => x.ch).join('·')} ${cnt.length === 1 ? (lone.length > 1 ? '各 ' : '') + cnt[0] : ''}`.trim();
     const tip = ['还没触发的道（同一道凑到 2 只触发共鸣）：', ...lone.map(x => `${x.name} ${x.cnt}/${x.cap} · 再 ${x.next || 1} 只：${x.nextSum || x.nextD || '触发共鸣'}`)].join('\n');
-    chips.push(`<span class="rz lone" data-tip="${esc(tip)}">${esc(txt)}</span>`);
+    chips.push(`<span class="rz lone" data-tip-fn="gtx" data-d="${esc(tip)}">${esc(txt)}</span>`);
   }
   if (opts.combos !== false) for (const c of combos) {
     const tip = [`杀招「${c.n}」：${c.d || ''}`, `核心蛊：${RANK.names[c.rank] || ''}${c.coreName}，威力 ×${c.mul}`, lowLine(c), comboStrat(c)].filter(Boolean).join('\n');
-    chips.push(`<span class="rz combo" data-tip="${esc(tip)}"><b>招</b>${esc(c.n)}${c.mul && c.mul !== 1 ? ` ×${c.mul}` : ''}</span>`);
+    chips.push(`<span class="rz combo" data-tip-fn="gtx" data-d="${esc(tip)}"><b>招</b>${esc(c.n)}${c.mul && c.mul !== 1 ? ` ×${c.mul}` : ''}</span>`);
   }
   if (!chips.length) return opts.empty ? `<div class="reso2"><span class="rz none">${esc(opts.empty)}</span></div>` : '';
   return `<div class="reso2">${chips.join('')}</div>`;
