@@ -258,6 +258,14 @@ body:has(#tut-layer) .sheet-bg{z-index:1001}   /* 引导进行中打开的面板
 .stab{width:100%;border-collapse:collapse;font-size:12px;text-align:center;margin:4px 0}
 .stab th{font:400 13px var(--kai);color:var(--mu);padding:2px 0}.stab td{padding:3px 0;border-top:1px solid var(--line)}
 .stab .on{color:var(--zhu2)}.stab td.on{box-shadow:inset 0 -2px 0 var(--zhu2)}
+/* 蛊详情「每一转」：一转一行，当前这一转描朱，没到的灰着；三转、五转觉醒单独一行 */
+.grows{display:flex;flex-direction:column;gap:2px;margin:4px 0}
+.grow{display:grid;grid-template-columns:4.4em 1fr;column-gap:8px;align-items:baseline;padding:3px 6px;border-left:2px solid transparent;font-size:13px}
+.grow b{font:400 14px var(--kai);color:var(--mu)}
+.grow .gsk{grid-column:2;font-size:12px;color:var(--mu);line-height:1.45}
+.grow.on{border-left-color:var(--zhu2);background:rgba(181,48,31,.06)}.grow.on b,.grow.on small{color:var(--zhu2)}
+.grow.later{opacity:.5}
+.grow.aw b{font-size:13px}.grow.aw.got b{color:var(--zhu2)}
 /* 合成时挑蛊性 */
 .xpick{display:grid;gap:8px;margin-top:8px}.xpick button{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:10px;border-radius:3px;text-align:left}
 .xpick b{font:400 16px var(--kai)}.xpick small{font-size:12px;opacity:.85}
