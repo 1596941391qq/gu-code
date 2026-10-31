@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>蛊码 · 爽感组件</title>
+<!-- 本地起服务看：python3 -m http.server 8765，然后打开 http://localhost:8765/tools/fx-demo.html -->
+<link rel="stylesheet" href="../style.css">
+<style>
+  .demo section{margin-top:18px;padding-top:12px;border-top:1px solid var(--line)}
+  .demo .btns{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+  .demo .btns button{padding:7px 12px;border:1px solid var(--line);border-radius:3px;font:15px var(--kai);background:var(--bg2)}
+  .demo .btns button:hover{border-color:var(--line2)}
+  .demo .btns button.r0{color:var(--fx-r0)} .demo .btns button.r1{color:var(--fx-r1)} .demo .btns button.r2{color:var(--fx-r2)} .demo .btns button.r3{color:var(--fx-r3)} .demo .btns button.r4{color:var(--fx-r4)}
+  .demo .note{font-size:12px;color:var(--mu);margin:4px 0 0}
+  #reelHost{margin-top:12px;min-height:150px;display:flex;justify-content:center}
+  .counter{display:flex;align-items:baseline;gap:8px;margin-top:10px}
+  .counter b{font:700 34px/1 var(--mono);color:var(--fx-r4);font-variant-numeric:tabular-nums}
+  .counter span{font:14px var(--kai);color:var(--mu)}
+  .ib.on{border-color:var(--zhu);color:var(--zhu2)}
+</style>
+</head>
+<body>
+<div id="app" class="demo">
+  <header class="top">
+    <div class="brand"><span class="logo">蛊码</span><span class="sub">爽感组件</span></div>
+    <div class="tools"><button class="ib" id="bTheme" title="主题">夜</button><button class="ib" id="bCalm" title="减弱震屏和闪光">震闪</button><button class="ib on" id="bSnd" title="声音">声</button></div>
+  </header>
+
+  <section>
+    <span class="lbl">开茧 <small>摇 → 裂 → 裂缝透色逐档升 → 破茧落印</small></span>
+    <div class="btns" id="cocoonBtns"></div>
+    <p class="note">「珍·差一档」：最后一道裂缝闪一下绝品的紫，再落回珍。</p>
+  </section>
+
+  <section>
+    <span class="lbl">转轮蛊市 <small>三格依次停</small></span>
+    <div class="btns"><button data-reel="plain">转一次</button><button data-reel="near">近失（前两格同种）</button><button data-reel="triple">三连</button></div>
+    <div id="reelHost"></div>
+  </section>
+
+  <section>
+    <span class="lbl">宝箱 <small>木 铜 银 金 玄</small></span>
+    <div class="btns" id="chestBtns"></div>
+  </section>
+
+  <section>
+    <span class="lbl">升级 · 成就 · 点亮</span>
+    <div class="btns"><button id="bLevel">蛊师升级</button><button data-toast="0">成就 · 铜</button><button data-toast="1">成就 · 银</button><button data-toast="2">成就 · 金</button><button data-toast="h">隐藏成就</button><button id="bToast3">连发四张（排队）</button><button id="bUnlock">功能点亮</button></div>
+  </section>
+
+  <section>
+    <span class="lbl">跳数字 · 飘字</span>
+    <div class="counter"><b id="cnt">120</b><span>元石</span></div>
+    <div class="btns"><button data-float="gain">+36◈</button><button data-float="qi">+灵气</button><button data-float="heal">伤愈</button><button data-float="crit">暴 -48</button></div>
+  </section>
+
+  <section>
+    <span class="lbl">音色 <small>SFX，每个都是 (ctx, t, out, k) =&gt; void</small></span>
+    <div class="btns" id="sfxBtns"></div>
+  </section>
+  <p class="fine">点一下动画可跳到最终态，最终态再点一下收起。</p>
+</div>
+
+<script type="module">
+import * as fx from '../src/fx.js';
+import { guSVG, ART_DEFS } from '../src/art.js';
+
+document.body.insertAdjacentHTML('afterbegin', `<svg id="gu-defs" width="0" height="0" style="position:absolute" aria-hidden="true"><defs>${ART_DEFS}</defs></svg>`);
+const $ = s => document.querySelector(s);
+const qs = new URLSearchParams(location.search);
+
+// 主题
+const root = document.documentElement;
+let theme = qs.get('theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+const applyTheme = () => { root.dataset.theme = theme; $('#bTheme').textContent = theme === 'light' ? '日' : '夜'; };
+applyTheme();
+$('#bTheme').onclick = () => { theme = theme === 'light' ? 'dark' : 'light'; applyTheme(); };
+
+// 减弱震屏和闪光
+let calm = qs.get('calm') === '1';
+const applyCalm = () => { fx.fxConfig({ calm }); $('#bCalm').classList.toggle('on', calm); $('#bCalm').textContent = calm ? '震闪弱' : '震闪'; };
+applyCalm();
+$('#bCalm').onclick = () => { calm = !calm; applyCalm(); };
+
+// 声音：演示页自己的 AudioContext + 总音量，组件只回调 onSound(name, k)
+let sound = qs.get('mute') !== '1', AC = null, master = null;
+const ac = () => { if (!AC) { const C = window.AudioContext || window.webkitAudioContext; if (!C) return null; AC = new C(); master = AC.createGain(); master.gain.value = .8; master.connect(AC.destination); } if (AC.state === 'suspended') AC.resume(); return AC; };
+fx.fxConfig({ onSound: (n, k) => { if (!sound || !fx.SFX[n] || !ac()) return; fx.SFX[n](AC, AC.currentTime + .005, master, k); } });
+$('#bSnd').onclick = () => { sound = !sound; $('#bSnd').classList.toggle('on', sound); };
+
+// 演示数据
+const GU = [['boar', '野猪蛊'], ['fire', '流火蛊'], ['iron', '铁甲蛊'], ['mantis', '噬心蛊'], ['cicada', '金蝉蛊']];
+const RN = ['凡', '良', '珍', '绝', '天'], CN = ['木', '铜', '银', '金', '玄'];
+window.fx = fx;
+const demo = window.demo = {
+  cocoon: (r, tease) => fx.openCocoon(document.body, { rarity: r, artHTML: guSVG(GU[r][0]), name: GU[r][1], tease }),
+  reels: kind => {
+    const host = $('#reelHost'); host.innerHTML = '';
+    const pool = ['boar', 'fire', 'iron', 'thorn', 'mantis', 'cicada', 'drum', 'scorp', 'moth'].map(s => guSVG(s));
+    const pick = () => pool[(Math.random() * pool.length) | 0];
+    const a = guSVG('cicada'), items = kind === 'triple' ? [a, a, a] : kind === 'near' ? [a, a, guSVG('drum')] : [guSVG('boar'), guSVG('moth'), guSVG('iron')];
+    return fx.spinReels(host, { items, pool, nearMiss: kind === 'near', triple: kind === 'triple' });
+  },
+  chest: t => fx.openChest(document.body, { tier: t, rewards: [
+    { icon: '◈', label: '元石', amount: [12, 30, 60, 160, 320][t] },
+    { icon: '灵', label: '灵气', amount: [200, 500, 1200, 3000, 8000][t] },
+    ...(t >= 2 ? [{ icon: guSVG('scorp'), label: '蝎尾蛊', amount: 1 }] : []),
+    ...(t >= 3 ? [{ icon: '符', label: '道痕符', amount: t === 4 ? 2 : 1 }] : []),
+  ] }),
+  level: () => fx.levelUp(document.body, { level: 12, title: '炼蛊师', rewards: [{ icon: '◈', label: '元石', amount: 50 }, { icon: '意', label: '意志上限', amount: 1 }, { icon: '茧', label: '天机进度', amount: 3 }] }),
+  toast: k => fx.toastAchievement(k === 'h'
+    ? { tier: 1, hidden: true, name: '尸山月影', desc: '一局里同时触发三次杀招' }
+    : [{ tier: 0, name: '初试锋芒', desc: '第一次斗蛊获胜' }, { tier: 1, name: '十连胜', desc: '连胜十场，结算加成翻倍' }, { tier: 2, name: '天品出世', desc: '开茧开出天品蛊' }][k]),
+  unlock: () => fx.unlockReveal(document.body, { name: '蛊市已开', line: '元石可以买蛊了。三只同种合炼升星。' }),
+};
+
+// 按钮
+$('#cocoonBtns').innerHTML = RN.map((n, i) => `<button class="r${i}" data-r="${i}">${n}</button>`).join('') + '<button class="r2" data-r="2" data-tease="1">珍 · 差一档</button>';
+$('#cocoonBtns').onclick = e => { const b = e.target.closest('button'); if (b) demo.cocoon(+b.dataset.r, !!b.dataset.tease); };
+document.querySelectorAll('[data-reel]').forEach(b => b.onclick = () => demo.reels(b.dataset.reel));
+$('#chestBtns').innerHTML = CN.map((n, i) => `<button data-t="${i}">${n}箱</button>`).join('');
+$('#chestBtns').onclick = e => { const b = e.target.closest('button'); if (b) demo.chest(+b.dataset.t); };
+$('#bLevel').onclick = demo.level;
+document.querySelectorAll('[data-toast]').forEach(b => b.onclick = () => demo.toast(b.dataset.toast === 'h' ? 'h' : +b.dataset.toast));
+$('#bToast3').onclick = () => { demo.toast(0); demo.toast(1); demo.toast(2); demo.toast('h'); };
+$('#bUnlock').onclick = demo.unlock;
+let cnt = 120;
+document.querySelectorAll('[data-float]').forEach(b => b.onclick = () => {
+  const k = b.dataset.float, el = $('#cnt');
+  fx.floatText(el, b.textContent, k);
+  if (k === 'gain') { fx.rollNumber(el, cnt, cnt + 36, 520); cnt += 36; fx.fxConfig().onSound('coin'); }
+});
+$('#sfxBtns').innerHTML = Object.keys(fx.SFX).map(n => `<button data-s="${n}">${n}</button>`).join('');
+$('#sfxBtns').onclick = e => { const b = e.target.closest('button'); if (b) fx.fxConfig().onSound(b.dataset.s, 2); };
+</script>
+</body>
+</html>
