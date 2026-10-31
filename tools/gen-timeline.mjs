@@ -12,40 +12,40 @@ const FREE_FOOD = ['meat', 'dew', 'scale', 'shuangye'];
 const N = [
   // —— 入门 ——
   ['first_buy', '开张', '在蛊市买下第一只蛊', { buys: 1 }, null, [[S, 'jingzhe'], [FD, 'tea']], '入门'],
-  ['first_trip', '初入秘境', '第一次出征（打完回来就算，输了也算）', { trips: 1 }, null, [[S, 'snowflea'], [S, 'will']], '入门'],
+  ['first_trip', '初入秘境', '第一次渡劫（进秘境打完回来就算，输了也算）', { trips: 1 }, null, [[S, 'snowflea'], [S, 'will'], [FD, 'gutang']], '入门'],
   ['first_merge', '三蛊归一', '第一次把三只同种同转的蛊合成一只', { merges: 1 }, null, [[S, 'tick'], [S, 'bloodant']], '入门'],
   ['first_combo', '杀招初成', '第一次让一个杀招成形', { combos: 1 }, 'first_merge', [[S, 'jiuchong'], [FD, 'egg']], '入门'],
-  ['feeder', '养蛊人', '喂食 5 次（挂件、出征用的也算）', { feeds: 5 }, null, [[FD, 'map']], '入门'],
-  ['buyer10', '蛊市熟客', '买蛊 10 次', { buys: 10 }, 'first_buy', [[S, 'strider'], [FD, 'yuelan']], '入门'],
+  ['feeder', '养蛊人', '喂食 5 次（各类食物都算）', { feeds: 5 }, null, [[FD, 'map']], '入门'],
+  ['buyer10', '蛊市熟客', '买蛊 10 次', { buys: 10 }, 'first_buy', [[S, 'strider'], [FD, 'yuelan'], [FD, 'zhuanshi']], '入门'],
   // —— 境界 ——
   ['realm1', '一转蛊师', '渡劫成功一次（打赢本境界任一秘境最深处的首领）', { realm: 1 }, 'first_trip', [[S, 'wasp'], [S, 'spider'], [S, 'qingfu'], [S, 'bomb']], '境界'],
-  ['realm2', '二转蛊师', '境界到二转', { realm: 2 }, 'realm1', [[S, 'qant'], [S, 'flea'], [S, 'bfly'], [S, 'sleep']], '境界'],
-  ['realm3', '三转蛊师', '境界到三转', { realm: 3 }, 'realm2', [[S, 'mirror'], [S, 'hive'], [S, 'fly'], [S, 'bury']], '境界'],
-  ['realm4', '四转蛊师', '境界到四转', { realm: 4 }, 'realm3', [[S, 'xiongli'], [S, 'magma'], [S, 'hail'], [S, 'cordy']], '境界'],
+  ['realm2', '二转蛊师', '境界到二转', { realm: 2 }, 'realm1', [[S, 'qant'], [S, 'flea'], [S, 'bfly'], [S, 'sleep'], [FD, 'juqi']], '境界'],
+  ['realm3', '三转蛊师', '境界到三转', { realm: 3 }, 'realm2', [[S, 'mirror'], [S, 'hive'], [S, 'fly'], [S, 'bury'], [FD, 'duji'], [FD, 'zhenshi']], '境界'],
+  ['realm4', '四转蛊师', '境界到四转', { realm: 4 }, 'realm3', [[S, 'xiongli'], [S, 'magma'], [S, 'hail'], [S, 'cordy'], [FD, 'huanhun']], '境界'],
   ['realm5', '五转蛊师', '境界到五转', { realm: 5 }, 'realm4', [[S, 'thunder'], [S, 'tortoise'], [S, 'puppet'], [S, 'hairworm']], '境界'],
-  // —— 出征 ——
-  ['trips3', '三进三出', '出征 3 次', { trips: 3 }, 'first_trip', [[S, 'silk'], [S, 'mosq']], '出征'],
-  ['trips6', '常走秘境', '出征 6 次', { trips: 6 }, 'trips3', [[S, 'click'], [S, 'sheli'], [S, 'bat']], '出征'],
-  ['trips10', '十进秘境', '出征 10 次', { trips: 10 }, 'trips6', [[S, 'cloud'], [S, 'shine'], [S, 'amber'], [S, 'ring']], '出征'],
-  ['trips15', '识途老蛊', '出征 15 次', { trips: 15 }, 'trips10', [[S, 'xueyue'], [S, 'widow'], [S, 'blink']], '出征'],
-  ['trips20', '踏遍山河', '出征 20 次', { trips: 20 }, 'trips15', [[S, 'orchid'], [S, 'taisui'], [S, 'yue'], [S, 'jinchan']], '出征'],
-  ['clears2', '再下一城', '通关秘境 2 次（打赢最深处的首领，哪个秘境、第几劫都算）', { clears: 2 }, 'realm1', [[S, 'stag'], [S, 'glut'], [S, 'toad']], '出征'],
-  ['clears4', '连破四关', '通关秘境 4 次', { clears: 4 }, 'clears2', [[S, 'flint'], [S, 'coldcicada'], [S, 'baiyu']], '出征'],
-  ['clears6', '六关在握', '通关秘境 6 次', { clears: 6 }, 'clears4', [[S, 'moveshan'], [S, 'magstorm'], [S, 'eclipse']], '出征'],
-  ['clears8', '八方来朝', '通关秘境 8 次', { clears: 8 }, 'clears6', [[S, 'urn'], [S, 'hex'], [S, 'saw'], [S, 'dfly']], '出征'],
-  ['clears10', '十关无阻', '通关秘境 10 次', { clears: 10 }, 'clears8', [[FD, 'xuming'], [FD, 'dinghun']], '出征'],
+  // —— 渡劫 ——
+  ['trips3', '三进三出', '渡劫 3 次', { trips: 3 }, 'first_trip', [[S, 'silk'], [S, 'mosq'], [FD, 'zhanjiu'], [FD, 'huxin']], '渡劫'],
+  ['trips6', '常走秘境', '渡劫 6 次', { trips: 6 }, 'trips3', [[S, 'click'], [S, 'sheli'], [S, 'bat'], [FD, 'qiangxian'], [FD, 'zhuanggu']], '渡劫'],
+  ['trips10', '十进秘境', '渡劫 10 次', { trips: 10 }, 'trips6', [[S, 'cloud'], [S, 'shine'], [S, 'amber'], [S, 'ring'], [FD, 'duwu'], [FD, 'siwei']], '渡劫'],
+  ['trips15', '识途老蛊', '渡劫 15 次', { trips: 15 }, 'trips10', [[S, 'xueyue'], [S, 'widow'], [S, 'blink']], '渡劫'],
+  ['trips20', '踏遍山河', '渡劫 20 次', { trips: 20 }, 'trips15', [[S, 'orchid'], [S, 'taisui'], [S, 'yue'], [S, 'jinchan']], '渡劫'],
+  ['clears2', '再下一城', '通关秘境 2 次（打赢最深处的首领，哪个秘境、第几劫都算）', { clears: 2 }, 'realm1', [[S, 'stag'], [S, 'glut'], [S, 'toad']], '渡劫'],
+  ['clears4', '连破四关', '通关秘境 4 次', { clears: 4 }, 'clears2', [[S, 'flint'], [S, 'coldcicada'], [S, 'baiyu'], [FD, 'yinhun'], [FD, 'jinggu']], '渡劫'],
+  ['clears6', '六关在握', '通关秘境 6 次', { clears: 6 }, 'clears4', [[S, 'moveshan'], [S, 'magstorm'], [S, 'eclipse'], [FD, 'baibao']], '渡劫'],
+  ['clears8', '八方来朝', '通关秘境 8 次', { clears: 8 }, 'clears6', [[S, 'urn'], [S, 'hex'], [S, 'saw'], [S, 'dfly']], '渡劫'],
+  ['clears10', '十关无阻', '通关秘境 10 次', { clears: 10 }, 'clears8', [[FD, 'xuming'], [FD, 'dinghun']], '渡劫'],
   // —— 合成与养蛊 ——
-  ['merges5', '合蛊五次', '合成 5 次', { merges: 5 }, 'first_merge', [[S, 'rhino'], [S, 'gold']], '养蛊'],
-  ['merges12', '炼蛊有成', '合成 12 次', { merges: 12 }, 'merges5', [[S, 'pyre'], [S, 'icesnail'], [S, 'lockarm']], '养蛊'],
+  ['merges5', '合蛊五次', '合成 5 次', { merges: 5 }, 'first_merge', [[S, 'rhino'], [S, 'gold'], [FD, 'helian']], '养蛊'],
+  ['merges12', '炼蛊有成', '合成 12 次', { merges: 12 }, 'merges5', [[S, 'pyre'], [S, 'icesnail'], [S, 'lockarm'], [FD, 'huanwei']], '养蛊'],
   ['merges25', '炼蛊大家', '合成 25 次', { merges: 25 }, 'merges12', [[S, 'frost'], [S, 'lure'], [S, 'antlion'], [S, 'mayfly']], '养蛊'],
   ['merges40', '千炼成器', '合成 40 次', { merges: 40 }, 'merges25', [[S, 'glacier'], [S, 'fusang'], [S, 'solar']], '养蛊'],
-  ['feeds12', '投喂有方', '喂食 12 次', { feeds: 12 }, 'feeder', [[FD, 'duzhen'], [FD, 'huorong']], '养蛊'],
-  ['feeds20', '百味蛊厨', '喂食 20 次', { feeds: 20 }, 'feeds12', [[FD, 'bingpo'], [FD, 'yeming'], [FD, 'xuelian']], '养蛊'],
-  ['feeds30', '食谱齐全', '喂食 30 次', { feeds: 30 }, 'feeds20', [[FD, 'taoya'], [FD, 'shanjiao'], [FD, 'jifeng']], '养蛊'],
+  ['feeds12', '投喂有方', '喂食 12 次', { feeds: 12 }, 'feeder', [[FD, 'duzhen'], [FD, 'huorong'], [FD, 'guijia'], [FD, 'kaifeng']], '养蛊'],
+  ['feeds20', '百味蛊厨', '喂食 20 次', { feeds: 20 }, 'feeds12', [[FD, 'bingpo'], [FD, 'yeming'], [FD, 'xuelian'], [FD, 'lingxi']], '养蛊'],
+  ['feeds30', '食谱齐全', '喂食 30 次', { feeds: 30 }, 'feeds20', [[FD, 'taoya'], [FD, 'shanjiao'], [FD, 'jifeng'], [FD, 'chuanxin']], '养蛊'],
   ['buys30', '常客', '买蛊 30 次', { buys: 30 }, 'buyer10', [[S, 'cricket'], [S, 'locust'], [S, 'char']], '养蛊'],
-  ['buys60', '蛊市贵客', '买蛊 60 次', { buys: 60 }, 'buys30', [[FD, 'huotan'], [FD, 'lingzhi'], [FD, 'leizao']], '养蛊'],
+  ['buys60', '蛊市贵客', '买蛊 60 次', { buys: 60 }, 'buys30', [[FD, 'huotan'], [FD, 'lingzhi'], [FD, 'leizao'], [FD, 'xuejing']], '养蛊'],
   // —— 杀招 ——
-  ['combos3', '三招在手', '让 3 种不同的杀招成形过', { combos: 3 }, 'first_combo', [[S, 'vine'], [S, 'earthworm']], '杀招'],
+  ['combos3', '三招在手', '让 3 种不同的杀招成形过', { combos: 3 }, 'first_combo', [[S, 'vine'], [S, 'earthworm'], [FD, 'yingu']], '杀招'],
   ['combos6', '推演进阶', '让 6 种不同的杀招成形过', { combos: 6 }, 'combos3', [[S, 'diting'], [S, 'hourglass'], [CB, 'sanzhu2']], '杀招'],
   ['combos10', '十招融会', '让 10 种不同的杀招成形过', { combos: 10 }, 'combos6', [[CB, 'jinjia2'], [CB, 'pojian2'], [FD, 'zhujiu']], '杀招'],
   ['combos15', '招中有招', '让 15 种不同的杀招成形过', { combos: 15 }, 'combos10', [[CB, 'leigu2']], '杀招'],
@@ -53,13 +53,13 @@ const N = [
   // —— 劫数：通关一个秘境开它的劫一，劫 N 通关开劫 N+1（见 KALPA） ——
   ['kalpa_open', '渡劫之后', '通关任意一个秘境，打开劫数', { clears: 1 }, null, [[FT, 'kalpa']], '劫数'],
   ['kalpa1', '初历一劫', '通关任意秘境的劫一', { kalpa: 1 }, 'kalpa_open', [[FD, 'jingleifu'], [FD, 'fengxingfu']], '劫数'],
-  ['kalpa3', '三劫不死', '通关任意秘境的劫三', { kalpa: 3 }, 'kalpa1', [[S, 'nirvana'], [CB, 'suanwu2']], '劫数'],
+  ['kalpa3', '三劫不死', '通关任意秘境的劫三', { kalpa: 3 }, 'kalpa1', [[S, 'nirvana'], [CB, 'suanwu2'], [FD, 'duanhun']], '劫数'],
   ['kalpa5', '五劫加身', '通关任意秘境的劫五', { kalpa: 5 }, 'kalpa3', [[S, 'guangyin'], [FD, 'guangyinxiang'], [FD, 'houtufu']], '劫数'],
   ['kalpa7', '七劫过尽', '通关任意秘境的劫七', { kalpa: 7 }, 'kalpa5', [[S, 'fate']], '劫数'],
   ['kalpa10', '十劫圆满', '通关任意秘境的劫十', { kalpa: 10 }, 'kalpa7', [[S, 'jiuxiao'], [CB, 'zhichi2']], '劫数'],
   // —— 挑战：通关时按出场阵容判（见 clearEvents），解锁新蛊和新杀招 ——
   ['ch_r1q7', '一转亦能', '只用一转蛊，通关额度 7 及以上的秘境', { r1q: 7 }, 'realm1', [[S, 'qingtian']], '挑战'],
-  ['ch_r2q10', '低转为本', '只用一转、二转蛊，通关额度 10 及以上的秘境', { r2q: 10 }, 'realm2', [[CB, 'baiyi2']], '挑战'],
+  ['ch_r2q10', '低转为本', '只用一转、二转蛊，通关额度 10 及以上的秘境', { r2q: 10 }, 'realm2', [[CB, 'baiyi2'], [FD, 'shengzhuan']], '挑战'],
   ['ch_no5q14', '不仗高转', '不带五转和仙蛊，通关额度 14 及以上的秘境', { no5q: 14 }, 'realm3', [[S, 'dingxian'], [CB, 'yiri2']], '挑战'],
   ['ch_few3', '三蛊破阵', '出场不超过 3 只，通关额度 10 及以上的秘境', { few3q: 10 }, 'realm2', [[S, 'chiba']], '挑战'],
   ['ch_mono', '一道到底', '出场的蛊全属同一道，通关额度 10 及以上的秘境', { monoq: 10 }, 'realm2', [[TR, 'maigu'], [CB, 'wudu2']], '挑战'],
@@ -80,12 +80,12 @@ if (miss.length || extra.length) { console.log('缺', miss, '多', extra); proce
 const q = s => `'${s}'`, obj = o => '{ ' + Object.entries(o).map(([k, v]) => `${k}: ${v}`).join(', ') + ' }';
 const lines = N.map(([id, n, d, need, after, un, g]) => `  { id: ${q(id)}, n: ${q(n)}, g: ${q(g)}, d: ${q(d)}, need: ${obj(need)},${after ? ` after: ${q(after)},` : ''} unlock: [${un.map(([k, x]) => `{ k: ${q(k)}, id: ${q(x)}, n: ${q(name(k, x))} }`).join(', ')}] },`);
 const wrap = (arr, per = 12) => { const out = []; for (let i = 0; i < arr.length; i += per) out.push('    ' + arr.slice(i, i + per).map(q).join(', ') + ','); return out.join('\n'); };
-const src = `// 蛊码 GuCode · 成就道途（第三版：${N.length} 个节点，入门 / 境界 / 出征 / 养蛊 / 杀招 / 劫数 / 挑战七组）。纯数据 + 两个纯函数，不 import 任何文件。由 tools/gen-timeline.mjs 生成，改道途改那边再跑一次。
+const src = `// 蛊码 GuCode · 成就道途（第三版：${N.length} 个节点，入门 / 境界 / 渡劫 / 养蛊 / 杀招 / 劫数 / 挑战七组）。纯数据 + 两个纯函数，不 import 任何文件。由 tools/gen-timeline.mjs 生成，改道途改那边再跑一次。
 // 格式：TIMELINE[i] = { id, n 名, g 分组, d 怎么达成（一句话）, need { 事件计数名: 次数 }, after 前置节点 id（可无）, unlock [{ k, id, n }] 解锁什么 }
 // 成就本身不给数值，只解锁东西（design 第 4 节、2.7 节）。
 //
 // 事件计数名（metaEmit 的 k）：
-//   原有：trips 出征次数（打完回来就算）、realm 境界（set 取最大）、merges 合成次数、combos 杀招成形过的种数、buys 买蛊次数、feeds 喂食次数
+//   原有：trips 渡劫次数（进秘境一趟，打完回来就算）、realm 境界（set 取最大）、merges 合成次数、combos 杀招成形过的种数、buys 买蛊次数、feeds 喂食次数
 //   clears 秘境通关次数：每通关一次都 +1（哪个秘境、第几劫都算，不只渡劫那一次）——请改用下面的 clearEvents，别只在渡劫时加
 //   以下都在通关时由 clearEvents 算出来（set 取最大，值 = 这次通关的秘境额度）：
 //     r1q 出场全是一转 · r2q 出场全是一转二转 · no5q 没有五转和仙蛊 · few3q 出场不超过 3 只 · monoq 出场全属同一道
