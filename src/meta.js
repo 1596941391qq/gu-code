@@ -21,7 +21,8 @@
 // 3) 奖励落地：out.rewards 里只有 k==='stone' 需要 ui 自己 S.stone += n；
 //    chest/cocoon/charm/species/slot/title/xp 已经由 meta 写进 S.meta，ui 只负责展示。
 //    battle_end 的 stone 是「结算加成」（连胜倍率 + 每日首胜 ×3 相对 ECON.win 基础值的增量），基础元石仍由 ui 照旧发。
-//    败局：连胜不扣已有东西，只失去加成；败局照样推进 经验 / 魂片 / 天机 / 每日 / 成就（out.notes 有「败也有得」）。
+//    败局：连胜不扣已有东西，只失去加成；败局照样推进 经验 / 天机 / 每日 / 成就（out.notes 有「败也有得」）。
+//    货币和道具只有三种：元石、蛊茧、经验（宝箱打开当场变成这三样）。魂片、护心符已去掉。
 // 4) 宝箱：S.meta.chests 是未开的箱（档位 key 数组）；点开调用 openChest(M, rng, idx) → 同样形状的 out（+tier）。
 //    开茧：S.meta.cocoons 是未开茧（元素为保底稀有度下限）；openCocoon(M, rng) → {tier, minRar}，
 //    ui 再用 newGu(species) + applyRarity(gu, tier, rng) 生成蛊（放入哪里由 ui 定），然后 metaEmit('cocoon',{rarity:tier})。
@@ -48,8 +49,10 @@ export const META_TUNE = {
   pity: { every: 40, firstEvery: 5 },
   // 连胜：第 n 连胜的结算倍率 = min(cap, 1 + perWin*(n-1))；护心符 charmCost 元石一张，持有上限 charmMax；断连只失去倍率
   streak: { perWin: 0.1, cap: 2.0, charmCost: 6, charmMax: 3, minForCharm: 3, milestone: 5 },
-  // 战败：每败 +1 魂片，攒满 shardNeed 得一个木箱；败局还把天机往前推 pityStep 次
-  lose: { shardNeed: 4, pityStep: 1 },
+  // 战败：把天机往前推 pityStep 次
+  lose: { pityStep: 1 },
+  // 战胜敌方残躯化茧的几率（幽灵按难度、无尽劫）；渡劫胜利另有晋阶与道痕
+  spoils: { easy: 0.35, mid: 0.6, hard: 1, endless: 0.4 },
   // 胜利掉箱：p=掉落几率，w=档位权重（木铜银金玄）；每 every 场胜利必得一个 milestoneTier 箱（固定里程碑）
   drop: {
     easy: { p: 0.45, w: [70, 25, 5, 0, 0] }, mid: { p: 0.6, w: [45, 35, 15, 4, 1] }, hard: { p: 0.8, w: [20, 35, 28, 14, 3] },
@@ -75,17 +78,17 @@ export const RARITY = [
   { id: 'tian', n: '天', p: 1, mul: 2.2, traits: 2, col: '#d8553f' },
 ];
 
-// 宝箱：stone=元石区间；cocoonP=附送蛊茧几率；minRar=该茧保底稀有度；charmP=护心符几率；xp=经验区间
+// 宝箱：stone=元石区间；cocoonP=附送蛊茧几率；minRar=该茧保底稀有度；xp=经验区间（打开当场变成元石、经验、蛊茧）
 export const CHESTS = {
-  wood: { n: '木箱', stone: [1, 3], cocoonP: 0.03, minRar: 0, charmP: 0, xp: [4, 8] },
-  copper: { n: '铜箱', stone: [3, 6], cocoonP: 0.1, minRar: 0, charmP: 0, xp: [8, 16] },
-  silver: { n: '银箱', stone: [6, 12], cocoonP: 0.22, minRar: 1, charmP: 0.05, xp: [16, 30] },
-  gold: { n: '金箱', stone: [12, 24], cocoonP: 0.45, minRar: 1, charmP: 0.2, xp: [30, 60] },
-  xuan: { n: '玄箱', stone: [25, 50], cocoonP: 1, minRar: 2, charmP: 0.5, xp: [80, 150] },
+  wood: { n: '木箱', stone: [1, 3], cocoonP: 0.03, minRar: 0, xp: [4, 8] },
+  copper: { n: '铜箱', stone: [3, 6], cocoonP: 0.1, minRar: 0, xp: [8, 16] },
+  silver: { n: '银箱', stone: [6, 12], cocoonP: 0.22, minRar: 1, xp: [16, 30] },
+  gold: { n: '金箱', stone: [12, 24], cocoonP: 0.45, minRar: 1, xp: [30, 60] },
+  xuan: { n: '玄箱', stone: [25, 50], cocoonP: 1, minRar: 2, xp: [80, 150] },
 };
 export const CHEST_KEYS = Object.keys(CHESTS);
 
-// 蛊师等级奖励：k=stone 元石 / chest 宝箱 / cocoon 蛊茧(n=保底稀有度) / charm 护心符 / species 蛊种进池 / slot 蛊市加格 / title 称号
+// 蛊师等级奖励：k=stone 元石 / chest 宝箱 / cocoon 蛊茧(n=保底稀有度) / species 蛊种进池 / slot 蛊市加格 / title 称号
 // 默认每级 1+⌊L/10⌋ 元石、每 3 级一个箱、每 5 级一个茧；下面 special 覆盖；里程碑（10 的倍数）给大奖
 export const LEVEL_REWARDS = (() => {
   const t = {}, tierAt = L => (L >= 80 ? 'xuan' : L >= 55 ? 'gold' : L >= 30 ? 'silver' : L >= 12 ? 'copper' : 'wood');
@@ -104,12 +107,12 @@ export const LEVEL_REWARDS = (() => {
   sp(5, [{ k: 'stone', n: 4 }, { k: 'chest', tier: 'copper' }, { k: 'cocoon', n: 0 }]);
   sp(6, [{ k: 'cocoon', n: 0 }, { k: 'species', id: 'mantis' }]);
   sp(7, [{ k: 'chest', tier: 'wood' }, { k: 'stone', n: 2 }]);
-  sp(8, [{ k: 'stone', n: 5 }, { k: 'charm', n: 1 }]);
+  sp(8, [{ k: 'stone', n: 8 }]);
   sp(10, [{ k: 'chest', tier: 'silver' }, { k: 'cocoon', n: 1 }, { k: 'species', id: 'queen' }, { k: 'title', id: 'lv10' }]);
   sp(14, [{ k: 'species', id: 'cicada' }, { k: 'stone', n: 4 }]);
   sp(15, [{ k: 'slot', n: 1 }, { k: 'cocoon', n: 1 }, { k: 'chest', tier: 'silver' }]);
   sp(18, [{ k: 'species', id: 'drum' }, { k: 'chest', tier: 'silver' }]);
-  sp(20, [{ k: 'chest', tier: 'gold' }, { k: 'cocoon', n: 2 }, { k: 'charm', n: 1 }]);
+  sp(20, [{ k: 'chest', tier: 'gold' }, { k: 'cocoon', n: 2 }, { k: 'stone', n: 6 }]);
   sp(22, [{ k: 'species', id: 'scorp' }, { k: 'stone', n: 6 }]);
   sp(25, [{ k: 'chest', tier: 'gold' }, { k: 'cocoon', n: 2 }, { k: 'title', id: 'lv25' }]);
   sp(26, [{ k: 'species', id: 'moth' }, { k: 'stone', n: 6 }]);
@@ -209,7 +212,7 @@ export const DAILY_TASKS = [
 ];
 // 七日签到（断签不罚，只是从第 1 天重新算）
 export const SIGN_REWARDS = [
-  [{ k: 'stone', n: 2 }], [{ k: 'chest', tier: 'wood' }], [{ k: 'stone', n: 3 }, { k: 'charm', n: 1 }], [{ k: 'chest', tier: 'copper' }],
+  [{ k: 'stone', n: 2 }], [{ k: 'chest', tier: 'wood' }], [{ k: 'stone', n: 6 }], [{ k: 'chest', tier: 'copper' }],
   [{ k: 'stone', n: 5 }], [{ k: 'cocoon', n: 1 }], [{ k: 'chest', tier: 'gold' }, { k: 'cocoon', n: 2 }],
 ];
 
@@ -330,7 +333,6 @@ export const qiText = n => '+' + (n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1
 export function rollChest(rng, tier) {
   const c = CHESTS[tier], rewards = [{ k: 'stone', n: rint(rng, c.stone) }];
   if (rng() < c.cocoonP) rewards.push({ k: 'cocoon', n: c.minRar });
-  if (c.charmP && rng() < c.charmP) rewards.push({ k: 'charm', n: 1 });
   rewards.push({ k: 'xp', n: rint(rng, c.xp) });
   return { tier, rewards };
 }
@@ -492,16 +494,15 @@ export function metaEmit(M, type, p, rng, S) {
         const D = META_TUNE.drop, d = D[kind] || D.easy;
         if (st.wins % D.every === 0) give(M, out, [{ k: 'chest', tier: D.milestoneTier, why: `第 ${st.wins} 胜` }], rng);
         else if (rng() < d.p) give(M, out, [{ k: 'chest', tier: chestTier(rng, d.w), why: '战利' }], rng);
+        const sp = META_TUNE.spoils[kind]; if (sp && rng() < sp) give(M, out, [{ k: 'cocoon', n: 0, why: '敌方残躯化茧' }], rng);
         addXp(X.win[kind] || 10); if (p.turns > 0 && p.turns <= 3) st.quick = (st.quick | 0) + 1;
       } else {
         st.losses++; const L = META_TUNE.lose, was = M.streak.n; let saved = false;
-        if (was > 0) { if (p.streakSafe) { saved = true; if (M.streak.charms > 0) M.streak.charms--; } else M.streak.n = 0; }
+        if (was > 0) M.streak.n = 0;
         out.streak = { n: M.streak.n, mul: streakMul(M.streak.n), saved, lost: was > 0 && !saved ? was : 0 };
-        M.shards++; let shardTxt = `魂片 ${M.shards}/${L.shardNeed}`;
-        if (M.shards >= L.shardNeed) { M.shards = 0; give(M, out, [{ k: 'chest', tier: 'wood', why: '魂片集齐' }], rng); shardTxt = '魂片集齐，得木箱'; }
         M.pity.n = Math.min(pityThr(M) - 1, M.pity.n + L.pityStep);
         addXp(X.lose);
-        out.notes.push(`败也有得：经验 +${X.lose}、${shardTxt}、距天机 ${pityLeft(M)}` + (saved ? '、护心符保住了连胜' : was >= 2 ? `（连胜 ${was} 断了，只失去加成）` : ''));
+        out.notes.push(`败也有得：经验 +${X.lose}、离下一只必出绝品或天品的茧更近一步（距天机 ${pityLeft(M)}）` + (was >= 2 ? `（连胜 ${was} 断了，只失去加成）` : ''));
       }
       break;
     }

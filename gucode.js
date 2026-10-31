@@ -925,7 +925,8 @@ async function makeCard({ team, name, realm, total, muts, wins, code, url, endle
 // 3) 奖励落地：out.rewards 里只有 k==='stone' 需要 ui 自己 S.stone += n；
 //    chest/cocoon/charm/species/slot/title/xp 已经由 meta 写进 S.meta，ui 只负责展示。
 //    battle_end 的 stone 是「结算加成」（连胜倍率 + 每日首胜 ×3 相对 ECON.win 基础值的增量），基础元石仍由 ui 照旧发。
-//    败局：连胜不扣已有东西，只失去加成；败局照样推进 经验 / 魂片 / 天机 / 每日 / 成就（out.notes 有「败也有得」）。
+//    败局：连胜不扣已有东西，只失去加成；败局照样推进 经验 / 天机 / 每日 / 成就（out.notes 有「败也有得」）。
+//    货币和道具只有三种：元石、蛊茧、经验（宝箱打开当场变成这三样）。魂片、护心符已去掉。
 // 4) 宝箱：S.meta.chests 是未开的箱（档位 key 数组）；点开调用 openChest(M, rng, idx) → 同样形状的 out（+tier）。
 //    开茧：S.meta.cocoons 是未开茧（元素为保底稀有度下限）；openCocoon(M, rng) → {tier, minRar}，
 //    ui 再用 newGu(species) + applyRarity(gu, tier, rng) 生成蛊（放入哪里由 ui 定），然后 metaEmit('cocoon',{rarity:tier})。
@@ -952,8 +953,10 @@ const META_TUNE = {
   pity: { every: 40, firstEvery: 5 },
   // 连胜：第 n 连胜的结算倍率 = min(cap, 1 + perWin*(n-1))；护心符 charmCost 元石一张，持有上限 charmMax；断连只失去倍率
   streak: { perWin: 0.1, cap: 2.0, charmCost: 6, charmMax: 3, minForCharm: 3, milestone: 5 },
-  // 战败：每败 +1 魂片，攒满 shardNeed 得一个木箱；败局还把天机往前推 pityStep 次
-  lose: { shardNeed: 4, pityStep: 1 },
+  // 战败：把天机往前推 pityStep 次
+  lose: { pityStep: 1 },
+  // 战胜敌方残躯化茧的几率（幽灵按难度、无尽劫）；渡劫胜利另有晋阶与道痕
+  spoils: { easy: 0.35, mid: 0.6, hard: 1, endless: 0.4 },
   // 胜利掉箱：p=掉落几率，w=档位权重（木铜银金玄）；每 every 场胜利必得一个 milestoneTier 箱（固定里程碑）
   drop: {
     easy: { p: 0.45, w: [70, 25, 5, 0, 0] }, mid: { p: 0.6, w: [45, 35, 15, 4, 1] }, hard: { p: 0.8, w: [20, 35, 28, 14, 3] },
@@ -979,17 +982,17 @@ const RARITY = [
   { id: 'tian', n: '天', p: 1, mul: 2.2, traits: 2, col: '#d8553f' },
 ];
 
-// 宝箱：stone=元石区间；cocoonP=附送蛊茧几率；minRar=该茧保底稀有度；charmP=护心符几率；xp=经验区间
+// 宝箱：stone=元石区间；cocoonP=附送蛊茧几率；minRar=该茧保底稀有度；xp=经验区间（打开当场变成元石、经验、蛊茧）
 const CHESTS = {
-  wood: { n: '木箱', stone: [1, 3], cocoonP: 0.03, minRar: 0, charmP: 0, xp: [4, 8] },
-  copper: { n: '铜箱', stone: [3, 6], cocoonP: 0.1, minRar: 0, charmP: 0, xp: [8, 16] },
-  silver: { n: '银箱', stone: [6, 12], cocoonP: 0.22, minRar: 1, charmP: 0.05, xp: [16, 30] },
-  gold: { n: '金箱', stone: [12, 24], cocoonP: 0.45, minRar: 1, charmP: 0.2, xp: [30, 60] },
-  xuan: { n: '玄箱', stone: [25, 50], cocoonP: 1, minRar: 2, charmP: 0.5, xp: [80, 150] },
+  wood: { n: '木箱', stone: [1, 3], cocoonP: 0.03, minRar: 0, xp: [4, 8] },
+  copper: { n: '铜箱', stone: [3, 6], cocoonP: 0.1, minRar: 0, xp: [8, 16] },
+  silver: { n: '银箱', stone: [6, 12], cocoonP: 0.22, minRar: 1, xp: [16, 30] },
+  gold: { n: '金箱', stone: [12, 24], cocoonP: 0.45, minRar: 1, xp: [30, 60] },
+  xuan: { n: '玄箱', stone: [25, 50], cocoonP: 1, minRar: 2, xp: [80, 150] },
 };
 const CHEST_KEYS = Object.keys(CHESTS);
 
-// 蛊师等级奖励：k=stone 元石 / chest 宝箱 / cocoon 蛊茧(n=保底稀有度) / charm 护心符 / species 蛊种进池 / slot 蛊市加格 / title 称号
+// 蛊师等级奖励：k=stone 元石 / chest 宝箱 / cocoon 蛊茧(n=保底稀有度) / species 蛊种进池 / slot 蛊市加格 / title 称号
 // 默认每级 1+⌊L/10⌋ 元石、每 3 级一个箱、每 5 级一个茧；下面 special 覆盖；里程碑（10 的倍数）给大奖
 const LEVEL_REWARDS = (() => {
   const t = {}, tierAt = L => (L >= 80 ? 'xuan' : L >= 55 ? 'gold' : L >= 30 ? 'silver' : L >= 12 ? 'copper' : 'wood');
@@ -1008,12 +1011,12 @@ const LEVEL_REWARDS = (() => {
   sp(5, [{ k: 'stone', n: 4 }, { k: 'chest', tier: 'copper' }, { k: 'cocoon', n: 0 }]);
   sp(6, [{ k: 'cocoon', n: 0 }, { k: 'species', id: 'mantis' }]);
   sp(7, [{ k: 'chest', tier: 'wood' }, { k: 'stone', n: 2 }]);
-  sp(8, [{ k: 'stone', n: 5 }, { k: 'charm', n: 1 }]);
+  sp(8, [{ k: 'stone', n: 8 }]);
   sp(10, [{ k: 'chest', tier: 'silver' }, { k: 'cocoon', n: 1 }, { k: 'species', id: 'queen' }, { k: 'title', id: 'lv10' }]);
   sp(14, [{ k: 'species', id: 'cicada' }, { k: 'stone', n: 4 }]);
   sp(15, [{ k: 'slot', n: 1 }, { k: 'cocoon', n: 1 }, { k: 'chest', tier: 'silver' }]);
   sp(18, [{ k: 'species', id: 'drum' }, { k: 'chest', tier: 'silver' }]);
-  sp(20, [{ k: 'chest', tier: 'gold' }, { k: 'cocoon', n: 2 }, { k: 'charm', n: 1 }]);
+  sp(20, [{ k: 'chest', tier: 'gold' }, { k: 'cocoon', n: 2 }, { k: 'stone', n: 6 }]);
   sp(22, [{ k: 'species', id: 'scorp' }, { k: 'stone', n: 6 }]);
   sp(25, [{ k: 'chest', tier: 'gold' }, { k: 'cocoon', n: 2 }, { k: 'title', id: 'lv25' }]);
   sp(26, [{ k: 'species', id: 'moth' }, { k: 'stone', n: 6 }]);
@@ -1113,7 +1116,7 @@ const DAILY_TASKS = [
 ];
 // 七日签到（断签不罚，只是从第 1 天重新算）
 const SIGN_REWARDS = [
-  [{ k: 'stone', n: 2 }], [{ k: 'chest', tier: 'wood' }], [{ k: 'stone', n: 3 }, { k: 'charm', n: 1 }], [{ k: 'chest', tier: 'copper' }],
+  [{ k: 'stone', n: 2 }], [{ k: 'chest', tier: 'wood' }], [{ k: 'stone', n: 6 }], [{ k: 'chest', tier: 'copper' }],
   [{ k: 'stone', n: 5 }], [{ k: 'cocoon', n: 1 }], [{ k: 'chest', tier: 'gold' }, { k: 'cocoon', n: 2 }],
 ];
 
@@ -1234,7 +1237,6 @@ const qiText = n => '+' + (n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n
 function rollChest(rng, tier) {
   const c = CHESTS[tier], rewards = [{ k: 'stone', n: rint(rng, c.stone) }];
   if (rng() < c.cocoonP) rewards.push({ k: 'cocoon', n: c.minRar });
-  if (c.charmP && rng() < c.charmP) rewards.push({ k: 'charm', n: 1 });
   rewards.push({ k: 'xp', n: rint(rng, c.xp) });
   return { tier, rewards };
 }
@@ -1396,16 +1398,15 @@ function metaEmit(M, type, p, rng, S) {
         const D = META_TUNE.drop, d = D[kind] || D.easy;
         if (st.wins % D.every === 0) give(M, out, [{ k: 'chest', tier: D.milestoneTier, why: `第 ${st.wins} 胜` }], rng);
         else if (rng() < d.p) give(M, out, [{ k: 'chest', tier: chestTier(rng, d.w), why: '战利' }], rng);
+        const sp = META_TUNE.spoils[kind]; if (sp && rng() < sp) give(M, out, [{ k: 'cocoon', n: 0, why: '敌方残躯化茧' }], rng);
         addXp(X.win[kind] || 10); if (p.turns > 0 && p.turns <= 3) st.quick = (st.quick | 0) + 1;
       } else {
         st.losses++; const L = META_TUNE.lose, was = M.streak.n; let saved = false;
-        if (was > 0) { if (p.streakSafe) { saved = true; if (M.streak.charms > 0) M.streak.charms--; } else M.streak.n = 0; }
+        if (was > 0) M.streak.n = 0;
         out.streak = { n: M.streak.n, mul: streakMul(M.streak.n), saved, lost: was > 0 && !saved ? was : 0 };
-        M.shards++; let shardTxt = `魂片 ${M.shards}/${L.shardNeed}`;
-        if (M.shards >= L.shardNeed) { M.shards = 0; give(M, out, [{ k: 'chest', tier: 'wood', why: '魂片集齐' }], rng); shardTxt = '魂片集齐，得木箱'; }
         M.pity.n = Math.min(pityThr(M) - 1, M.pity.n + L.pityStep);
         addXp(X.lose);
-        out.notes.push(`败也有得：经验 +${X.lose}、${shardTxt}、距天机 ${pityLeft(M)}` + (saved ? '、护心符保住了连胜' : was >= 2 ? `（连胜 ${was} 断了，只失去加成）` : ''));
+        out.notes.push(`败也有得：经验 +${X.lose}、离下一只必出绝品或天品的茧更近一步（距天机 ${pityLeft(M)}）` + (was >= 2 ? `（连胜 ${was} 断了，只失去加成）` : ''));
       }
       break;
     }
@@ -1607,8 +1608,31 @@ const TXT = {
   fullMelt: (g, v) => `炼化：把${rankName(g)}折成 ${v} 元石（按品质，比卖价多五成起）`,
   fullHold: '暂存：放回茧托盘，开出的结果保留，以后再开',
   heldTip: n => `其中 ${n} 个是暂存的，开出结果已定`,
+  // 奖励说人话：是什么 · 有什么用 · 放到哪了
+  rw: r => { const why = r.why ? `（${r.why}）` : '';
+    switch (r.k) {
+      case 'stone': return `元石 +${r.n}${why} · 蛊市买蛊、转市用 · 已存入`;
+      case 'xp': return `经验 +${r.n}${why} · 攒满升级拿奖励 · 已计入`;
+      case 'chest': return `${CHESTS[r.tier] ? CHESTS[r.tier].n : '宝箱'} ×1${why} · 打开当场变成元石、经验，可能有蛊茧 · 在右上「箱」里，点一下就开`;
+      case 'cocoon': return `蛊茧 ×1${r.n ? `（至少${RQ(r.n).n}品）` : ''}${why} · 开出一只随机的蛊，茧开出的才有品质 · 在蛊囊旁「开茧」`;
+      case 'species': return `新蛊种：${SP[r.id] ? SP[r.id].n : r.id}${why} · 以后蛊市和招蛊会出现它 · 已进蛊池`;
+      case 'slot': return `蛊市 +1 格${why} · 每次多一只货可挑 · 已生效`;
+      case 'title': { const t = TITLES.find(x => x.id === r.id); return `称号「${t ? t.n : r.id}」${why} · 显示在战帖分享卡上 · 在成就页换上`; }
+      case 'charm': return `元石 +${META_TUNE.streak.charmCost}${why} · 已存入`;
+    } return ''; },
+  // 开打前的奖惩：数字都从表里取
+  stakes: (kind, tier) => {
+    const k = kind === 'ghost' ? (tier || 'mid') : kind, D = META_TUNE.drop[k], sp = META_TUNE.spoils[k], pc = x => Math.round(x * 100) + '%';
+    const hurt = '蛊受轻伤 1 层（写代码约 1 分钟愈合一层）';
+    if (kind === 'duel') return { win: D ? `${pc(D.p)} 掉宝箱` : '无', lose: '没有任何损失' };
+    const w = [`元石 +${ECON.win[k] || 0}`]; if (kind === 'trib') w.unshift(`晋${REALMS[Math.min(5, S.realm + 1)]}、择一道痕`);
+    if (sp) w.push(sp >= 1 ? '必得蛊茧' : `${pc(sp)} 得蛊茧`); if (D) w.push(D.p >= 1 ? '必掉宝箱' : `${pc(D.p)} 掉宝箱`);
+    return { win: w.join('，'), lose: `元石 +${ECON.lose}，${hurt}` };
+  },
+  stakesLine: (kind, tier) => { const x = TXT.stakes(kind, tier); return `赢了：${x.win}｜输了：${x.lose}`; },
   mergeWarn: (sp, realm) => { const r = baseRank(sp) + 1; return r > realm + RANK.over ? `（炼成${RANK.names[r]}后要${REALMS[Math.min(5, r - RANK.over)]}才能驱使）` : ''; },
 };
+function stakesHTML(kind, tier) { const x = TXT.stakes(kind, tier); return `<b class="sw">赢了</b>${esc(x.win)}<br><b class="sl">输了</b>${esc(x.lose)}`; }
 const fresh = () => ({ v: 2, started: false, name: '', team: [], realm: 0, nodes: 0, compass: [], sel: null, prog: 0, wh: 0, bank: 0, repair: 0, will: 3, willT: 0, willK: 0, total: 0, muts: 0, wins: 0, losses: 0, seed: (Math.random() * 1e9) | 0, step: 0, sound: false, speed: 1, theme: 'auto', mute: false, stone: 5, stoneK: 0, shop: [], pending: null, marks: [], ghosts: null, floor: 1, endless: 0, codex: { sp: [], combo: [] }, healT: 0, calm: false, stats: false, log: [], gains: [], todayKey: '', todayTok: 0, meta: null, tutDone: false, seen: 0, tips: {}, bag: [], held: [], streak: 0, bestStreak: 0, day: '', dayWin: false });
 const today = () => { const d = new Date(); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); };
 const curCap = () => Math.max(slotCap(S.realm), S.team.length), BC = () => Math.max(bagCap(S.realm), S.bag.length);
@@ -1820,7 +1844,7 @@ function renderLevel() {
   b.classList.toggle('near', pct >= 80); b.classList.toggle('big', !!L.big);
   setHTML(b, `<b>蛊师 ${L.level}</b><span class="lvb"><i style="width:${pct.toFixed(1)}%"></i></span><small>${Math.floor(L.cur)}/${L.need}</small><em>${L.next.length ? '下级：' + L.next.map(rwText).join(' ') : '满级'}</em>`);
   renderBagLine(); const t = $('#tray'); if (!t) return; const m = M(), si = streakInfo(m);
-  setHTML(t, (si.n >= 2 ? `<span class="flame" data-tip="${si.n} 连胜：胜场结算元石 ×${si.mul.toFixed(1)}。断连只失去加成，不扣已有的东西。">焰 ${si.n}</span>` : '') + (si.charms ? `<span class="charm" data-tip="护心符 ${si.charms} 张：${META_TUNE.streak.minForCharm} 连胜以上输一场时自动用掉一张，连胜保住。">符 ${si.charms}</span>` : '')
+  setHTML(t, (si.n >= 2 ? `<span class="flame" data-tip="${si.n} 连胜：胜场结算元石 ×${si.mul.toFixed(1)}。断连只失去加成，不扣已有的东西。">焰 ${si.n}</span>` : '') 
     + (m.chests.length ? `<button class="tb chest" data-act="chest" data-tip="${esc('待开宝箱：' + m.chests.map(k => CHESTS[k].n).join('、') + '\n点一下开第一个：元石、经验，金箱玄箱可能有蛊茧')}">箱 <b>${m.chests.length}</b></button>` : '') + ((m.cocoons.length || S.held.length) && on('cocoon') ? `<button class="tb coc" data-act="cocoon" data-tip="${esc('蛊茧 ' + (m.cocoons.length + S.held.length) + ' 个' + (S.held.length ? '（' + TXT.heldTip(S.held.length) + '）' : '') + '：点一下开出一只蛊，品质凡良珍绝天。茧不过期。\n' + TXT.cocoonDest() + '\n距天机 ' + pityLeft(m) + ' 次（必出绝或天）')}">茧 <b>${m.cocoons.length + S.held.length}</b></button>` : ''));
 }
 // 每次得蛊都开茧：掷稀有度（带天机），属性与额外词条随稀有度
@@ -1838,15 +1862,7 @@ function revealPop(g, from) {
 }
 // ---------- 近期所得：每条奖励写明得到了什么、加到了哪里（最近 50 条，可回看）----------
 function gain(src, txt) { const g = S.gains || (S.gains = []); g.push({ t: Date.now(), src, txt }); if (g.length > 50) g.splice(0, g.length - 50); }
-function rwLine(r) {
-  const why = r.why ? `（${r.why}）` : '';
-  switch (r.k) {
-    case 'stone': return `+${r.n} 元石${why}`; case 'xp': return `经验 +${r.n}${why}`;
-    case 'chest': return `${CHESTS[r.tier] ? CHESTS[r.tier].n : '宝箱'}${why} → 待开宝箱`; case 'cocoon': return `${rwText(r)}${why} → 待开蛊茧`;
-    case 'charm': return `护心符 +1${why}`; case 'species': return `${rwText(r)}${why} → 蛊池`; case 'slot': return `蛊市 +1 格${why}`; case 'title': return `${rwText(r)}${why}`;
-  }
-  return rwText(r);
-}
+function rwLine(r) { return TXT.rw(r) || rwText(r); }
 function openGains() {
   const g = (S.gains || []).slice().reverse(), hm = t => { const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
   sheet(`<h3>近期所得</h3><p class="sm">最近 ${g.length} 条奖励，错过的弹层都在这里。</p><ul class="gains">${g.map(x => `<li><time>${hm(x.t)}</time><span class="gs">${esc(x.src)}</span><span>${esc(x.txt)}</span></li>`).join('') || '<li>还没有记录</li>'}</ul>`, 'gainsheet', true);
@@ -1874,10 +1890,11 @@ function handleOut(out, skip = () => false) {
   if (out.unlocks.length && S.started) setTimeout(() => { renderAll(); }, 50);
 }
 function showOut(out) {
-  out.levelUps.forEach(l => { popPush(`<div class="lvup"><small>蛊师升级</small><b>${l.level} 级</b><p>${l.rewards.map(r => rwLine({ ...r, why: '' })).filter(Boolean).join('<br>')}</p></div>`, l.big ? 2200 : 1400, l.big ? 'big' : 'center'); snd('win'); });
+  out.levelUps.forEach(l => { popPush(`<div class="lvup"><small>蛊师升级 · 点一下关掉</small><b>${l.level} 级</b><ul>${l.rewards.map(r => `<li>${esc(rwLine({ ...r, why: '' }))}</li>`).join('')}</ul></div>`, l.big ? 3200 : 2600, l.big ? 'big' : 'center'); snd('win'); });
   out.achievements.forEach(a => { popPush(`<div class="achc t-${a.tier}"><span class="am">${ACH_TIER[a.tier].n}</span><div><b>${esc(a.n)}</b><small>${esc(a.d)}</small><em>${a.rewards.map(r => rwLine({ ...r, why: '' })).join('<br>')}</em></div></div>`, a.tier === 'gold' ? 2200 : 1500, a.tier === 'gold' ? 'big' : 'side'); snd('coins'); });
   const ch = out.rewards.filter(r => r.k === 'chest' && !/升级|成就/.test(r.why || ''));
-  if (ch.length) popPush(`<div class="toast">得 ${ch.map(r => `<b>${CHESTS[r.tier].n}</b>${r.why ? `<small>（${esc(r.why)}）</small>` : ''}`).join('、')}</div>`, 1100, 'side');
+  const cc = out.rewards.filter(r => r.k === 'cocoon' && !/升级|成就/.test(r.why || ''));
+  if (ch.length || cc.length) popPush(`<div class="toast">${[...ch, ...cc].map(r => esc(rwLine(r))).join('<br>')}</div>`, 1800, 'side');
   out.unlocks.forEach(k => { const u = UNLOCKS[k]; popPush(`<div class="unl"><small>新功能点亮</small><b>${u.n}</b><p>${u.d}</p></div>`, 1800, 'center'); snd('glitch'); });
   const sts = out.rewards.filter(r => r.k === 'stone' && !/升级|成就/.test(r.why || '')), st = sts.reduce((a, r) => a + r.n, 0);
   if (st && !inBattle) { stoneFloat(st); popPush(`<div class="toast">${sts.map(r => esc(rwLine(r))).join('<br>')}</div>`, 1100, 'side'); }
@@ -1925,7 +1942,7 @@ function renderSlots() {
 function renderMeta() {
   const m = $('#qmeta'); if (!m) return;
   const wd = S.team.reduce((a, g) => a + (g.wound || 0), 0);
-  setHTML(m, `<b class="stone" data-tip="元石：买蛊、转市、买护心符。来源：写代码的 token、走完节点、斗蛊结算、卖蛊、宝箱与升级。">◈ ${S.stone}</b> 元石 · 意志 <b class="will" data-tip="意志：每场斗蛊耗 1 点，上限 ${WILL_MAX}。每 ${WILL_SEC / 60} 分钟或写代码都会回，走完节点也回 1 点。">${'◆'.repeat(S.will)}${'◇'.repeat(Math.max(0, WILL_MAX - S.will))}</b>${wd ? ` · <span class="heal" title="写代码约 1 分钟愈合一层">温养<span class="hbar"><i id="healBar" style="width:${(100 * healPct()).toFixed(0)}%"></i></span></span>` : ''}`);
+  setHTML(m, `<b class="stone" data-tip="元石：买蛊、转市。来源：写代码的 token、走完节点、斗蛊结算、卖蛊、宝箱与升级。">◈ ${S.stone}</b> 元石 · 意志 <b class="will" data-tip="意志：每场斗蛊耗 1 点，上限 ${WILL_MAX}。每 ${WILL_SEC / 60} 分钟或写代码都会回，走完节点也回 1 点。">${'◆'.repeat(S.will)}${'◇'.repeat(Math.max(0, WILL_MAX - S.will))}</b>${wd ? ` · <span class="heal" title="写代码约 1 分钟愈合一层">温养<span class="hbar"><i id="healBar" style="width:${(100 * healPct()).toFixed(0)}%"></i></span></span>` : ''}`);
 }
 const shopPool = () => [...new Set([...poolFor(S.realm), ...metaPool(M()).filter(id => SP[id])])].filter(id => baseRank(id) <= S.realm + RANK.over);   // 只卖驱使得动的
 const shopN = () => 3 + Math.min(2, M().shopSlots | 0);
@@ -2000,7 +2017,7 @@ function renderPhase() {
   box.innerHTML = (S.pending ? choiceHTML(S.pending) : `<div class="compass"><div class="ch"><span class="lbl">罗盘 · 三岔</span></div>${zyHTML()}
   <div class="nodes">${S.compass.map((n, i) => { const ok = nodeOk(n.type, S.team, curCap()), cur = S.sel === i; return `<button class="node${cur ? ' on' : ''}" data-act="node" data-i="${i}" data-tip="${esc(NODES[n.type].n + '：' + NODES[n.type].d + '\n这一次：' + nodeDesc(n) + '\n需要 ' + fmtTok(n.cost * src.unit) + ' 灵流；走完还得 ' + ECON.node + ' 元石、回 1 点意志、蛊师经验')}"${ok ? '' : ' disabled'}><span class="nseal">${NODES[n.type].ch}</span><span class="nbody"><b>${NODES[n.type].n}</b><small>${esc(nodeDesc(n))}</small></span><span class="ncost">${fmtTok(n.cost * src.unit)}</span><span class="nbar"><i></i></span></button>`; }).join('')}</div></div>`) + `
   ${!on('battle') ? lockHTML('battle') : `<div class="gate${canFight ? ' open' : ''}"><div class="gh"><span class="lbl">斗蛊</span><span class="gsub">${canFight ? `每场耗 1 点意志 · 余 ${S.will}` : `意志已尽 · 约 ${Math.ceil(nextWill / 60)} 分钟回 1 点，养蛊也会回`}</span></div>
-  <div class="gbtns">${S.realm < 5 ? `<button class="gbtn" data-act="trib"${canFight ? '' : ' disabled'}><b>${tribLabel}</b><small>${REALMS[S.realm + 1]}境 Boss · 胜则升阶</small></button>` : `<button class="gbtn" data-act="endless"${canFight ? '' : ' disabled'}><b>无尽劫 · 第 ${S.floor} 层</b><small>最高 ${S.endless} 层 · 逐层变强</small></button>`}<button class="gbtn" data-act="ghost"${canFight ? '' : ' disabled'}><b>斗幽灵</b><small>易 · 中 · 难 任选 · 胜得元石夺蛊</small></button></div></div>`}`;
+  <div class="gbtns">${S.realm < 5 ? `<button class="gbtn" data-act="trib"${canFight ? '' : ' disabled'}><b>${tribLabel}</b><small>${REALMS[S.realm + 1]}境 Boss · 胜则升阶</small><em class="stk">${esc(TXT.stakesLine('trib'))}</em></button>` : `<button class="gbtn" data-act="endless"${canFight ? '' : ' disabled'}><b>无尽劫 · 第 ${S.floor} 层</b><small>最高 ${S.endless} 层 · 逐层变强</small><em class="stk">${esc(TXT.stakesLine('endless'))}</em></button>`}<button class="gbtn" data-act="ghost"${canFight ? '' : ' disabled'}><b>斗幽灵</b><small>易 · 中 · 难 任选</small><em class="stk">赢了：元石 +${ECON.win.easy}～${ECON.win.hard}，可能得蛊茧、宝箱｜输了：元石 +${ECON.lose}，蛊受轻伤</em></button></div></div>`}`;
   meters();
 }
 // 灵气存量：烧掉的 token 先存成灵气（没有上限），选了路就灌进节点。只显示一行数字，不画进度条
@@ -2112,6 +2129,7 @@ function renderPrep(open) {
   <div class="fhead"><span class="lbl">敌阵 <small>点开看词条</small></span>${sum(f.team)}</div>${miniRow(f.team, 'foe', 'foe')}
   <div class="odds"><span class="olab">胜算约</span><b id="oddsN">…</b><span class="obar"><i id="oddsBar"></i></span><small id="oddsD">用同一套斗蛊规则推演 200 场</small></div>
   <div class="fhead"><span class="lbl">我阵 <small>${canSort ? '拖动换位 · 左为炉口，先上场' : '左为炉口，先上场'}</small></span>${sum(mine)}</div>${miniRow(mine, 'me', 'mine', canSort)}
+  <p class="stakes">${stakesHTML(kind, PREP.foe && PREP.foe.tier)}</p>
   <p class="sm">${kind === 'duel' ? '' : '开战耗 1 点意志。'}站位决定谁先挨打：遗泽给身后、擂鼓给最前、先登要站最前、暗针要躲在后排、护卫和连心看左右邻。蓝角标是它从邻位拿到的加成。</p>
   <div class="row2"><button data-act="shut">再想想</button><button class="zhu big" data-act="fight">开战</button></div>`;
   const cur = $('.sheet.prep');
@@ -2300,13 +2318,7 @@ function showResult(B) {
     else { S.losses++; wound(); txt = '渡劫未成：全体轻伤 1 层，写代码约 1 分钟愈合一层。'; }
   } else if (B.kind === 'ghost') {
     if (win) {
-      S.wins++; const r = R(), L = S.team[0];
-      const atts = [...new Set(B.enemy.flatMap(g => g.att))], sps = [...new Set(B.enemy.map(g => g.sp))];
-      if (S.team.length < curCap()) { const sp = atts.length ? r.pick(atts) : r.pick(sps); loot.push({ k: 'take', sp, t: `夺蛊：${SP[sp].n} 入空窍` }); }
-      const trs = [...new Set(B.enemy.flatMap(g => g.tr.map(t => t[0])))].filter(id => { const e = L && L.tr.find(t => t[0] === id); return L && (e ? e[1] < MAXV : L.tr.length < MAXTR); });
-      while (loot.length < 3 && trs.length) { const id = trs.splice(r.int(trs.length), 1)[0]; loot.push({ k: 'print', id, t: `拓印【${TRAITS[id].n}】→ ${SP[L.sp].n}` }); }
-      if (!loot.length) loot.push({ k: 'boon', t: `${L ? SP[L.sp].n : '主蛊'} +2/+2` });
-      txt = '胜。从败者残躯上取一样：';
+      S.wins++; txt = '胜。';
     } else if (draw) txt = '两败俱伤，各自退去。';
     else { S.losses++; wound(); txt = '败。全体轻伤 1 层，写代码约 1 分钟愈合一层。'; }
   } else {
@@ -2338,10 +2350,12 @@ function showResult(B) {
     const left = B.res.log[B.res.log.length - 1].s[1].reduce((a, x) => a + x[2], 0), got = [];
     if (S.sel != null && S.compass[S.sel]) { const c = S.compass[S.sel].cost * src.unit, add = Math.min(c * WOUND.loseNodePct, c - S.prog - 1); if (add > 0) { S.prog += add; got.push(`${NODES[S.compass[S.sel].type].n}进度 +${Math.round(100 * add / c)}%`); } }
     else { const add = WOUND.loseNodePct * 50 * src.unit; S.bank += add; got.push(`灵气 +${fmtTok(add)}`); }
-    if (mnote) got.push(...mnote.replace(/^败也有得：/, '').split('、'));
-    consol = `<div class="consol"><b>败亦有获</b>${got.map(t => `<span>${esc(t)}</span>`).join('')}${saved ? '<em>护心符替你保住了连胜</em>' : ''}${left > 0 ? `<em>敌阵只剩 ${fmtNum(left)} 血，差一点</em>` : ''}</div>`;
+    if (mnote) got.push(...mnote.replace(/^败也有得：/, '').split('、').filter(t => !/^经验/.test(t)));   // 经验在「本场所得」里列
+    consol = `<div class="consol"><b>败亦有获</b>${got.map(t => `<span>${esc(t)}</span>`).join('')}${left > 0 ? `<em>敌阵只剩 ${fmtNum(left)} 血，差一点</em>` : ''}</div>`;
   }
+  const spoils = mo ? [...(mo.xp ? [{ k: 'xp', n: mo.xp }] : []), ...mo.rewards.filter(r => !isSettle(r) && r.k !== 'xp' && !/升级|成就/.test(r.why || ''))] : [];
   const panel = el(`<div class="result"><div class="rseal${win ? '' : ' lose'}">${win ? '胜' : draw ? '和' : '败'}</div>${B.comeback ? '<span class="goldtag">绝境翻盘</span>' : ''}<p class="rtxt">${txt}</p>${consol}
+  ${spoils.length ? `<ul class="spoils"><li class="sh">本场所得</li>${spoils.map(r => `<li>${esc(rwLine(r))}</li>`).join('')}</ul>` : ''}
   ${base ? `<div class="payout" data-act="payskip"><span class="plab">元石</span><b class="pnum">0</b><div class="pmul"></div></div>` : ''}
   ${loot.map((l, i) => `<button class="loot" data-act="loot" data-i="${i}">${esc(l.t)}</button>`).join('')}
   <div class="rbtns">${btns}${loot.length ? '' : `<button data-act="closeBattle">${S.started ? '回空窍' : '关闭'}</button>`}<button data-act="copyReplay">复制复盘链接</button></div></div>`);
@@ -2437,7 +2451,7 @@ function shareURL(code) { return (/^https?:/.test(location.protocol) ? location.
 function myCode() { return encodeTeam(S.team.length ? S.team : starterTeam(), { name: S.name, realm: S.realm, marks: S.marks }); }
 function openGhosts() {
   if (!S.ghosts || S.ghosts.realm !== S.realm) { const r = R(); S.ghosts = { realm: S.realm, list: ghostTrio(r, Math.max(1, S.nodes) + S.realm, S.realm).map(o => ({ tier: o.tier, label: o.label, name: o.name, code: encodeTeam(o.team, { name: '幽灵·' + o.name, realm: S.realm }) })) }; save(); }
-  sheet(`<h3>斗幽灵 · 择一对手</h3><p class="sm">阵容摆在明面上，越难元石越多；胜了还能从残躯上夺一样。每场耗 1 点意志（余 ${S.will}）。</p>${S.ghosts.list.map((o, i) => { const d = decodeTeam(o.code); return `<div class="foeopt"><div class="fh"><b class="tier t-${o.tier}">${o.label}</b><span class="fn">${esc(o.name)}</span><span class="rw">胜 +${ECON.win[o.tier]}◈</span></div>${miniRow(d.team, 'foe', 'g' + i)}<button class="zhu" data-act="ghostGo" data-i="${i}"${S.will > 0 ? '' : ' disabled'}>应战</button></div>`; }).join('')}`);
+  sheet(`<h3>斗幽灵 · 择一对手</h3><p class="sm">阵容摆在明面上，越难奖励越多。每场耗 1 点意志（余 ${S.will}）。连胜、每日首胜另有元石加成。</p>${S.ghosts.list.map((o, i) => { const d = decodeTeam(o.code); return `<div class="foeopt"><div class="fh"><b class="tier t-${o.tier}">${o.label}</b><span class="fn">${esc(o.name)}</span></div><p class="stakes">${stakesHTML('ghost', o.tier)}</p>${miniRow(d.team, 'foe', 'g' + i)}<button class="zhu" data-act="ghostGo" data-i="${i}"${S.will > 0 ? '' : ' disabled'}>应战</button></div>`; }).join('')}`);
 }
 let cardURL = '';
 async function openShare() {
@@ -2466,7 +2480,7 @@ function openDuel(foe) {
   const mine = S.started && S.team.length ? S.team : starterTeam();
   window.__guFoe = foe;
   sheet(`<p class="eyebrow">界壁震动</p><h3 class="duelh">有人向你下战帖</h3><p class="sm">来自 <b>${esc(foe.name || '无名蛊师')}</b> · ${REALMS[foe.realm] || '凡人'}</p>${miniRow(foe.team, 'foe', 'duel')}
-  <p class="vsline">— 你的${S.started && S.team.length ? '空窍' : '初始阵容'} —</p>${miniRow(mine, '', 'duelMine')}<div class="row2"><button class="zhu big" data-act="duelFight">布阵应战</button></div>`);
+  <p class="vsline">— 你的${S.started && S.team.length ? '空窍' : '初始阵容'} —</p>${miniRow(mine, '', 'duelMine')}<p class="stakes">${stakesHTML('duel')}</p><div class="row2"><button class="zhu big" data-act="duelFight">布阵应战</button></div>`);
 }
 function checkHash() {
   const h = location.hash; if (!/[#&](c|r)=/.test(h)) return;
@@ -2488,13 +2502,12 @@ function placeNew(g, quiet, mode = 'shop') {
 }
 function handleMerges() { mergeAll(S.team, S.marks, R(), S.bag).forEach(onMerged); }
 function openDaily() {
-  const d = dailyView(M()), si = streakInfo(M()), c = charmCost();
+  const d = dailyView(M()), si = streakInfo(M());
   sheet(`<h3>日课</h3><p class="sm">每天回来做一点，断签不罚，只是从第 1 天重新算。</p>
   <div class="dfw${d.firstWinPending ? '' : ' done'}"><b>每日首胜</b><span>${d.firstWinPending ? `今天第一场胜利结算 ×${d.firstWinMul}` : '今日已领'}</span></div>
   <h4>今日三课${d.allDone ? ' · 已圆满' : ''}</h4><ul class="tasks">${d.tasks.map(t => `<li class="${t.done ? 'done' : ''}" data-tip="${esc(`${t.n}：进度 ${t.prog}/${t.need}，完成得 ${CHESTS[t.chest] ? CHESTS[t.chest].n : '宝箱'}；三课全完成另得银箱。`)}"><b>${esc(t.n)}</b><span class="tbar"><i style="width:${(100 * t.prog / t.need).toFixed(0)}%"></i></span><small>${t.prog}/${t.need} · ${CHESTS[t.chest] ? CHESTS[t.chest].n : ''}</small></li>`).join('')}</ul>
   <h4>七日签到</h4><div class="sign">${d.sign.map((r, i) => `<span class="${i < d.signDay ? 'got' : ''}${i === d.signDay - 1 ? ' today' : ''}"><b>${i + 1}</b><small>${r.map(rwText).join(' ')}</small></span>`).join('')}</div>
-  <h4>连胜与护心符</h4><p class="sm">当前 ${si.n} 连胜，结算 ×${si.mul.toFixed(1)}。断连只失去加成，不扣已有的东西。护心符 ${si.charms}/${META_TUNE.streak.charmMax}：${si.n >= META_TUNE.streak.minForCharm ? '输一场时自动用掉一张，连胜保住' : `${META_TUNE.streak.minForCharm} 连胜以上才会用到`}。</p>
-  <div class="row2"><button data-act="charm"${S.stone >= c && si.charms < META_TUNE.streak.charmMax ? '' : ' disabled'}>买一张护心符 ${c}◈</button></div>`, 'daily');
+  <h4>连胜</h4><p class="sm">当前 ${si.n} 连胜，胜场元石 ×${si.mul.toFixed(1)}。断连只失去加成，不扣已有的东西。</p>`, 'daily');
 }
 function openAchs() {
   const m = M(), list = achList(m), done = list.filter(a => a.done).length;
@@ -2528,7 +2541,7 @@ function onBattleEnd(B) {                                                       
   if (B.kind === 'replay' || B.res.winner === 'draw') return null;
   const log = B.res.log, s0 = log[0].s[0], s1 = log[log.length - 1].s[0], hp = s => s.reduce((a, x) => a + x[2], 0);
   const mine = log.filter(e => e.t === 'dmg' && e.src === 0), win = B.res.winner === 'A';
-  const safe = !win && canGuardStreak(M()) && M().streak.charms > 0;
+  const safe = false;
   const out = metaEmit(M(), 'battle_end', { kind: B.kind === 'ghost' ? (B.tier || 'mid') : B.kind, win, hpLeftRatio: hp(s1) / Math.max(1, hp(s0)), crits: B.crits | 0, maxHit: Math.max(0, ...mine.map(e => e.n)), skills: log.filter(e => e.t === 'combo' && B.res.roster[e.uid] && B.res.roster[e.uid].side === 0).length, turns: B.res.turns, streakSafe: safe }, R(), S);
   if (B.kind === 'endless' && win) out.more = metaEmit(M(), 'endless_floor', { floor: S.floor }, R(), S);
   return out;
@@ -2572,7 +2585,7 @@ const TIPS = {
   gu: t => guTip(S.team[+t.dataset.i], S.team, +t.dataset.i),
   mg: t => { const tm = FOE[t.dataset.k]; return tm ? guTip(tm[+t.dataset.i], tm, +t.dataset.i) : ''; },
   ware: t => { const w = S.shop[+t.dataset.i]; if (!w) return ''; const n = owned(w.sp), shelf = S.shop.filter(x => x.sp === w.sp && !x.sold).length; return guTip(newGu(w.sp)) + `<small>买下时开茧定品质，价格 ${buyCost()}◈</small>` + (n >= 2 ? `<p>你已有 ${n} 只${RANK.names[baseRank(w.sp)]}${SP[w.sp].n}，买下即合炼成${RANK.names[baseRank(w.sp) + 1]}${esc(TXT.mergeWarn(w.sp, S.realm))}</p>` : n + shelf >= 3 ? `<p>${esc(TXT.fuseTip(w.sp, 3 - n))}</p>` : ''); },
-  level: () => { const L = levelInfo(M()); return `<b>蛊师 ${L.level} 级</b> 经验 ${Math.floor(L.cur)}/${L.need}<br><small>写代码、走节点、斗蛊（输了也给）、开茧、合炼都给经验</small><p>下一级：${L.next.map(rwText).join('、') || '满级'}</p>`; },
+  level: () => { const L = levelInfo(M()); return `<b>蛊师 ${L.level} 级</b> 经验 ${Math.floor(L.cur)}/${L.need}<br><small>写代码、走节点、斗蛊（输了也给）、开茧、合炼都给经验</small><p>下一级奖励：</p><ul>${L.next.map(r => `<li>${esc(rwLine(r))}</li>`).join('') || '<li>已满级</li>'}</ul>`; },
   rate: () => `<b>灵流 ${fmtTok(rate)}/s</b><br><small>${src.mode === 'vscode' ? '本机 AI 工具每秒烧掉的 token' : '网页里是模拟灵流'}。${hot ? '武火：' : '文火：'}超过 ${fmtTok(src.hotTh)}/s 算武火，走完节点有几率多一次突变或怪癖。</small><p>今日 ${fmtTok(S.todayKey === today() ? S.todayTok : 0)} · 本次 ${fmtTok(sessTok)} · 累计 ${fmtTok(S.total)}</p>`,
 };
 let tipT = 0, tipEl = null, tipFor = null, tipLongT = 0, tipLongAt = -1e9;
@@ -2673,7 +2686,6 @@ const ACT = {
   },
   daily() { openDaily(); }, achs() { openAchs(); },
   title(a) { if (setTitle(M(), a.dataset.id)) { save(); openAchs(); } },
-  charm() { const m = M(), c = charmCost(); if (S.stone < c || m.streak.charms >= META_TUNE.streak.charmMax) return; S.stone -= c; m.streak.charms++; renderMeta(); renderLevel(); save(); openDaily(); snd('coin'); },
   setTheme(a) { S.theme = a.dataset.v; applyTheme(); save(); openSettings(); },
   setMute() { S.mute = !S.mute; save(); snd('pluck'); openSettings(); },
   setCalm() { S.calm = !S.calm; applyCalm(); save(); openSettings(); },
@@ -2721,12 +2733,8 @@ const ACT = {
   skip() { skip = true; },
   payskip() { payFast = true; },
   loot(a) {
-    const l = window.__guB.loot[+a.dataset.i], L = S.team[0];
-    gain('战利', l.t);
-    if (l.k === 'mark') { if (!S.marks.includes(l.id)) S.marks.push(l.id); }
-    else if (l.k === 'take') { const g = newGu(l.sp); onGain(g, 'loot'); placeNew(g, false, 'reward'); }
-    else if (l.k === 'print' && L) addTrait(L, l.id, 1);
-    else if (L) { L.atk += 2; L.hp += 2; }
+    const l = window.__guB.loot[+a.dataset.i];
+    gain('道痕', l.t); if (l.k === 'mark' && !S.marks.includes(l.id)) S.marks.push(l.id);
     closeBattle();
   },
   closeBattle() { closeBattle(); },
