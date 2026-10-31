@@ -2357,7 +2357,10 @@ const fuseLv = g => Math.max(0, rankOf(g) - baseRank(g.sp));     // 合成过几
 const rankName = g => RANK.names[rankOf(g)] + SP[g.sp].n;          // 「一转野猪蛊」
 // 出战额度：每个秘境写明额度，上阵蛊的转数加起来不能超过它（只限转数总和，不限只数）。下标 = 秘境所属境界
 const QUOTA = [4, 7, 10, 14, 18, 22];
-const quotaOf = team => (team || []).reduce((s, g) => s + rankOf(g), 0);
+// 六转仙蛊记 IMMORTAL.cost 点（8），一队最多 IMMORTAL.max 只（1）：上阵、换阵、收新蛊进空窍时 immFull 拦下
+const isImm = g => !!(g && SP[g.sp] && SP[g.sp].immortal);
+const quotaOf = team => (team || []).reduce((s, g) => s + (isImm(g) ? IMMORTAL.cost : rankOf(g)), 0);
+const immFull = (team, except = null) => (team || []).filter(g => g !== except && isImm(g)).length >= IMMORTAL.max;
 const driveCap = r => Math.min(RANK.max, (r | 0) + 1);   // 驱使上限：境界 r 只能让 r+1 转及以下的蛊上阵
 // 斗幽灵、战帖按额度分场：上阵转数总和不超过这一场的额度就能进（和秘境一样只限总和，不限只数和单只转数）
 const ARENAS = [4, 9, 15, 22];
@@ -2376,7 +2379,7 @@ const bagCap = () => BAG.cap;
 // 攻血成长表：同一种蛊每一转的攻血固定。G[r] = 该转相对一转的倍数；物种的 atk/hp 是它基础转数时的数值。
 // 物种可带 st: [[攻,血] × 6]（下标 = 转数）直接覆盖这张表。
 // 单只蛊封顶（design 第 0 节）：攻血按「每种蛊每一转」的固定表，五转封顶；加攻血的食物每只最多吃 ATE_MAX 次
-const RANK_GROW = [0, 1, 1.8, 3, 4.6, 6.8, 9.6];
+const RANK_GROW = [0, 1.15, 2.1, 2.7, 3.4, 3.7, 6.4];   // 和 bestiary2.ST_GROW 同一行（物种都带 st，这张只是兜底）
 // 数值放大十倍（design 2.8）：物种表里的攻血是小数字，statFor 统一乘 STAT_SCALE 再给出去（一转约攻 20、血 40），百分比加成才看得出来。
 // 食物加的攻血在 foods.js 里已经是放大后的数，不再乘。
 const STAT_SCALE = 10;
@@ -2487,12 +2490,14 @@ const daoOf = sp => (SP[sp] && SP[sp].dao) || 'li';
 
 // ---------- 杀招（队伍级，自动成形） ----------
 // 返回 { 下标: 杀招 }：每只蛊最多挂一个杀招，配方按 COMBOS 顺序认领
+// 低转杀招（c.low = { 物种: 最高转数 }）：这几种只算转数不超过上限的那几只，升上去就散
+const lowOk = (c, g) => !c.low || c.low[g.sp] == null || rankOf(g) <= c.low[g.sp];
 function teamCombos(team) {
-  const out = {}, sps = new Set(team.map(g => g.sp));
+  const out = {};
   for (const c of COMBOS) {
+    const sps = new Set(team.filter(g => lowOk(c, g)).map(g => g.sp));
     if (!c.need.every(x => sps.has(x))) continue;
-    if (c.low && !Object.entries(c.low).every(([sp, mx]) => team.some(g => g.sp === sp && guRank(g) <= mx))) continue;   // 低转杀招：那几只得停在所写转数以内
-    const i = team.findIndex((g, k) => g.sp === c.need[0] && !out[k]); if (i >= 0) out[i] = c;
+    const i = team.findIndex((g, k) => g.sp === c.need[0] && !out[k] && lowOk(c, g)); if (i >= 0) out[i] = c;
   }
   return out;
 }
@@ -2542,7 +2547,7 @@ function canBuy(team, sp, cap, bag = [], bc = BAG.cap) { return canTake(team, ba
 // 收下一只蛊：能合成先合成；否则空窍有空位进空窍，再不行进蛊囊。mode 'bag'（战利品）只进蛊囊。返回 { where, merged }
 function placeGu(team, bag, g, cap, bc = BAG.cap, mode = 'shop', pick) {
   if (fusable(team, bag, g)) { bag.push(g); return { where: 'merge', merged: mergeAll(team, bag, pick) }; }
-  if (mode === 'shop' && team.length < cap) { g.pos = cellPos(freeCell(team)); team.push(g); sortTeam(team); return { where: 'team', merged: [] }; }
+  if (mode === 'shop' && team.length < cap && !(isImm(g) && immFull(team))) { g.pos = cellPos(freeCell(team)); team.push(g); sortTeam(team); return { where: 'team', merged: [] }; }
   if (bag.length < bc) { bag.push(g); return { where: 'bag', merged: mergeAll(team, bag, pick) }; }
   return { where: null, merged: [] };
 }
@@ -2831,15 +2836,14 @@ function synergyOf(team) {
     if (!k) continue; clashes.push({ a: a.dao, b: b.dao, k });
     if (k < a.clash) { a.clash = k; a.clashWith = b.dao; } if (k < b.clash) { b.clash = k; b.clashWith = a.dao; }
   }
-  const sps = new Set(T.filter(Boolean).map(g => g.sp));
-  // 低转杀招（combos2 的 low = { 物种: 最高转数 }）：队里得有一只这种蛊的转数不超过所写转数才成形，升上去就散
-  const lowOk = c => !c.low || Object.entries(c.low).every(([sp, mx]) => T.some(g => g && g.sp === sp && guRank(g) <= mx));
-  let formed = COMBOS.filter(c => c.need.every(x => sps.has(x)) && lowOk(c));
+  // 低转杀招（combos2 的 low = { 物种: 最高转数 }）：只算转数不超过上限的那几只，升上去就散（和 core.teamCombos 同一个 lowOk）
+  const spsOf = c => new Set(T.filter(g => g && lowOk(c, g)).map(g => g.sp));
+  let formed = COMBOS.filter(c => { const sps = spsOf(c); return c.need.every(x => sps.has(x)); });
   const replaced = new Set(formed.filter(c => c.from).map(c => c.from));
   formed = formed.filter(c => !replaced.has(c.id)).sort((a, b) => (b.from ? 1 : 0) - (a.from ? 1 : 0));
   const taken = new Set(), combos = [];
   for (const c of formed) {
-    const core = c.core || c.need[0], idx = T.findIndex((g, i) => g && g.sp === core && !taken.has(i)); if (idx < 0) continue;
+    const core = c.core || c.need[0], idx = T.findIndex((g, i) => g && g.sp === core && !taken.has(i) && lowOk(c, g)); if (idx < 0) continue;
     taken.add(idx);
     const rank = guRank(T[idx]), dao = daoOf(core), dr = daos.find(x => x.dao === dao), ti = dr ? TIER_IDX[dr.tier] * dr.clash : 0;
     const mul = Math.round((1 + 0.15 * (rank - 1)) * (1 + 0.2 * ti) * 100) / 100;
@@ -7423,7 +7427,7 @@ function showResult(root, res, opts, me, names, skipped, resolve) {
 return { playBattle };
 })();
 // ---- src/reso.js（包一层，只放出 export）
-const { daoChar, daoColor, resoInfo, resoHTML, resoGain, resoOf } = (() => {
+const { daoChar, daoColor, comboStrat, comboLow, resoInfo, resoHTML, resoGain, resoOf } = (() => {
 // 蛊码 GuCode · 道共鸣和杀招的常驻显示（洞府空窍上方、秘境队伍上方共用这一套，别各写一套）。只出 HTML 字符串，不碰 DOM。
 //   resoHTML(team, opts)  一排横排自动折行的小签：已触发的共鸣一道一签描朱「炎道 2/2 · 攻 +15%」（相冲写「相冲五折」）；
 //                         还没触发的道合成一枚灰签「金·力·奴·血 各 1/2」，悬停逐道写「再 1 只：…」；成形的杀招各一签。
@@ -7436,7 +7440,10 @@ const { daoChar, daoColor, resoInfo, resoHTML, resoGain, resoOf } = (() => {
 //   daoChar(sp)           蛊卡角上的小道字（力、炎、冰……），daoColor(sp) 它的颜色
 //   resoOf(team, g)       这只蛊身上生效的共鸣，写实际数：「力道共鸣：攻 +15%（+3）」，没有就空串（蛊卡悬停用）
 //   resoGain(team, sp)    再上阵一只 sp，哪一道会凑成或升一档共鸣：{ dao, name, tier, sum } 或 null（蛊市「凑共鸣」小签用）
+//   comboStrat(c)         杀招的打法克制一行：「打法：灼烧流、群攻 · 克：护体流… · 被克：续航流…」（蛊典、蛊卡详情、杀招小签悬停共用）
+//   comboLow(c, sp)       低转杀招里这一种的转数要求：「需一转」「需二转及以下」，不是低转杀招就空串
 // team = 阵上的蛊（{ sp, rank, atk, hp }，召唤物不算）。数字和战斗里一样：表里写 30，乘 RES_K（0.5）和相冲倍率，玩家拿到 15%。
+
 
 
 
@@ -7474,6 +7481,20 @@ function perGu(g, r, k) {
 }
 const capOf = n => DAO_TIERS.find(t => t >= n) || DAO_TIERS[DAO_TIERS.length - 1];
 
+function comboStrat(c) {
+  const C = c && (c.style ? c : COMBO2[c.id]); if (!C) return '';
+  const nm = ids => (ids || []).map(i => (STRAT[i] ? STRAT[i].n : i)).join('、'), out = [];
+  if ((C.style || []).length) out.push('打法：' + nm(C.style));
+  if ((C.counters || []).length) out.push('克：' + nm(C.counters));
+  if ((C.counteredBy || []).length) out.push('被克：' + nm(C.counteredBy));
+  return out.join(' · ');
+}
+function comboLow(c, sp) {
+  const C = c && (c.need ? c : COMBO2[c.id]), mx = C && C.low ? C.low[sp] : null;
+  return mx == null ? '' : mx === 1 ? '需一转' : `需${RANK.names[mx]}及以下`;
+}
+const lowLine = c => { const C = COMBO2[c.id]; return C && C.low ? '低转杀招：' + Object.keys(C.low).map(sp => `${SP[sp] ? SP[sp].n : sp}${comboLow(C, sp)}`).join('、') + '，升上去就散' : ''; };
+
 function resoInfo(team) {
   const T = (team || []).filter(g => g && SP[g.sp]);
   let sy; try { sy = synergyOf(T); } catch (e) { sy = { daos: [], combos: [] }; }
@@ -7509,7 +7530,7 @@ function resoHTML(team, opts = {}) {
     chips.push(`<span class="rz lone" data-tip="${esc(tip)}">${esc(txt)}</span>`);
   }
   if (opts.combos !== false) for (const c of combos) {
-    const tip = `杀招「${c.n}」：${c.d || ''}\n核心蛊：${RANK.names[c.rank] || ''}${c.coreName}，威力 ×${c.mul}`;
+    const tip = [`杀招「${c.n}」：${c.d || ''}`, `核心蛊：${RANK.names[c.rank] || ''}${c.coreName}，威力 ×${c.mul}`, lowLine(c), comboStrat(c)].filter(Boolean).join('\n');
     chips.push(`<span class="rz combo" data-tip="${esc(tip)}"><b>招</b>${esc(c.n)}${c.mul && c.mul !== 1 ? ` ×${c.mul}` : ''}</span>`);
   }
   if (!chips.length) return opts.empty ? `<div class="reso2"><span class="rz none">${esc(opts.empty)}</span></div>` : '';
@@ -7540,7 +7561,7 @@ function resoOf(team, g) {
   return `${D.n}共鸣（${x.tier} 只）：${bits.join('，') || r.d}${extra ? '；' + extra : ''}${k < 1 ? `（与${DAO[x.clashWith] ? DAO[x.clashWith].n : ''}相冲，${zhe(k)}）` : ''}`;
 }
 
-return { daoChar, daoColor, resoInfo, resoHTML, resoGain, resoOf };
+return { daoChar, daoColor, comboStrat, comboLow, resoInfo, resoHTML, resoGain, resoOf };
 })();
 // ---- src/meta.js
 // 蛊码 GuCode · 成就道途（纯逻辑，不碰 DOM）。规则见 docs/design.md 第 4 节。
@@ -9351,6 +9372,7 @@ const TXT = {
   whyEmpty: '空窍里还没有蛊',
   whyQuota: (u, q) => `上阵转数 ${u}，超过额度 ${q}：收一只进蛊囊再渡劫`,
   whyDrive: g => `${rankName(g)}要${REALMS[rankOf(g) - 1]}境界才能驱使：先收进蛊囊`,
+  immOne: '一队只能有一只仙蛊',
   driveNo: g => `${REALMS[S.realm]}境界只能驱使${RANK.names[driveCap(S.realm)]}及以下的蛊，${rankName(g)}先留在蛊囊`,
   overDrive: '境界不够，驱使不了：渡劫前收进蛊囊',
   ateLine: g => `加攻血的食物 已吃 ${ateOf(g)}/${ATE_MAX}`,
@@ -10236,11 +10258,11 @@ function guDetail(g, ctx = {}) {
   const recipes = COMBOS_ALL.filter(x => x.need.includes(g.sp)), sk = skills(g.sp, rankOf(g)), skP = sk.find(k => k.kind === 'passive'), skA = sk.find(k => k.kind === 'active');
   sheet(`<div class="detail"><div class="dart">${guSVG(g.sp, { rank: rankOf(g) })}</div><div><h3>${rankName(g)}</h3><p class="lore">${esc(s.lore)}</p><p class="dst"><i class="a">${g.atk}</i><i class="h">${g.hp}</i><i class="v">${spdG(g)}</i> <small>${DAO[daoOf(g.sp)] ? DAO[daoOf(g.sp)].n : ''} · ${reachG(g)}</small></p>${team && resoOf(team, g) ? `<p class="sm rs">${esc(resoOf(team, g))}</p>` : ''}</div></div>
   ${nat ? `<h4>被动技能</h4><p><b>${esc((skP || nat).n)}</b> ${esc(skP ? skP.text : nat.d)}</p>` : ''}${actOfG(g) ? `<h4>主动技能</h4><p><b>${esc((skA || actOfG(g)).n)}</b> ${esc(skA ? skA.text : actOfG(g).d)}<br><small>蛊力攒满自动放</small></p>` : ''}
-  ${c ? `<h4>杀招</h4><div class="skill"><span class="seal">${esc(c.n)}</span><p>${esc(c.d)}<br><small>配方：${c.need.map(x => SP[x].n).join(' + ')}</small></p></div>` : ''}
+  ${c ? `<h4>杀招</h4><div class="skill"><span class="seal">${esc(c.n)}</span><p>${esc(c.d)}<br><small>配方：${c.need.map(x => SP[x].n + (comboLow(c, x) ? `（${comboLow(c, x)}）` : '')).join(' + ')}</small>${comboStrat(c) ? `<br><small>${esc(comboStrat(c))}</small>` : ''}</p></div>` : ''}
   ${f ? `<h4>挂件</h4><p>${fi(f.id)}<b>${esc(f.n)}</b> ${esc(f.d)}</p>` : ''}
   ${g.xing ? `<h4>蛊性</h4><p><b>${esc(xingName(g.xing))}</b> ${esc(xingDesc(g.xing))}</p>` : ''}
   <h4>${TXT.statHead}</h4><p class="sm">${esc(TXT.statSub)}</p>${growHTML(g)}<p class="sm">${esc(TXT.ateLine(g))}${g.bonusA || g.bonusH ? `（已加攻 ${g.bonusA || 0}、血 ${g.bonusH || 0}）` : ''}</p>
-  ${recipes.length ? `<h4>能凑的杀招</h4><ul>${recipes.map(x => `<li><b>${esc(x.n)}</b> ${x.need.map(y => SP[y].n).join(' + ')}${unlocked(x.id, 'combo') ? '' : ' <small>道途解锁</small>'}</li>`).join('')}</ul>` : ''}
+  ${recipes.length ? `<h4>能凑的杀招</h4><ul>${recipes.map(x => `<li><b>${esc(x.n)}</b> ${x.need.map(y => SP[y].n + (comboLow(x, y) ? `<small>（${comboLow(x, y)}）</small>` : '')).join(' + ')}${unlocked(x.id, 'combo') ? '' : ' <small>道途解锁</small>'}</li>`).join('')}</ul>` : ''}
   ${ctx.kind === 'team' || ctx.kind === 'bag' ? `<div class="row2">${ctx.kind === 'team' ? `<button data-act="toBag" data-k="${cellOf(g)}"${S.bag.length < BC() && !tripOn() ? '' : ' disabled'}>收进蛊囊</button>` : `<button class="zhu" data-act="fromBag" data-i="${i}"${S.team.length < SLOTS && rankOf(g) <= driveCap(S.realm) && !tripOn() ? '' : ' disabled'}>上阵</button>`}<button data-act="sell" data-k="${ctx.kind}" data-i="${i}"${tripOn() ? ' disabled' : ''}>卖出 · 退回 ${fmtTok(price(sellValue(g)))}</button></div>` : ''}`);
 }
 function openCodex() {
@@ -10248,7 +10270,7 @@ function openCodex() {
   sheet(`<h3>蛊典</h3><p class="sm">见过 ${Object.keys(S.codex).length} / ${SPECIES.length} 种。</p>
   <h4>杀招图鉴</h4><p class="sm">没凑出来过的杀招只露出核心蛊，其余几只只告诉你属于哪一道；第一次成形后完整揭晓。</p><ul class="recipes">${COMBOS_ALL.map(c => { const seen = (S.combosSeen || []).includes(c.id), core = SP[c.need[0]], rest = c.need.slice(1);
     if (!seen) return `<li class="hid"><b>？？？</b> 核心：<span class="${have.includes(c.need[0]) ? 'got' : ''}">${core ? core.n : '？'}</span> + ${rest.map(x => `<span>某只${DAO[daoOf(x)] ? DAO[daoOf(x)].n : ''}的蛊</span>`).join(' + ')}${unlocked(c.id, 'combo') ? '' : ' <small>道途解锁</small>'}</li>`;
-    const miss = comboMissing(c, have); return `<li class="${miss.length ? '' : 'on'}"><b>${esc(c.n)}</b> ${c.need.map(x => `<span class="${have.includes(x) ? 'got' : ''}">${SP[x] ? SP[x].n : x}</span>`).join(' + ')}${!unlocked(c.id, 'combo') ? '<small>道途解锁</small>' : miss.length ? '' : '<small>已成形</small>'}<br><small>${esc(c.d)}</small></li>`; }).join('')}</ul>
+    const miss = comboMissing(c, S.team.filter(g => lowOk(c, g)).map(g => g.sp)), st = comboStrat(c); return `<li class="${miss.length ? '' : 'on'}"><b>${esc(c.n)}</b> ${c.need.map(x => `<span class="${have.includes(x) ? 'got' : ''}">${SP[x] ? SP[x].n : x}</span>${comboLow(c, x) ? `<small>${comboLow(c, x)}</small>` : ''}`).join(' + ')}${!unlocked(c.id, 'combo') ? '<small>道途解锁</small>' : miss.length ? '' : '<small>已成形</small>'}<br><small>${esc(c.d)}</small>${st ? `<br><small class="strat">${esc(st)}</small>` : ''}</li>`; }).join('')}</ul>
   <h4>道</h4><ul>${DAOS.map(d => `<li><b>${d.n}</b> ${esc(d.d)}<br><small>2 只：${esc(d.r2.d)}；4 只：${esc(d.r4.d)}</small></li>`).join('')}</ul>
   <h4>蛊</h4><div class="codexgrid">${SPECIES.filter(s => !s.immortal).map(s => `<div class="cx${S.codex[s.id] ? '' : ' unseen'}" data-tip="${esc(S.codex[s.id] ? `${s.n}（${RANK.names[baseRank(s.id)]} · ${DAO[daoOf(s.id)] ? DAO[daoOf(s.id)].n : ''}）\n${natDesc(s.id)}` : '还没见过')}">${guSVG(s.id)}<small>${S.codex[s.id] ? s.n : '？'}</small></div>`).join('')}</div>`, 'codex');
 }
@@ -10323,11 +10345,13 @@ function moveGu(fromKey, fi, toKey, ti) {
   if (fromKey === 'bag') {
     const g = S.bag[fi], k = ti == null || ti < 0 ? freeCell(S.team) : ti, o = atCell(k); if (!g || k == null) return false;
     if (rankOf(g) > driveCap(S.realm)) { note(TXT.driveNo(g)); return false; }
+    if (isImm(g) && immFull(S.team, o)) { note(TXT.immOne); return false; }
     if (o) { S.bag[fi] = o; o.pos = null; } else { if (S.team.length >= SLOTS) { note(`阵盘 9 格都满了：拖到一只蛊身上就能换下它`); return false; } S.bag.splice(fi, 1); }
     g.pos = cellPos(k); S.team.push(g); sortTeam(S.team); return true;
   }
   const g = atCell(fi), o = S.bag[ti]; if (!g) return false;
   if (o && rankOf(o) > driveCap(S.realm)) { note(TXT.driveNo(o)); return false; }
+  if (o && isImm(o) && immFull(S.team, g)) { note(TXT.immOne); return false; }
   if (o) { S.bag[ti] = g; o.pos = g.pos; S.team.splice(S.team.indexOf(g), 1, o); g.pos = null; }
   else { if (S.bag.length >= BC()) return false; S.team.splice(S.team.indexOf(g), 1); g.pos = null; S.bag.push(g); }
   sortTeam(S.team); return true;

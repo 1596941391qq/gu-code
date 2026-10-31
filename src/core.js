@@ -1,7 +1,7 @@
 // 蛊码 GuCode · 纯逻辑：种子随机、数据表、洞府养成（蛊市、合成、食物、道、杀招）、坐标码。不碰 DOM。规则见 docs/design.md
 import { NEW_SPECIES, NEW_TRAITS, NEW_COMBOS, NEW_SUMMONS, NEW_POOL, OLD_EXTRA, natMulOf } from './bestiary.js';
 import { DAOS, DAO, DAO_BY_SCHOOL } from './daos.js';
-import { SPECIES2, PATCH64, NATS, NAT_OF, SUMMONS2 } from './bestiary2.js';
+import { SPECIES2, PATCH64, NATS, NAT_OF, SUMMONS2, IMMORTAL } from './bestiary2.js';
 import { COMBOS2, COMBO_SUMMONS } from './combos2.js';
 import { FOODS, FOOD } from './foods.js';
 export const natMulFor = r => natMulOf(r);   // 本命描述里〔〕数字按转数换算（界面用）
@@ -30,7 +30,10 @@ export const fuseLv = g => Math.max(0, rankOf(g) - baseRank(g.sp));     // 合�
 export const rankName = g => RANK.names[rankOf(g)] + SP[g.sp].n;          // 「一转野猪蛊」
 // 出战额度：每个秘境写明额度，上阵蛊的转数加起来不能超过它（只限转数总和，不限只数）。下标 = 秘境所属境界
 export const QUOTA = [4, 7, 10, 14, 18, 22];
-export const quotaOf = team => (team || []).reduce((s, g) => s + rankOf(g), 0);
+// 六转仙蛊记 IMMORTAL.cost 点（8），一队最多 IMMORTAL.max 只（1）：上阵、换阵、收新蛊进空窍时 immFull 拦下
+export const isImm = g => !!(g && SP[g.sp] && SP[g.sp].immortal);
+export const quotaOf = team => (team || []).reduce((s, g) => s + (isImm(g) ? IMMORTAL.cost : rankOf(g)), 0);
+export const immFull = (team, except = null) => (team || []).filter(g => g !== except && isImm(g)).length >= IMMORTAL.max;
 export const driveCap = r => Math.min(RANK.max, (r | 0) + 1);   // 驱使上限：境界 r 只能让 r+1 转及以下的蛊上阵
 // 斗幽灵、战帖按额度分场：上阵转数总和不超过这一场的额度就能进（和秘境一样只限总和，不限只数和单只转数）
 export const ARENAS = [4, 9, 15, 22];
@@ -49,7 +52,7 @@ export const bagCap = () => BAG.cap;
 // 攻血成长表：同一种蛊每一转的攻血固定。G[r] = 该转相对一转的倍数；物种的 atk/hp 是它基础转数时的数值。
 // 物种可带 st: [[攻,血] × 6]（下标 = 转数）直接覆盖这张表。
 // 单只蛊封顶（design 第 0 节）：攻血按「每种蛊每一转」的固定表，五转封顶；加攻血的食物每只最多吃 ATE_MAX 次
-export const RANK_GROW = [0, 1, 1.8, 3, 4.6, 6.8, 9.6];
+export const RANK_GROW = [0, 1.15, 2.1, 2.7, 3.4, 3.7, 6.4];   // 和 bestiary2.ST_GROW 同一行（物种都带 st，这张只是兜底）
 // 数值放大十倍（design 2.8）：物种表里的攻血是小数字，statFor 统一乘 STAT_SCALE 再给出去（一转约攻 20、血 40），百分比加成才看得出来。
 // 食物加的攻血在 foods.js 里已经是放大后的数，不再乘。
 export const STAT_SCALE = 10;
@@ -160,12 +163,14 @@ export const daoOf = sp => (SP[sp] && SP[sp].dao) || 'li';
 
 // ---------- 杀招（队伍级，自动成形） ----------
 // 返回 { 下标: 杀招 }：每只蛊最多挂一个杀招，配方按 COMBOS 顺序认领
+// 低转杀招（c.low = { 物种: 最高转数 }）：这几种只算转数不超过上限的那几只，升上去就散
+export const lowOk = (c, g) => !c.low || c.low[g.sp] == null || rankOf(g) <= c.low[g.sp];
 export function teamCombos(team) {
-  const out = {}, sps = new Set(team.map(g => g.sp));
+  const out = {};
   for (const c of COMBOS) {
+    const sps = new Set(team.filter(g => lowOk(c, g)).map(g => g.sp));
     if (!c.need.every(x => sps.has(x))) continue;
-    if (c.low && !Object.entries(c.low).every(([sp, mx]) => team.some(g => g.sp === sp && guRank(g) <= mx))) continue;   // 低转杀招：那几只得停在所写转数以内
-    const i = team.findIndex((g, k) => g.sp === c.need[0] && !out[k]); if (i >= 0) out[i] = c;
+    const i = team.findIndex((g, k) => g.sp === c.need[0] && !out[k] && lowOk(c, g)); if (i >= 0) out[i] = c;
   }
   return out;
 }
@@ -215,7 +220,7 @@ export function canBuy(team, sp, cap, bag = [], bc = BAG.cap) { return canTake(t
 // 收下一只蛊：能合成先合成；否则空窍有空位进空窍，再不行进蛊囊。mode 'bag'（战利品）只进蛊囊。返回 { where, merged }
 export function placeGu(team, bag, g, cap, bc = BAG.cap, mode = 'shop', pick) {
   if (fusable(team, bag, g)) { bag.push(g); return { where: 'merge', merged: mergeAll(team, bag, pick) }; }
-  if (mode === 'shop' && team.length < cap) { g.pos = cellPos(freeCell(team)); team.push(g); sortTeam(team); return { where: 'team', merged: [] }; }
+  if (mode === 'shop' && team.length < cap && !(isImm(g) && immFull(team))) { g.pos = cellPos(freeCell(team)); team.push(g); sortTeam(team); return { where: 'team', merged: [] }; }
   if (bag.length < bc) { bag.push(g); return { where: 'bag', merged: mergeAll(team, bag, pick) }; }
   return { where: null, merged: [] };
 }

@@ -1,7 +1,7 @@
 // 蛊码 GuCode · 斗蛊引擎 v2（纯函数，种子随机，可复现）。规格见 docs/battle-spec.md，规则见 docs/design.md 2.5 / 3.5 / 第 8 节。
 // 双方各一块 3×3 阵盘（列 c：0 前 1 中 2 后；行 r：0–2）。速度决定出手顺序（行动条），出手和挨打攒蛊力，蛊力满了放主动技；
 // 近战打同一行最靠前的敌蛊（这一行没人打最近的一行），远程按 aim 挑；技能有形状和位移。输出事件流 + 每步快照，渲染层只负责回放。
-import { makeRng, SP, SUMMON_NAMES, SLOTS, natOf, awOf, guRank, daoOf, COMBOS, XING, decodeTeam, statFor, baseRank } from './core.js';
+import { makeRng, SP, SUMMON_NAMES, SLOTS, natOf, awOf, guRank, daoOf, COMBOS, XING, decodeTeam, statFor, baseRank, lowOk } from './core.js';
 import { natK } from './bestiary2.js';
 import { DAO } from './daos.js';
 import { FOOD } from './foods.js';
@@ -84,15 +84,14 @@ export function synergyOf(team) {
     if (!k) continue; clashes.push({ a: a.dao, b: b.dao, k });
     if (k < a.clash) { a.clash = k; a.clashWith = b.dao; } if (k < b.clash) { b.clash = k; b.clashWith = a.dao; }
   }
-  const sps = new Set(T.filter(Boolean).map(g => g.sp));
-  // 低转杀招（combos2 的 low = { 物种: 最高转数 }）：队里得有一只这种蛊的转数不超过所写转数才成形，升上去就散
-  const lowOk = c => !c.low || Object.entries(c.low).every(([sp, mx]) => T.some(g => g && g.sp === sp && guRank(g) <= mx));
-  let formed = COMBOS.filter(c => c.need.every(x => sps.has(x)) && lowOk(c));
+  // 低转杀招（combos2 的 low = { 物种: 最高转数 }）：只算转数不超过上限的那几只，升上去就散（和 core.teamCombos 同一个 lowOk）
+  const spsOf = c => new Set(T.filter(g => g && lowOk(c, g)).map(g => g.sp));
+  let formed = COMBOS.filter(c => { const sps = spsOf(c); return c.need.every(x => sps.has(x)); });
   const replaced = new Set(formed.filter(c => c.from).map(c => c.from));
   formed = formed.filter(c => !replaced.has(c.id)).sort((a, b) => (b.from ? 1 : 0) - (a.from ? 1 : 0));
   const taken = new Set(), combos = [];
   for (const c of formed) {
-    const core = c.core || c.need[0], idx = T.findIndex((g, i) => g && g.sp === core && !taken.has(i)); if (idx < 0) continue;
+    const core = c.core || c.need[0], idx = T.findIndex((g, i) => g && g.sp === core && !taken.has(i) && lowOk(c, g)); if (idx < 0) continue;
     taken.add(idx);
     const rank = guRank(T[idx]), dao = daoOf(core), dr = daos.find(x => x.dao === dao), ti = dr ? TIER_IDX[dr.tier] * dr.clash : 0;
     const mul = Math.round((1 + 0.15 * (rank - 1)) * (1 + 0.2 * ti) * 100) / 100;

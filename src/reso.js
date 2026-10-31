@@ -10,10 +10,13 @@
 //   daoChar(sp)           蛊卡角上的小道字（力、炎、冰……），daoColor(sp) 它的颜色
 //   resoOf(team, g)       这只蛊身上生效的共鸣，写实际数：「力道共鸣：攻 +15%（+3）」，没有就空串（蛊卡悬停用）
 //   resoGain(team, sp)    再上阵一只 sp，哪一道会凑成或升一档共鸣：{ dao, name, tier, sum } 或 null（蛊市「凑共鸣」小签用）
+//   comboStrat(c)         杀招的打法克制一行：「打法：灼烧流、群攻 · 克：护体流… · 被克：续航流…」（蛊典、蛊卡详情、杀招小签悬停共用）
+//   comboLow(c, sp)       低转杀招里这一种的转数要求：「需一转」「需二转及以下」，不是低转杀招就空串
 // team = 阵上的蛊（{ sp, rank, atk, hp }，召唤物不算）。数字和战斗里一样：表里写 30，乘 RES_K（0.5）和相冲倍率，玩家拿到 15%。
 import { SP, daoOf, RANK } from './core.js';
 import { DAO, DAO_TIERS } from './daos.js';
 import { synergyOf, RES_K } from './battle.js';
+import { COMBO2, STRAT } from './combos2.js';
 
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const CN_ZHE = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
@@ -47,6 +50,20 @@ function perGu(g, r, k) {
   return bits.length ? `${nmOf(g)} ${bits.join('，')}` : '';
 }
 const capOf = n => DAO_TIERS.find(t => t >= n) || DAO_TIERS[DAO_TIERS.length - 1];
+
+export function comboStrat(c) {
+  const C = c && (c.style ? c : COMBO2[c.id]); if (!C) return '';
+  const nm = ids => (ids || []).map(i => (STRAT[i] ? STRAT[i].n : i)).join('、'), out = [];
+  if ((C.style || []).length) out.push('打法：' + nm(C.style));
+  if ((C.counters || []).length) out.push('克：' + nm(C.counters));
+  if ((C.counteredBy || []).length) out.push('被克：' + nm(C.counteredBy));
+  return out.join(' · ');
+}
+export function comboLow(c, sp) {
+  const C = c && (c.need ? c : COMBO2[c.id]), mx = C && C.low ? C.low[sp] : null;
+  return mx == null ? '' : mx === 1 ? '需一转' : `需${RANK.names[mx]}及以下`;
+}
+const lowLine = c => { const C = COMBO2[c.id]; return C && C.low ? '低转杀招：' + Object.keys(C.low).map(sp => `${SP[sp] ? SP[sp].n : sp}${comboLow(C, sp)}`).join('、') + '，升上去就散' : ''; };
 
 export function resoInfo(team) {
   const T = (team || []).filter(g => g && SP[g.sp]);
@@ -83,7 +100,7 @@ export function resoHTML(team, opts = {}) {
     chips.push(`<span class="rz lone" data-tip="${esc(tip)}">${esc(txt)}</span>`);
   }
   if (opts.combos !== false) for (const c of combos) {
-    const tip = `杀招「${c.n}」：${c.d || ''}\n核心蛊：${RANK.names[c.rank] || ''}${c.coreName}，威力 ×${c.mul}`;
+    const tip = [`杀招「${c.n}」：${c.d || ''}`, `核心蛊：${RANK.names[c.rank] || ''}${c.coreName}，威力 ×${c.mul}`, lowLine(c), comboStrat(c)].filter(Boolean).join('\n');
     chips.push(`<span class="rz combo" data-tip="${esc(tip)}"><b>招</b>${esc(c.n)}${c.mul && c.mul !== 1 ? ` ×${c.mul}` : ''}</span>`);
   }
   if (!chips.length) return opts.empty ? `<div class="reso2"><span class="rz none">${esc(opts.empty)}</span></div>` : '';
