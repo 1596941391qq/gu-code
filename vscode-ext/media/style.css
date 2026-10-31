@@ -34,6 +34,7 @@ i{font-style:normal}
 .a,.h,.s{display:inline-flex;align-items:center;gap:2px;font-weight:700;font-variant-numeric:tabular-nums}
 .a::before{content:"";width:7px;height:7px;background:currentColor;transform:rotate(45deg);display:inline-block;margin-right:2px}
 .h::before{content:"";width:7px;height:7px;background:currentColor;border-radius:50% 50% 50% 0;transform:rotate(-45deg);display:inline-block;margin-right:2px}
+.v{color:var(--qing);font-weight:600}.v::before{content:"速";font:10px var(--kai);margin-right:1px;opacity:.8}
 .s::before{content:"甲";font-size:10px;margin-right:1px}
 .a{color:var(--atk)} .h{color:var(--hp)} .s{color:#4d6a8a}
 .s[hidden]{display:none}
@@ -231,6 +232,14 @@ body:has(#tut-layer) .sheet-bg{z-index:1001}   /* 引导进行中打开的面板
 .gu .art{width:86%;aspect-ratio:1;display:block}
 .gu .nm{font:13px/1.1 var(--kai);white-space:nowrap}
 .gu .st{display:flex;gap:6px;font-size:12px;margin-top:1px}
+.slots.board{grid-template-columns:repeat(3,1fr);gap:5px}
+.slots.board::before{display:none}
+.slots.board .bcol{font:13px var(--kai);text-align:center;color:var(--mu);letter-spacing:.2em}.slots.board .bcol small{font-size:10px;letter-spacing:0;color:var(--zhu2)}
+.slots.board .gu{min-height:96px}.slots.board .gu .art{width:52%}
+.slots.board .gu.empty{background:transparent;border:1px dashed var(--faint);box-shadow:none;display:grid;place-items:center;color:var(--mu);font:12px var(--kai)}
+.slots.board .gu .st{gap:5px;font-size:11px}
+.tc.act{color:var(--zhu2);border-color:var(--zhu2)}
+.recipes li.hid b{color:var(--mu)}
 .gu .tr{font:12px/1.2 var(--kai);color:#4a4239;margin-top:auto;padding-top:2px;white-space:nowrap;max-width:100%;overflow:hidden}
 .gu .tr sup{font-size:8px}
 .att{font-style:normal;margin-left:2px;padding:0 2px;border:1px solid #8a7f6d;border-radius:2px;font-size:10px}
