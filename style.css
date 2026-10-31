@@ -1269,3 +1269,10 @@ body:has(#lgx) :is(.float,.inkburst,.cut,.stamp,.chain){visibility:hidden}   /* 
 @media (max-width:420px){.tu-cards{grid-template-columns:1fr}.tu-card{display:grid;grid-template-columns:auto 1fr;column-gap:10px;align-items:baseline}.tu-card b{grid-row:span 2}.tu-card small{border:0;padding:0;margin:0}.tu-card .tu-art{grid-row:span 2}}
 .tu-cards.two{grid-template-columns:repeat(2,minmax(0,1fr))}
 @media (max-width:420px){.tu-cards.two{grid-template-columns:repeat(2,minmax(0,1fr))}.tu-cards.two .tu-card{display:flex}}
+.tu-legend{display:flex;flex-wrap:wrap;gap:3px 10px;margin:6px 0 0;font-size:12px;line-height:1.3;color:var(--tx)}
+.tu-legend span{display:inline-flex;align-items:center;gap:3px;cursor:help}
+.tu-legend .tu-seal{width:17px;height:17px;font-size:11px;border-width:1px;background:var(--paper);color:var(--ink);border-color:var(--ink)}
+.tu-legend .tu-seal.t-event{color:var(--qing);border-color:var(--qing)}
+.tu-legend .tu-seal.t-bless{color:#3f6b3a;border-color:#3f6b3a}
+.tu-legend .tu-seal.t-elite,.tu-legend .tu-seal.t-boss{background:var(--zhu);color:var(--on-zhu);border-color:var(--zhu)}
+.tu-legend small{font-size:10px;color:var(--mu)}
