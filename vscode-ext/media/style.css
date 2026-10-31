@@ -207,8 +207,17 @@ i{font-style:normal}
 .mseal{position:absolute;top:3px;right:3px;background:var(--zhu);color:var(--on-zhu);font:12px/1 var(--kai);padding:3px 3px;border-radius:1px}
 .mseal.pale{background:#5a5246}
 .qk{position:absolute;top:3px;left:3px;font:10px/1 var(--kai);color:var(--zhu);border:1px solid var(--zhu);padding:1px 2px;border-radius:1px}
-.gu .star{position:absolute;top:3px;left:3px;font:700 11px/1 var(--mono);color:#7a4d0c;background:#e8c46a;padding:2px 3px;border-radius:1px}
-.star ~ .qk{top:20px}
+/* 转数角标：一转素墨，二转起逐级加深（赤铁、白银、黄金、紫晶） */
+.gu .rk{position:absolute;top:3px;left:3px;font:11px/1 var(--kai);color:#4a4239;border:1px solid #8a7f6d;background:var(--paper);padding:1px 2px;border-radius:1px}
+.gu .rk2{color:#f3ead6;background:#a4442c;border-color:#a4442c}
+.gu .rk3{color:#2a2a2a;background:#c9d0d4;border-color:#9aa4ab}
+.gu .rk4{color:#4a2f05;background:#e3b553;border-color:#c99532}
+.gu .rk5,.gu .rk6{color:#f3ead6;background:#7d62a8;border-color:#7d62a8}
+.rk ~ .qk{top:20px}
+.rkt{font:11px var(--kai);color:var(--mu);margin-right:1px}
+.gu.sealed .art{filter:grayscale(1);opacity:.45}
+.gu .sealtag{position:absolute;left:4%;right:4%;top:34%;font:12px/1.25 var(--kai);color:var(--on-zhu);background:rgba(93,42,32,.88);padding:3px 2px;border-radius:1px;white-space:normal}
+.sealtx{color:var(--zhu)}
 .wd{position:absolute;bottom:22%;right:2px;font:10px/1 var(--kai);color:var(--on-zhu);background:#5d2a20;padding:2px 3px}
 .gu.hurt .art{opacity:.6}
 .gu.pulse{animation:pulse .6s ease}
@@ -410,7 +419,6 @@ button.mg{font:inherit;font-size:11px;border:0;cursor:pointer;position:relative;
 .marks:empty{display:none}
 .slot .empty.lock{flex-direction:column;gap:2px;font-size:15px;border-style:solid;opacity:.75}
 .slot .empty.lock small{font:11px var(--sans)}
-.star{position:absolute;left:3px;bottom:24%;font:600 11px/1 var(--sans);color:#8a6a1c;background:#f1e2b0;padding:2px 3px;border-radius:2px}
 .shop{margin-top:16px}
 .mini-b{font-size:13px;padding:4px 9px}
 .wares{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}

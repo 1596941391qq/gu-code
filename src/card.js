@@ -1,5 +1,5 @@
 // 蛊码 GuCode · 分享卡（canvas → PNG）
-import { SP, TRAITS, REALMS, skillOf, fmtTok } from './core.js';
+import { SP, TRAITS, REALMS, skillOf, fmtTok, rankName } from './core.js';
 import { guSVG } from './art.js';
 import { qrDraw } from './qr.js';
 
@@ -35,8 +35,8 @@ export async function makeCard({ team, name, realm, total, muts, wins, code, url
     ctx.fillStyle = '#e6dcc6'; ctx.fillRect(84, y, W - 168, 150);
     ctx.fillStyle = 'rgba(28,25,21,.06)'; for (let k = 0; k < 40; k++) ctx.fillRect(84 + rnd() * (W - 180), y + rnd() * 146, 1 + rnd() * 30, 1);
     if (imgs[i]) ctx.drawImage(imgs[i], 96, y + 2, 146, 146);
-    ctx.fillStyle = '#1c1915'; ctx.font = `48px ${KAI}`; ctx.fillText(SP[g.sp].n, 262, y + 62);
-    const rq = rar && g.rar > 0 && rar[g.rar]; if (rq) { const nw = ctx.measureText(SP[g.sp].n).width; ctx.save(); ctx.fillStyle = rq.col; ctx.fillRect(272 + nw, y + 24, 44, 44); ctx.fillStyle = '#f3ead6'; ctx.font = `32px ${KAI}`; ctx.fillText(rq.n, 278 + nw, y + 58); ctx.restore(); }
+    ctx.fillStyle = '#1c1915'; ctx.font = `48px ${KAI}`; ctx.fillText(rankName(g), 262, y + 62);
+    const rq = rar && g.rar > 0 && rar[g.rar]; if (rq) { const nw = ctx.measureText(rankName(g)).width; ctx.save(); ctx.fillStyle = rq.col; ctx.fillRect(272 + nw, y + 24, 44, 44); ctx.fillStyle = '#f3ead6'; ctx.font = `32px ${KAI}`; ctx.fillText(rq.n, 278 + nw, y + 58); ctx.restore(); }
     ctx.font = `600 34px ${SANS}`; ctx.fillStyle = '#7a2a1c'; ctx.fillText(`攻 ${g.atk}`, 262, y + 112); ctx.fillStyle = '#2f4a40'; ctx.fillText(`血 ${g.hp}`, 392, y + 112);
     let tw = 0; if (sk) { ctx.font = `30px ${KAI}`; tw = ctx.measureText(sk.n).width + 28; }
     ctx.fillStyle = '#3a342c'; ctx.font = `30px ${KAI}`;

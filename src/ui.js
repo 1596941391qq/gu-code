@@ -1,5 +1,5 @@
 // 蛊码 GuCode · 界面与流程（渲染层；逻辑都在 core/battle）
-import { mergeAll, makeRng, SPECIES, SP, TRAITS, QUIRKS, NODES, REALMS, TRIB_NAMES, GHOST_NAMES, SLOTS, MAXTR, MAXV, newGu, starterTeam, skillOf, comboOf, nodeOk, rollCompass, applyNode, genTeam, tribTeam, encodeTeam, decodeTeam, fmtTok, addTrait, COMBOS, hashStr, slotCap, SLOT_BY_REALM, poolFor, ECON, MARKS, rollMarks, nodeChoices, rollShop, canBuy, buyGu, sellValue, ghostTrio, trCap, REALM_NOTES, POOL_TIERS, endlessTeam, ENDLESS, EV_MS, playMs, tempoFor, fmtNum, spTraits, posLinks, posNote, WOUND, ZHENYUAN } from './core.js';
+import { mergeAll, makeRng, SPECIES, SP, TRAITS, QUIRKS, NODES, REALMS, TRIB_NAMES, GHOST_NAMES, SLOTS, MAXTR, MAXV, newGu, starterTeam, skillOf, comboOf, nodeOk, rollCompass, applyNode, genTeam, tribTeam, encodeTeam, decodeTeam, fmtTok, addTrait, COMBOS, hashStr, slotCap, SLOT_BY_REALM, poolFor, ECON, MARKS, rollMarks, nodeChoices, rollShop, canBuy, buyGu, sellValue, ghostTrio, trCap, REALM_NOTES, POOL_TIERS, endlessTeam, ENDLESS, EV_MS, playMs, tempoFor, fmtNum, spTraits, posLinks, posNote, WOUND, ZHENYUAN, RANK, baseRank, rankOf, fuseLv, canWield, rankName } from './core.js';
 import { battle } from './battle.js';
 import { guSVG, ART_DEFS } from './art.js';
 import { TokenSource, VSC } from './tokens.js';
@@ -13,11 +13,27 @@ const el = html => { const t = document.createElement('template'); t.innerHTML =
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const setHTML = (n, h) => { if (n._h !== h) { n.innerHTML = h; n._h = h; } };   // 内容没变就不重绘，悬停提示不会被打断
-const fresh = () => ({ v: 2, started: false, name: '', team: [], realm: 0, nodes: 0, compass: [], sel: null, prog: 0, wh: 0, bank: 0, repair: 0, will: 3, willT: 0, willK: 0, total: 0, muts: 0, wins: 0, losses: 0, seed: (Math.random() * 1e9) | 0, step: 0, sound: false, speed: 1, theme: 'auto', mute: false, stone: 5, stoneK: 0, shop: [], pending: null, marks: [], ghosts: null, floor: 1, endless: 0, codex: { sp: [], combo: [] }, healT: 0, calm: false, stats: false, log: [], gains: [], todayKey: '', todayTok: 0, meta: null, tutDone: false, seen: 0, streak: 0, bestStreak: 0, day: '', dayWin: false });
+// ---------- 新增界面文案集中在这里（之后统一换成 guide.js 的术语）----------
+const TXT = {
+  rankBadge: g => `${RANK.ch[rankOf(g)]}转`,
+  rankTip: g => `${rankName(g)}：${SP[g.sp].n}生来${RANK.names[baseRank(g.sp)]}${fuseLv(g) ? `，已合炼 ${fuseLv(g)} 次` : ''}。三只同种同转合炼成高一转，同一只最多炼 ${RANK.fuse} 次。`,
+  sealed: '真元不足以驱使',
+  sealedTip: g => `${rankName(g)}要${REALMS[Math.min(5, rankOf(g) - RANK.over)]}境界才驱使得动。现在可以收着、照常长，但不上阵；渡劫晋阶后自动能用。`,
+  noWield: '空窍里没有驱使得动的蛊，先招一只低转的蛊。',
+  rankIntro: '蛊有转数：凡人驱使一转蛊，每晋一阶多驱使一转。三只同种同转合炼成高一转。',
+  sealIntro: g => `${rankName(g)}超出了你的境界：真元不足以驱使，它先收着不上阵，晋阶后就能用。`,
+  shopNote: '三只同种同转合炼成高一转',
+  mergeWarn: (sp, realm) => { const r = baseRank(sp) + 1; return r > realm + RANK.over ? `（炼成${RANK.names[r]}后要${REALMS[Math.min(5, r - RANK.over)]}才能驱使）` : ''; },
+};
+const fresh = () => ({ v: 2, started: false, name: '', team: [], realm: 0, nodes: 0, compass: [], sel: null, prog: 0, wh: 0, bank: 0, repair: 0, will: 3, willT: 0, willK: 0, total: 0, muts: 0, wins: 0, losses: 0, seed: (Math.random() * 1e9) | 0, step: 0, sound: false, speed: 1, theme: 'auto', mute: false, stone: 5, stoneK: 0, shop: [], pending: null, marks: [], ghosts: null, floor: 1, endless: 0, codex: { sp: [], combo: [] }, healT: 0, calm: false, stats: false, log: [], gains: [], todayKey: '', todayTok: 0, meta: null, tutDone: false, seen: 0, tips: {}, streak: 0, bestStreak: 0, day: '', dayWin: false });
 const today = () => { const d = new Date(); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); };
 const curCap = () => Math.max(slotCap(S.realm), S.team.length);
 const buyCost = () => S.marks.includes('shiJing') ? 2 : ECON.buy, refCost = () => S.marks.includes('shiJing') ? 0 : ECON.refresh;
-function migrate(s) { if (!s || !s.v) return null; if (s.v === 1) { s.v = 2; s.stone = 5 + Math.min(20, s.nodes || 0); s.will = Math.max(s.will || 0, 3); } return s.v === 2 ? s : null; }
+function migrate(s) {
+  if (!s || !s.v) return null; if (s.v === 1) { s.v = 2; s.stone = 5 + Math.min(20, s.nodes || 0); s.will = Math.max(s.will || 0, 3); }
+  (s.team || []).forEach(g => { if (g.rank == null) g.rank = baseRank(g.sp) + Math.max(0, (g.star || 1) - 1); delete g.star; });   // 星级 → 转数
+  return s.v === 2 ? s : null;
+}
 
 let S = fresh(), phase = 'yang', rate = 0, hot = false, inBattle = false, booted = false, skip = false, resetArm = 0;
 const src = new TokenSource(onTick);
@@ -253,6 +269,8 @@ function openGains() {
 
 // ---------- 临时弹层队列（fx 组件到位后替换）：升级 → 成就 → 宝箱 → 解锁 → 小字 ----------
 const POPQ = []; let popBusy = false, heldOuts = [];
+// 新系统第一次出现时的一句说明（每个只说一次）
+function firstTip(k, txt) { const t = S.tips || (S.tips = {}); if (t[k]) return; t[k] = 1; popPush(`<div class="toast tipcard"><b>初见</b> ${esc(txt)}</div>`, 3200, 'side'); save(); }
 function popPush(html, ms, kind = 'side') { POPQ.push({ html, ms, kind }); if (!popBusy) popRun(); }
 async function popRun() {
   popBusy = true;
@@ -300,11 +318,11 @@ function mainHTML() {
   <footer class="foot"><button data-act="duelInput">粘贴坐标码应战</button><button data-act="path">修行路</button><button data-act="codex">蛊典</button>${on('daily') ? '<button data-act="daily">日课</button>' : ''}${on('ach') ? '<button data-act="achs">成就</button>' : ''}<button data-act="reset" id="bReset">重开一局</button></footer>`;
 }
 function guCard(g, i, rc = '') {
-  const sk = skillOf(g);
-  return `<button class="gu${g.wound ? ' hurt' : ''}${i === 0 ? ' lead' : ''}${g.rar > 0 ? ' r' + g.rar : ''}" data-act="gu" data-i="${i}" data-uid="${g.uid}" data-drag="${i}" data-tip-fn="gu">${rc ? `<span class="rcv">${rc}</span>` : ''}
-  <span class="art">${guSVG(g.sp)}</span>${(g.star || 1) > 1 ? `<span class="star">★${g.star}</span>` : ''}${sk ? `<span class="mseal${sk.named ? '' : ' pale'}">${esc(sk.n[0])}</span>` : ''}${g.q.length ? `<span class="qk">${g.q.map(q => QUIRKS[q].n[0]).join('')}</span>` : ''}
+  const sk = skillOf(g), seal = !canWield(g, S.realm);
+  return `<button class="gu${seal ? ' sealed' : ''}${g.wound ? ' hurt' : ''}${i === 0 ? ' lead' : ''}${g.rar > 0 ? ' r' + g.rar : ''}" data-act="gu" data-i="${i}" data-uid="${g.uid}" data-drag="${i}" data-tip-fn="gu">${rc ? `<span class="rcv">${rc}</span>` : ''}
+  <span class="art">${guSVG(g.sp)}</span><span class="rk rk${rankOf(g)}">${TXT.rankBadge(g)}</span>${sk ? `<span class="mseal${sk.named ? '' : ' pale'}">${esc(sk.n[0])}</span>` : ''}${g.q.length ? `<span class="qk">${g.q.map(q => QUIRKS[q].n[0]).join('')}</span>` : ''}
   <span class="nm">${rarTag(g)}${SP[g.sp].n}</span><span class="st"><i class="a">${effA(g)}</i><i class="h">${effH(g)}</i></span>
-  <span class="tr">${trChars(g.tr)}${g.att.map(a => `<i class="att">${SP[a].ab}</i>`).join('')}</span>${g.wound ? `<span class="wd">伤${g.wound}</span>` : ''}</button>`;
+  <span class="tr">${trChars(g.tr)}${g.att.map(a => `<i class="att">${SP[a].ab}</i>`).join('')}</span>${g.wound ? `<span class="wd">伤${g.wound}</span>` : ''}${seal ? `<span class="sealtag">${TXT.sealed}</span>` : ''}</button>`;
 }
 function renderSlots() {
   const box = $('#slots'); if (!box) return;
@@ -323,7 +341,7 @@ function renderMeta() {
   const wd = S.team.reduce((a, g) => a + (g.wound || 0), 0);
   setHTML(m, `<b class="stone" data-tip="元石：买蛊、转市、买护心符。来源：写代码的 token、走完节点、斗蛊结算、卖蛊、宝箱与升级。">◈ ${S.stone}</b> 元石 · 意志 <b class="will" data-tip="意志：每场斗蛊耗 1 点，上限 ${WILL_MAX}。每 ${WILL_SEC / 60} 分钟或写代码都会回，走完节点也回 1 点。">${'◆'.repeat(S.will)}${'◇'.repeat(Math.max(0, WILL_MAX - S.will))}</b>${wd ? ` · <span class="heal" title="写代码约 1 分钟愈合一层">温养<span class="hbar"><i id="healBar" style="width:${(100 * healPct()).toFixed(0)}%"></i></span></span>` : ''}`);
 }
-const shopPool = () => [...new Set([...poolFor(S.realm), ...metaPool(M()).filter(id => SP[id])])];
+const shopPool = () => [...new Set([...poolFor(S.realm), ...metaPool(M()).filter(id => SP[id])])].filter(id => baseRank(id) <= S.realm + RANK.over);   // 只卖驱使得动的
 const shopN = () => 3 + Math.min(2, M().shopSlots | 0);
 function rollWares(old = []) {
   const rig = rigShop(M(), R(), shopPool()); if (rig) return rig.map(sp => ({ sp, frozen: false }));
@@ -335,11 +353,11 @@ function renderShop() {
   if (!on('shop')) { box.innerHTML = lockHTML('shop'); return; }
   if (!S.shop || S.shop.length !== shopN()) { S.shop = rollWares(S.shop || []); onRefresh(S.shop, 'init'); }
   const cost = buyCost(), rc = refCost(), cap = curCap();
-  box.innerHTML = `<div class="ch"><span class="lbl">蛊市 <small>${REALMS[S.realm]}档 · ${poolFor(S.realm).length} 种 · 三只同种合炼升星</small></span><button class="ib mini-b" data-act="refresh"${S.stone >= rc || freeRef() ? '' : ' disabled'}>转市${freeRef() ? ' 免费' : rc ? ' ' + rc + '◈' : ''}</button></div>
+  box.innerHTML = `<div class="ch"><span class="lbl">蛊市 <small>${REALMS[S.realm]}档 · ${shopPool().length} 种 · ${TXT.shopNote}</small></span><button class="ib mini-b" data-act="refresh"${S.stone >= rc || freeRef() ? '' : ' disabled'}>转市${freeRef() ? ' 免费' : rc ? ' ' + rc + '◈' : ''}</button></div>
   <div class="wares n${S.shop.length}">${S.shop.map((w, i) => {
-    const sp = SP[w.sp], merge = S.team.filter(g => g.sp === w.sp && (g.star || 1) === 1).length >= 2, ok = !w.sold && S.stone >= cost && canBuy(S.team, w.sp, cap);
+    const sp = SP[w.sp], merge = S.team.filter(g => g.sp === w.sp && rankOf(g) === baseRank(w.sp)).length >= 2, ok = !w.sold && S.stone >= cost && canBuy(S.team, w.sp, cap);
     const tag = w.sold ? '已购' : !canBuy(S.team, w.sp, cap) ? '空窍已满' : (merge ? '合炼 ' : '') + cost + '◈';
-    return `<div class="ware${w.frozen ? ' frozen' : ''}${w.sold ? ' sold' : ''}${merge && !w.sold ? ' merge' : ''}${ok ? '' : ' cant'}"><button class="wbuy" data-act="ware" data-i="${i}" data-tip-fn="ware"${w.sold ? ' disabled' : ''}>${w.frozen ? '<span class="fz">冻</span>' : ''}<span class="art">${guSVG(w.sp)}</span><b>${sp.n}</b><span class="st"><i class="a">${sp.atk}</i><i class="h">${sp.hp}</i></span><span class="wt">${spTraits(w.sp).map(([t, v]) => TRAITS[t].n + (v > 1 ? v : '')).join(' · ')}</span><span class="price">${tag}</span></button></div>`;
+    return `<div class="ware${w.frozen ? ' frozen' : ''}${w.sold ? ' sold' : ''}${merge && !w.sold ? ' merge' : ''}${ok ? '' : ' cant'}"><button class="wbuy" data-act="ware" data-i="${i}" data-tip-fn="ware"${w.sold ? ' disabled' : ''}>${w.frozen ? '<span class="fz">冻</span>' : ''}<span class="art">${guSVG(w.sp)}</span><b><small class="rkt">${RANK.names[baseRank(w.sp)]}</small>${sp.n}</b><span class="st"><i class="a">${sp.atk}</i><i class="h">${sp.hp}</i></span><span class="wt">${spTraits(w.sp).map(([t, v]) => TRAITS[t].n + (v > 1 ? v : '')).join(' · ')}</span><span class="price">${tag}</span></button></div>`;
   }).join('')}</div>`;
 }
 const FOE = {};   // 面板里出现过的阵容，按 key 存着供「点开详情」用
@@ -347,7 +365,7 @@ function rcvChars(t) { const out = t.map(() => ''); posLinks(t).forEach(l => { i
 function miniRow(t, cls = '', key = '', drag = false) {
   if (key) FOE[key] = t;
   const rc = rcvChars(t), tag = key ? 'button' : 'div';
-  return `<div class="mini ${cls}"${drag ? ` data-sort="${key}"` : ''}>${t.map((g, i) => { const sk = skillOf(g); return `<${tag} class="mg${g.boss ? ' boss' : ''}"${key ? ` data-act="peek" data-k="${key}" data-i="${i}" data-tip-fn="mg"` : ''}${drag ? ` data-drag="${i}"` : ''}>${rc[i] ? `<span class="rcv">${rc[i]}</span>` : ''}<span class="art">${guSVG(g.sp)}</span><b>${rarTag(g)}${g.boss ? '劫·' : ''}${SP[g.sp].n}${(g.star || 1) > 1 ? '★' + g.star : ''}</b><span class="st"><i class="a">${effA(g)}</i><i class="h">${effH(g)}</i></span>${sk && sk.named ? `<em class="cs">${esc(sk.n)}</em>` : `<span class="tr">${trChars(g.tr)}</span>`}</${tag}>`; }).join('')}</div>`;
+  return `<div class="mini ${cls}"${drag ? ` data-sort="${key}"` : ''}>${t.map((g, i) => { const sk = skillOf(g); return `<${tag} class="mg${g.boss ? ' boss' : ''}"${key ? ` data-act="peek" data-k="${key}" data-i="${i}" data-tip-fn="mg"` : ''}${drag ? ` data-drag="${i}"` : ''}>${rc[i] ? `<span class="rcv">${rc[i]}</span>` : ''}<span class="art">${guSVG(g.sp)}</span><b>${rarTag(g)}${g.boss ? '劫·' : ''}<small class="rkt">${RANK.names[rankOf(g)]}</small>${SP[g.sp].n}</b><span class="st"><i class="a">${effA(g)}</i><i class="h">${effH(g)}</i></span>${sk && sk.named ? `<em class="cs">${esc(sk.n)}</em>` : `<span class="tr">${trChars(g.tr)}</span>`}</${tag}>`; }).join('')}</div>`;
 }
 function choiceHTML(p) {
   const L = S.team[0], t = p.node.type;
@@ -484,13 +502,15 @@ function foeOf(kind, foe) {
   if (kind === 'ghost') return { team: foe.team, name: '幽灵·' + foe.name, title: `幽灵 · ${foe.name}（${foe.label || ''}）`, realm: S.realm, marks: [] };
   const n = foe.name || '无名蛊师'; return { team: foe.team, name: n, title: '战帖 · ' + n, realm: foe.realm || 0, marks: foe.marks || [] };
 }
-const myTeamFor = kind => (kind === 'duel' && (!S.started || !S.team.length)) ? starterTeam() : S.team;
+const fielded = () => S.team.every(g => canWield(g, S.realm)) ? S.team : S.team.filter(g => canWield(g, S.realm));   // 真元不足以驱使的不上阵
+const myTeamFor = kind => (kind === 'duel' && (!S.started || !S.team.length)) ? starterTeam() : fielded();
 const myMarksFor = kind => kind === 'duel' && !S.started ? [] : S.marks;
 // ---------- 布阵：开战前看清敌阵、拖动调整站位、实时胜算 ----------
 let PREP = null, oddsJob = 0;
 function prep(kind, foe) {
   if (inBattle || (kind === 'trib' && S.realm >= 5) || (kind !== 'duel' && S.will <= 0)) return;
-  const f = foeOf(kind, foe); PREP = { kind, foe, f, mine: myTeamFor(kind), last: null };
+  const mine = myTeamFor(kind); if (!mine.length) { popPush(`<div class="toast">${TXT.noWield}</div>`, 1600, 'side'); return; }
+  const f = foeOf(kind, foe); PREP = { kind, foe, f, mine, last: null };
   renderPrep(true);
 }
 function renderPrep(open) {
@@ -773,8 +793,8 @@ function guDetail(g, ctx = {}) {
   const s = SP[g.sp], sk = skillOf(g), team = ctx.team, i = ctx.i | 0, kind = ctx.kind || 'view';
   const recv = team ? posLinks(team).filter(l => l.to === i && l.from !== i) : [];
   const w = kind === 'shop' ? S.shop[i] : null, cost = buyCost(), cap = curCap();
-  const merge = w && S.team.filter(x => x.sp === w.sp && (x.star || 1) === 1).length >= 2;
-  sheet(`<div class="detail"><div class="dart">${guSVG(g.sp)}</div><div><h3>${rarTag(g)}${g.boss ? '劫·' : ''}${s.n}${(g.star || 1) > 1 ? ` <small>★${g.star}</small>` : ''}</h3><p class="lore">${kind === 'foe' ? '<span class="foetag">敌</span>' : ''}${s.lore}${g.clone ? ' · 分身' : ''}</p><p class="dst"><i class="a">${effA(g)}</i><i class="h">${effH(g)}</i>${g.wound ? ` <span class="wd">伤 ${g.wound} 层</span>` : ''}</p>${team && kind !== 'shop' ? `<p class="sm">站位：${kind === 'foe' ? '敌阵' : '我阵'}第 ${i + 1} 位${i === 0 ? '（最前）' : ''}</p>` : ''}</div></div>
+  const merge = w && S.team.filter(x => x.sp === w.sp && rankOf(x) === baseRank(w.sp)).length >= 2;
+  sheet(`<div class="detail"><div class="dart">${guSVG(g.sp)}</div><div><h3>${rarTag(g)}${g.boss ? '劫·' : ''}${rankName(g)}</h3><p class="lore">${kind === 'foe' ? '<span class="foetag">敌</span>' : ''}${s.lore}${g.clone ? ' · 分身' : ''}</p><p class="dst"><i class="a">${effA(g)}</i><i class="h">${effH(g)}</i>${g.wound ? ` <span class="wd">伤 ${g.wound} 层</span>` : ''}</p>${team && kind !== 'shop' ? `<p class="sm">站位：${kind === 'foe' ? '敌阵' : '我阵'}第 ${i + 1} 位${i === 0 ? '（最前）' : ''}</p>` : ''}</div></div>
   <h4>词条</h4><ul>${g.tr.map(([id, v]) => { const pn = team && kind !== 'shop' ? posNote(team, i, id) : ''; return `<li><b>${TRAITS[id].n}${v > 1 ? ` ${v}层` : ''}</b>${TRAITS[id].d(v)}${pn ? `<em class="pn">→ ${esc(pn)}</em>` : ''}</li>`; }).join('')}</ul>
   ${recv.length ? `<h4>站位加成</h4><ul>${recv.map(l => `<li><b>${TRAITS[l.id].n}</b>来自 ${SP[team[l.from].sp].n}：${esc(l.txt)}</li>`).join('')}</ul>` : ''}
   ${g.q.length ? `<h4>怪癖</h4><ul>${g.q.map(q => `<li><b>${QUIRKS[q].n}</b>${QUIRKS[q].d}</li>`).join('')}</ul>` : ''}
@@ -782,8 +802,8 @@ function guDetail(g, ctx = {}) {
   ${kind === 'mine' ? `<h4>算力履历</h4><p class="hist">累计喂养 <b>${fmtTok(g.fed)}</b> token · 突变 <b>${g.mut || 0}</b> 次</p>
   <div class="row2"><button data-act="mv" data-i="${i}" data-d="-1"${i === 0 ? ' disabled' : ''}>← 左移</button><button data-act="mv" data-i="${i}" data-d="1"${i >= S.team.length - 1 ? ' disabled' : ''}>右移 →</button></div>
   <div class="row2"><button data-act="sell" data-i="${i}"${S.team.length > 1 ? '' : ' disabled'}>出售 +${sellValue(g)}◈</button></div>
-  <p class="sm">左为炉口：多数罗盘节点作用在最左那只；炼附取最右那只。在空窍里直接拖动也能换位。${(g.star || 1) > 1 ? ` ★${g.star}：词条位 ${trCap(g)} 个。` : ''}</p>` : ''}
-  ${w ? `<div class="row2"><button data-act="freeze" data-i="${i}">${w.frozen ? '解冻' : '冻结（刷新时保留）'}</button><button class="zhu" data-act="buy" data-i="${i}"${!w.sold && S.stone >= cost && canBuy(S.team, w.sp, cap) ? '' : ' disabled'}>${!canBuy(S.team, w.sp, cap) ? '空窍已满' : (merge ? '买下并合炼 ' : '买下 ') + cost + '◈'}</button></div><p class="sm">${merge ? '你已有两只同种 ★1，买下立即三合一升星。' : '同种三只自动合炼升星。'}余 ${S.stone}◈</p>` : ''}
+  <p class="sm">左为炉口：多数罗盘节点作用在最左那只；炼附取最右那只。在空窍里直接拖动也能换位。</p><p class="sm">${esc(TXT.rankTip(g))}词条位 ${trCap(g)} 个。${canWield(g, S.realm) ? '' : `<br><b class="sealtx">${TXT.sealed}</b>：${esc(TXT.sealedTip(g))}`}</p>` : ''}
+  ${w ? `<div class="row2"><button data-act="freeze" data-i="${i}">${w.frozen ? '解冻' : '冻结（刷新时保留）'}</button><button class="zhu" data-act="buy" data-i="${i}"${!w.sold && S.stone >= cost && canBuy(S.team, w.sp, cap) ? '' : ' disabled'}>${!canBuy(S.team, w.sp, cap) ? '空窍已满' : (merge ? '买下并合炼 ' : '买下 ') + cost + '◈'}</button></div><p class="sm">${merge ? `你已有两只${RANK.names[baseRank(w.sp)]}${s.n}，买下立即三合一，炼成${RANK.names[baseRank(w.sp) + 1]}${esc(TXT.mergeWarn(w.sp, S.realm))}。` : TXT.shopNote + '，自动进行。'}余 ${S.stone}◈</p>` : ''}
   <details class="book"><summary>杀招配方（${COMBOS.length}）</summary><ul>${COMBOS.map(c => `<li><b>${c.n}</b>${c.need.map(x => SP[x].n).join(' + ')}</li>`).join('')}</ul></details>`, '', ctx.stack);
 }
 function openGu(i) { const g = S.team[i]; if (g) guDetail(g, { kind: 'mine', i, team: S.team }); }
@@ -831,7 +851,8 @@ function checkHash() {
   openLinkText(h);
 }
 
-function handleMerges() { mergeAll(S.team, S.marks, R()).forEach(x => { gain('合炼', `${SP[x.sp].n} 合炼升阶 攻 ${x.atk} 血 ${x.hp}`); handleOut(metaEmit(M(), 'merge', { star: x.star }, R(), S)); }); }
+function onMerged(x) { gain('合炼', `三只合一，炼成${rankName(x)} 攻 ${x.atk} 血 ${x.hp}`); handleOut(metaEmit(M(), 'merge', { star: fuseLv(x) + 1, rank: rankOf(x) }, R(), S)); firstTip('rank', TXT.rankIntro); if (!canWield(x, S.realm)) firstTip('seal', TXT.sealIntro(x)); }
+function handleMerges() { mergeAll(S.team, S.marks, R()).forEach(onMerged); }
 function openDaily() {
   const d = dailyView(M()), si = streakInfo(M()), c = charmCost();
   sheet(`<h3>日课</h3><p class="sm">每天回来做一点，断签不罚，只是从第 1 天重新算。</p>
@@ -906,14 +927,14 @@ function multTip(lab, m) {
 function guTip(g, team, i) {
   if (!g) return '';
   const s = SP[g.sp], sk = skillOf(g), pn = id => team ? posNote(team, i, id) : '';
-  return `<b>${rarTag(g)}${g.boss ? '劫·' : ''}${s.n}</b> <i class="a">${effA(g)}</i> <i class="h">${effH(g)}</i>${g.wound ? ` <span class="wd">伤${g.wound}</span>` : ''}<br><small>${esc(s.lore)}${team ? ` · 第 ${i + 1} 位` : ''}</small>`
+  return `<b>${rarTag(g)}${g.boss ? '劫·' : ''}${rankName(g)}</b> <i class="a">${effA(g)}</i> <i class="h">${effH(g)}</i>${g.wound ? ` <span class="wd">伤${g.wound}</span>` : ''}<br><small>${esc(s.lore)}${team ? ` · 第 ${i + 1} 位` : ''}</small>`
     + `<ul>${g.tr.map(([id, v]) => `<li><b>${TRAITS[id].n}${v > 1 ? v : ''}</b> ${esc(TRAITS[id].d(v))}${pn(id) ? `<em> → ${esc(pn(id))}</em>` : ''}</li>`).join('')}${g.q.map(q => `<li><b>${QUIRKS[q].n}</b> ${esc(QUIRKS[q].d)}</li>`).join('')}</ul>`
-    + (sk ? `<p><b>${esc(sk.n)}</b> ${esc(sk.d)}</p>` : '') + `<small>点开看完整详情</small>`;
+    + (sk ? `<p><b>${esc(sk.n)}</b> ${esc(sk.d)}</p>` : '') + (g.boss == null && !canWield(g, S.realm) && team === S.team ? `<p><b class="sealtx">${TXT.sealed}</b> ${esc(TXT.sealedTip(g))}</p>` : '') + `<small>点开看完整详情</small>`;
 }
 const TIPS = {
   gu: t => guTip(S.team[+t.dataset.i], S.team, +t.dataset.i),
   mg: t => { const tm = FOE[t.dataset.k]; return tm ? guTip(tm[+t.dataset.i], tm, +t.dataset.i) : ''; },
-  ware: t => { const w = S.shop[+t.dataset.i]; return w ? guTip(newGu(w.sp)) + `<small>买下时开茧定品质，价格 ${buyCost()}◈</small>` : ''; },
+  ware: t => { const w = S.shop[+t.dataset.i]; if (!w) return ''; const n = S.team.filter(g => g.sp === w.sp && rankOf(g) === baseRank(w.sp)).length; return guTip(newGu(w.sp)) + `<small>买下时开茧定品质，价格 ${buyCost()}◈</small>` + (n >= 2 ? `<p>你已有 ${n} 只${RANK.names[baseRank(w.sp)]}${SP[w.sp].n}，买下即合炼成${RANK.names[baseRank(w.sp) + 1]}${esc(TXT.mergeWarn(w.sp, S.realm))}</p>` : ''); },
   level: () => { const L = levelInfo(M()); return `<b>蛊师 ${L.level} 级</b> 经验 ${Math.floor(L.cur)}/${L.need}<br><small>写代码、走节点、斗蛊（输了也给）、开茧、合炼都给经验</small><p>下一级：${L.next.map(rwText).join('、') || '满级'}</p>`; },
   rate: () => `<b>灵流 ${fmtTok(rate)}/s</b><br><small>${src.mode === 'vscode' ? '本机 AI 工具每秒烧掉的 token' : '网页里是模拟灵流'}。${hot ? '武火：' : '文火：'}超过 ${fmtTok(src.hotTh)}/s 算武火，走完节点有几率多一次突变或怪癖。</small><p>今日 ${fmtTok(S.todayKey === today() ? S.todayTok : 0)} · 本次 ${fmtTok(sessTok)} · 累计 ${fmtTok(S.total)}</p>`,
 };
@@ -1030,9 +1051,9 @@ const ACT = {
     if (!canBuy(S.team, w.sp, curCap())) return; closeSheet();
     const g = newGu(w.sp); onGain(g, 'shop'); S.team.push(g); const r = { gu: g, merged: mergeAll(S.team, S.marks, R()) };
     S.stone -= cost; w.sold = true; w.frozen = false; tutorialEvent('shop_open');
-    r.merged.forEach(x => { gain('合炼', `${SP[x.sp].n} 合炼升阶 攻 ${x.atk} 血 ${x.hp}`); handleOut(metaEmit(M(), 'merge', { star: x.star }, R(), S)); });
+    r.merged.forEach(onMerged);
     renderSlots(); renderShop(); renderPhase(); save(); snd('pluck');
-    setTimeout(() => { if (r.merged.length) { const g = r.merged[r.merged.length - 1]; fxFloat(g.uid, `合炼 ★${g.star}`, 'mut'); stampIn($('#qiao'), '合炼', false, 'side'); } else fxFloat(r.gu.uid, '入窍', 'new'); }, 60);
+    setTimeout(() => { if (r.merged.length) { const g = r.merged[r.merged.length - 1]; fxFloat(g.uid, `炼成${RANK.names[rankOf(g)]}`, 'mut'); stampIn($('#qiao'), '合炼', false, 'side'); } else fxFloat(r.gu.uid, '入窍', 'new'); }, 60);
   },
   refresh() { const free = freeRef(), c = free ? 0 : refCost(); if (S.stone < c) return; S.stone -= c; S.shop = rollWares(S.shop); onRefresh(S.shop, 'manual'); tutorialEvent('shop_open'); renderMeta(); renderShop(); save(); snd('tick'); },
   freeze(a) { const i = +a.dataset.i, w = S.shop[i]; if (w) { w.frozen = !w.frozen; renderShop(); save(); if (a.closest('.sheet')) guDetail(newGu(w.sp), { kind: 'shop', i }); } },

@@ -13,7 +13,7 @@ export const TUTORIAL_STEPS = [
   { id: 'ghost', sel: '[data-act="ghost"]', click: '[data-act="ghost"]', evt: 'ghost_open', text: '节点走完，随时可以斗蛊。点「斗幽灵」。' },
   { id: 'ghostGo', sel: '[data-act="ghostGo"]', click: '[data-act="ghostGo"]', evt: 'battle_start', text: '点第一个「应战」，这一场你会赢，还会打出杀招。' },
   { id: 'battle', sel: null, quiet: true, evt: 'battle_end', text: '' },
-  { id: 'shop', sel: '#shop', click: '[data-act="buy"],[data-act="refresh"]', evt: 'shop_open', text: '蛊市开了：买蛊、转市，三只同种合炼升星。' },
+  { id: 'shop', sel: '#shop', click: '[data-act="buy"],[data-act="refresh"]', evt: 'shop_open', text: '蛊市开了：买蛊、转市，三只同种同转合炼成高一转。' },
   { id: 'formation', sel: '[data-act="formation"]', click: '[data-act="formation"]', evt: 'formation_swap', text: '拖拽蛊换位。最左的炉口最先出手，站位就是战术。' },
 ];
 

@@ -6,7 +6,7 @@
 //
 // 1) 事件入口：每个游戏事件调用一次 `const out = metaEmit(S.meta, type, payload, rng, S)`
 //    - token{delta,rate}        TokenSource 每次 tick（约每秒）。同时调用 feedTeam(S.team, delta) 让蛊头冒「+灵气」
-//    - node_done{type}          罗盘节点结算后          - merge{star}   合炼升星后
+//    - node_done{type}          罗盘节点结算后          - merge{star}   合炼升转后（star = 合炼次数 + 1）
 //    - battle_end{kind,win,hpLeftRatio,crits,maxHit,skills,turns,streakSafe?}  斗蛊结算时（kind: easy/mid/hard/trib/endless/duel）
 //    - cocoon{rarity}           开茧揭晓后（rarity 用 rollRarity 的返回值 0-4）
 //    - shop_refresh{nearMiss,triple}  每次转市/首次摆出三格（flags 可用 shopFlags(wares)）
@@ -136,7 +136,7 @@ export const ACHIEVEMENTS = [
   // ——铜
   mkAch('first_node', 'bronze', '初入空窍', '走完第一个罗盘节点', mkStat('nodes', 1)),
   mkAch('first_win', 'bronze', '首战告捷', '斗蛊首胜', mkStat('wins', 1)),
-  mkAch('first_merge', 'bronze', '初次合炼', '三只同种合炼升星', c => c.st.merges >= 1),
+  mkAch('first_merge', 'bronze', '初次合炼', '三只同种同转合炼成高一转', c => c.st.merges >= 1),
   mkAch('first_cocoon', 'bronze', '破茧', '第一次开茧', mkStat('cocoons', 1)),
   mkAch('first_chest', 'bronze', '得宝', '第一次获得宝箱', mkStat('chestsGot', 1)),
   mkAch('lv5', 'bronze', '蛊师五级', '蛊师达到 5 级', c => c.M.level >= 5),
@@ -158,7 +158,7 @@ export const ACHIEVEMENTS = [
   mkAch('ouhuang', 'silver', '欧皇', '10 次开茧内出 2 只天', c => c.M.recent.length >= 2 && c.M.recent.filter(x => x === 4).length >= 2, true),
   mkAch('tok_1m', 'silver', '百万灵气', '累计喂出 100 万 token', c => c.st.tokens >= 1e6),
   mkAch('streak10', 'silver', '十连胜', '斗蛊连胜 10 场', mkStat('bestStreak', 10)),
-  mkAch('star3', 'silver', '三星合炼', '合炼出第一只三星蛊', mkStat('maxStar', 3)),
+  mkAch('star3', 'silver', '再炼一转', '同一只蛊合炼两次（如一转炼到三转）', mkStat('maxStar', 3)),
   mkAch('triple', 'silver', '三同', '转市三格同种', mkStat('triples', 1)),
   mkAch('refresh3', 'silver', '三连转市', '连续转市 3 次不做别的', c => c.M.run.refStreak >= 3),
   mkAch('endless10', 'silver', '无尽十层', '无尽劫到第 10 层', mkStat('endless', 10)),
@@ -218,7 +218,7 @@ export const UNLOCKS = {
   compass: { n: '罗盘', d: '三选一，走你的流派', need: {} },
   formation: { n: '蛊阵', d: '排兵布阵', need: {} },
   battle: { n: '斗蛊', d: '随时开斗', need: { nodes: 1 } },
-  shop: { n: '转轮蛊市', d: '买蛊、转市、合炼升星', need: { nodes: 2 } },
+  shop: { n: '转轮蛊市', d: '买蛊、转市、合炼升转', need: { nodes: 2 } },
   cocoon: { n: '开茧', d: '宝箱与升级会送蛊茧', need: { level: 2 } },
   daily: { n: '每日修行', d: '首胜加成、每日任务、七日签到', need: { level: 3 } },
   ach: { n: '成就', d: '成就与称号', need: { level: 4 } },
@@ -506,7 +506,7 @@ export function metaEmit(M, type, p, rng, S) {
       break;
     }
     case 'merge': { const s = p.star | 0; st.merges++; st.maxStar = Math.max(st.maxStar, s); M.run.refStreak = 0; addXp(X.merge[Math.min(3, s)] || 10);
-      if (s >= 3) give(M, out, [{ k: 'cocoon', n: 1, why: '三星合炼' }], rng); break; }
+      if (s >= 3) give(M, out, [{ k: 'cocoon', n: 1, why: '再炼一转' }], rng); break; }
     case 'cocoon': {
       const t = typeof p.rarity === 'string' ? Math.max(0, RARITY.findIndex(r => r.id === p.rarity)) : p.rarity | 0;
       st.cocoons++; if (t >= 3) st.jue++; if (t === 4) st.tian++; if (M.pity.lastForced && t >= 3) { st.pityHits++; M.pity.lastForced = false; }

@@ -1,5 +1,5 @@
 // node tools/sim.mjs [场数]  —— 随机阵容对战压测：死循环、回合数、物种/杀招胜率、可复现性、坐标码往返
-import { makeRng, genTeam, comboOf, SP, applyNode, newGu, encodeTeam, decodeTeam, QUIRKS, COMBOS, addTrait, MARK_KEYS, MARKS, playMs, tempoFor, poolFor, rollCompass, nodeChoices, rollShop, buyGu, canBuy, sellValue, tribTeam, endlessTeam, rollMarks, slotCap, ECON, ghostTrio, REALMS, arrangeTeam, spTraits } from '../src/core.js';
+import { makeRng, genTeam, comboOf, SP, applyNode, newGu, encodeTeam, decodeTeam, QUIRKS, COMBOS, addTrait, MARK_KEYS, MARKS, playMs, tempoFor, poolFor, rollCompass, nodeChoices, rollShop, buyGu, canBuy, sellValue, tribTeam, endlessTeam, rollMarks, slotCap, ECON, ghostTrio, REALMS, arrangeTeam, spTraits, RANK, baseRank, rankOf, canWield } from '../src/core.js';
 import { battle } from '../src/battle.js';
 
 const N = +process.argv[2] || 1000;
@@ -9,11 +9,11 @@ for (let i = 0; i < N; i++) {
   const rng = makeRng('sim' + i), p = rng.int(15);
   const ta = genTeam(rng, p), tb = genTeam(rng, Math.max(0, p + rng.int(3) - 1));
   const ma = MARK_KEYS.filter(() => rng() < 0.15), mb = MARK_KEYS.filter(() => rng() < 0.15);
-  if (rng() < 0.3) ta[0].star = 2 + rng.int(2);
+  if (rng() < 0.3) ta[0].rank = baseRank(ta[0].sp) + 1 + rng.int(RANK.fuse);
   const r = battle(ta, tb, 'seed' + i, ma, mb), r2 = battle(ta, tb, 'seed' + i, ma, mb);
   if (r.winner !== r2.winner || r.log.length !== r2.log.length) nondet++;
   const dec = decodeTeam(encodeTeam(ta, { name: '测试', realm: 2, marks: ma }));
-  if (!dec || dec.marks.join() !== ma.join() || dec.team.length !== ta.length || dec.team.some((g, j) => g.atk !== Math.min(255, ta[j].atk) || g.hp !== Math.min(255, ta[j].hp) || (g.star || 1) !== (ta[j].star || 1) || JSON.stringify(g.tr) !== JSON.stringify(ta[j].tr) || g.att.join() !== ta[j].att.join() || g.q.join() !== ta[j].q.join())) codeFail++;
+  if (!dec || dec.marks.join() !== ma.join() || dec.team.length !== ta.length || dec.team.some((g, j) => g.atk !== Math.min(255, ta[j].atk) || g.hp !== Math.min(255, ta[j].hp) || rankOf(g) !== rankOf(ta[j]) || JSON.stringify(g.tr) !== JSON.stringify(ta[j].tr) || g.att.join() !== ta[j].att.join() || g.q.join() !== ta[j].q.join())) codeFail++;
   else { const rd = battle(dec.team, decodeTeam(encodeTeam(tb, { marks: mb })).team, 'seed' + i, dec.marks, mb); if (rd.winner !== r.winner && ta.every(g => g.atk < 256 && g.hp < 256)) codeFail++; }
   durs.push(playMs(r.log) * tempoFor(playMs(r.log)) / 1000); turns.push(r.turns); if (r.winner === 'draw') draws++; if (r.capped) capped++; maxEv = Math.max(maxEv, r.log.length);
   [[ta, 'A'], [tb, 'B']].forEach(([t, side]) => {
@@ -64,12 +64,13 @@ console.log('杀招强制胜率（同阶，300 场/招）:', forced.join('  '));
 // 预算 STEPS 个节点（≈ 演示模式 30 分钟 / 真实 Vibe Coding 若干天）；每 2 节点斗一次幽灵，每 3 节点试一次渡劫/无尽劫
 const RUNS = 1000, STEPS = 150;
 const reach = new Array(6).fill(0), stepAt = [[], [], [], [], [], []], floors = []; let runCap = 0;
-const ar = t => arrangeTeam(t.slice());   // 机器人开战前按规则排阵（不改原阵）
+let simRealm = 0;
+const ar = t => { const f = t.filter(g => canWield(g, simRealm)); return arrangeTeam((f.length ? f : t).slice()); };   // 机器人开战前按规则排阵（不改原阵）；真元不足以驱使的不上阵
 const pow = g => g.atk + g.hp + g.tr.reduce((a, t) => a + t[1] * 2, 0);
 for (let run = 0; run < RUNS; run++) {
   const rng = makeRng('run' + run); let team = [newGu(rng.pick(poolFor(0)))], realm = 0, stone = 5, marks = [], shop = rollShop(rng, 0, []), floor = 1, best = 0, endLoss = 0;
   for (let step = 1; step <= STEPS; step++) {
-    const cap = Math.max(slotCap(realm), team.length);
+    const cap = Math.max(slotCap(realm), team.length); simRealm = realm;
     const comp = rollCompass(rng, team, false, cap);
     const node = comp.find(n => n.type === 'refine' && comboOf({ sp: team[0].sp, att: [...team[0].att, team[team.length - 1].sp] })) || comp.find(n => n.type === 'summon' && team.length < cap) || rng.pick(comp);
     let pick; const opts = nodeChoices(node, team, rng, realm);
@@ -78,7 +79,7 @@ for (let run = 0; run < RUNS; run++) {
     shop = rollShop(rng, realm, shop);
     for (let k = 0; k < 3; k++) {   // 逛蛊市：先买能合炼的，再补空位，满了就卖最弱的换
       const cost = marks.includes('shiJing') ? 2 : ECON.buy; if (stone < cost) break;
-      const ci = shop.findIndex(w => !w.sold && team.filter(g => g.sp === w.sp && (g.star || 1) === 1).length >= 2);
+      const ci = shop.findIndex(w => !w.sold && team.filter(g => g.sp === w.sp && rankOf(g) === baseRank(w.sp)).length >= 2);
       const fi = ci >= 0 ? ci : shop.findIndex(w => !w.sold && canBuy(team, w.sp, cap));
       if (fi >= 0) { if (buyGu(team, shop[fi].sp, cap, marks, rng)) { stone -= cost; shop[fi].sold = true; } continue; }
       if (team.length >= cap && stone >= cost + 2) { const wi = team.reduce((b, g, i) => pow(g) < pow(team[b]) ? i : b, 0); if (wi > 0) { stone += sellValue(team[wi]); team.splice(wi, 1); continue; } }
