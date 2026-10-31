@@ -3477,18 +3477,21 @@ function timelineView(M) {
 //
 // 秘境挂上来的：
 //   TRIP.start(api)        玩家在洞府确认出征后调用一次。秘境自己往 S.trip 写状态，画在 <section id="trip"> 里（api.el）。
-//   TRIP.feed(S, tok)      出征中每次有 token 进账调用（洞府攒着的灵气 S.bank 出征时由秘境自己先用掉）。
+//   TRIP.feed(S, tok)      出征中每次有 token 进账调用（洞府攒着的元气 S.bank 出征时由秘境自己先用掉）。
 //   TRIP.render(api)       洞府重绘时、读档后出征仍未结束时调用，让秘境把界面画回来。
 //   TRIP.active(S)         可选：出征中返回 true（默认按 !!S.trip 判断）。
+//   TRIP.lands             秘境列表 [{ id, n, realm, quota, cap, dao, d, bk, boss: [{ sp, rank, pos, boss }] }]：洞府的「选秘境」列它
+//   TRIP.foeFor(seed, quota, { dao, kind: 'room'|'elite'|'boss'|'ghost', depth }) → 敌阵：斗幽灵、战帖按额度分场时洞府也调它
+// 出征前洞府已经查过：上阵转数总和 ≤ 秘境额度、每只 ≤ 驱使上限和秘境的 cap；然后设 S.trip = { at, land: id } 再调 TRIP.start。
 // 洞府提供的 api（TRIP.api，启动时就挂好）：
 //   api.S()                当前存档对象（直接读写；改完调 api.save()）
 //   api.save()             落盘（节流）
 //   api.el                 <section id="trip"> 元素
-//   api.playBattle(foeTeam, opts) → Promise<{ res, A, B }>：复用洞府的战斗回放；opts = { title, team（默认 S.team）, seed, oa, ob }
-//                          oa / ob 原样传给 battle() 的第 4、5 个参数（血量延续等由秘境在 battle.js 里处理）
+//   api.playBattle(foeTeam, opts) → Promise<{ res, A, B }>：复用洞府的战斗回放；opts = { title, team（默认 S.team）, seed, foeName, oa }
+//                          oa 并进 battle() 的第 4 个参数（SOTA 由洞府补上；血量延续读每只蛊的 hpNow）
 //   api.onTripEnd(result)  秘境结束（撤退、通关或全灭）时调用一次。
-//                          result = { dead: [uid], survivors: [uid], loot: { stone, foods: [id], gu: [蛊对象] }, cleared, wiped }
-//                          洞府负责：删掉倒下的蛊、发战利品（全灭时秘境应传空 loot）、cleared 时渡劫（境界 +1，全屏）、全员回满、
+//                          result = { dead: [uid], survivors: [uid], loot: { foods: [id], gu: [{ sp, rank, xing? }] }, cleared, wiped }
+//                          洞府负责：删掉倒下的蛊、发战利品（全灭时秘境应传空 loot）、cleared 且秘境属于当前境界时渡劫（境界 +1，全屏）、全员回满、
 //                          清掉 S.trip 和只在这次出征有效的食物（S.tripFood）、罗盘重转、蛊市刷新。
 //   api.big(kind, title, lines)  全屏时刻（只给 design.md 第 5 节那三种用：'trib' 渡劫成功、'ach' 成就解锁、'combo' 杀招第一次成形）
 //   api.note(text)         在原地战报加一行（其余反馈都用这个）
@@ -4185,6 +4188,618 @@ function makeLedgerCard(L, meta = {}) {
   return cv.toDataURL('image/png');
 }
 
+// ---- src/trip.js
+// 蛊码 GuCode · 秘境（纯逻辑：地图、房间、血量延续、永久死亡、撤退与全灭、战利品、蛊性）。种子随机，不碰 DOM。
+// 规则正本：docs/design.md 第 2 节。界面在 trip-ui.js。战斗引擎归战斗一侧：秘境给出场蛊带 hpNow，读回 res.hpEnd（每只剩血，0 = 倒下）
+// 和 res.statA（每只这一场的经历，判蛊性用）；引擎还没给 hpEnd 时，用最后一帧快照兜底（hpFromLog）。
+// 资源只有元气（= 消耗的 token）：房间路程、坊市、奇遇里要花的都按元气算，先花洞府攒着的（purse.bank），不够就等实时 token。
+
+
+
+// ───────────── 蛊性：秘境里打出来的经历。每只蛊最多 1 个；数值按进场攻血的百分比，后期不贬值 ─────────────
+// 顺序 = 坐标码里的下标（只能往后加）。prio 越小越优先（同一场同时达成几个时取一个）。get = 怎么得到，d = 效果（界面原样显示）
+// eff = 战斗效果，格式见 docs/battle-spec.md 第 6 节（{ when, op, … }，按攻血百分比）；引擎触发时发 trig { uid, xg }
+Object.assign(XING, {
+  jianren:  { n: '坚韧', prio: 1, get: '残血（不到四分之一）活过一场', d: '每场第一次受到致命伤时，留 1 血', eff: [{ when: 'lethal', op: 'endure', v: 0, max: 1 }] },
+  shisha:   { n: '嗜杀', prio: 2, get: '一场里斩杀三只', d: '每斩杀一只，攻 +20%（按进场时的攻算）', eff: [{ when: 'kill', op: 'buff', tg: 'self', atk: 0.2 }] },
+  ruiqi:    { n: '锐气', prio: 4, get: '第一轮就斩杀一只', d: '每场第一次出手，伤害 ×1.5', eff: [{ when: 'deal', op: 'mul', v: 1.5, if: 'first' }] },
+  zhanshou: { n: '斩首', prio: 3, get: '一下打倒一只满血的敌蛊', d: '打满血的敌蛊，伤害 ×1.3', eff: [{ when: 'deal', op: 'mul', v: 1.3, if: 'tg.full' }] },
+  tongpao:  { n: '同袍', prio: 5, get: '相邻的友蛊倒下了，自己撑到打赢', d: '相邻友蛊倒下时，回满血的 25%', eff: [{ when: 'allyDeath', op: 'heal', tg: 'self', mx: 0.25, up: 0, if: 'dead.adj' }] },
+  zhenyue:  { n: '镇岳', prio: 6, get: '站最前挨了 4 下还活着', d: '开战时站最前，得满血 25% 的护体', eff: [{ when: 'start', op: 'shield', tg: 'self', mx: 0.25, up: 0, if: 'front' }] },
+  yuxue:    { n: '浴血', prio: 7, get: '一场里掉的血超过自己满血，还活着', d: '每被普攻打中一次还活着，攻 +10%', eff: [{ when: 'hit', op: 'buff', tg: 'self', atk: 0.1, if: 'kind=hit' }] },
+  zhefu:    { n: '蛰伏', prio: 8, get: '身前的友蛊倒下了，自己撑到打赢', d: '身前友蛊倒下时，攻和血 +15%', eff: [{ when: 'allyDeath', op: 'buff', tg: 'self', atk: 0.15, hp: 0.15, if: 'dead.ahead' }] },
+});
+const XORDER = () => Object.keys(XING).sort((a, b) => (XING[a].prio || 99) - (XING[b].prio || 99));
+// 一场打完，这只蛊达成了哪个蛊性（只看活下来的；已经有的那个不算新的）。st 见战斗结果的 statA
+function xingEarned(st, won, cur) {
+  if (!st || !(st.hp > 0) || !st.mx) return null;
+  const ok = { jianren: st.hp / st.mx <= 0.25, shisha: st.kills >= 3, ruiqi: !!st.killT1, zhanshou: !!st.oneShot, tongpao: won && !!st.adjFell,
+    zhenyue: !!st.front && st.hits >= 4, yuxue: st.taken >= st.mx, zhefu: won && !!st.frontFell };
+  return XORDER().find(k => ok[k] && k !== cur) || null;
+}
+
+// ───────────── 调参总表（贡献者只改这里）─────────────
+const TRIP_CFG = {
+  depth: 10,                                   // 第 1–9 层普通房间，第 10 层是首领（渡劫）
+  // 房间路程，单位「千」：乘 TokenSource.unit 得到元气（插件 8000，网页 200）。真实画像中位数约 21 万 token/分钟（缓存读取 ×0.1 折算），
+  // base 90 ≈ 72 万元气 ≈ 3.4 分钟，越深越远，首领约 5.3 分钟；整趟约 44 分钟。节奏表见 tools/trip-test.mjs
+  cost: { base: 90, per: 6, jit: 0.12 },
+  w: { fight: 52, event: 18, elite: 12, camp: 9, market: 9 },      // 房间权重
+  from: { event: 1, market: 2, elite: 3, camp: 3 },                 // 第几层（从 0 数）起出现
+  rowMax: { elite: 1, camp: 1, market: 1, event: 1 },               // 同一层最多几个
+  // 敌阵只按额度配，不看玩家的蛊池（见 foeByBudget）：额度 = 上阵蛊转数总和的上限。
+  // 用掉的额度：普通战斗 frac[0] + frac[1]×(层数 − ramp)（前 3 层 60%，第 6 层 80%，第 9 层满额）；精英满额；首领 = 额度 × boss（多 20%）。
+  // st = 敌蛊攻血按转数表的几成算（秘境里的是没人喂养的野蛊；斗幽灵 ghost 按 1，和玩家一样）：普通战斗 st.room[0] + st.room[1]×(层数 − ramp)；
+  //   再乘 1 − qk×(最高转数 − 1)：高转的蛊技能觉醒、出手更狠，同样几成攻血打得更凶，所以额度越高打得越折。首领的领头攻血再 +lead
+  foe: { frac: [0.6, 0.067], ramp: 2, elite: 1, boss: 1.2, ghost: 1, maxN: 7, daoP: 0.65, st: { room: [0.28, 0.07], elite: 0.7, boss: 0.42, ghost: 1 }, qk: { room: 0.15, elite: 0.15, boss: 0.08 }, lead: 0.3 },
+  camp: 0.5,                                   // 篝火：全队回满血的 50%
+  // 战利品只有新蛊和食物，越深越多、越稀有：数量 = 基数 + 每层 × 层数（小数部分按几率）；新蛊升一转的几率 up[0] + up[1]×层数，
+  // 第 rare 层起一半几率出自高一档蛊池；食物按价钱算稀有，越深越偏向贵的
+  loot: {
+    fight: { food: [0.25, 0.04], gu: [0.12, 0.03] },
+    elite: { food: [1, 0.05], gu: [0.6, 0.04] },
+    boss: { food: [2, 0], gu: [1, 0] },
+    up: [0.05, 0.05], rare: 5,
+  },
+  market: { heal: 0.4, price: { heal: 35, food: 45, gu: 70 }, realm: 0.25 },   // 坊市价格（千，乘 unit 得元气），每高一境 +25%
+  pay: { realm: 0.25 },                        // 奇遇里要花的元气，每高一境 +25%
+};
+const ROOMS = {
+  fight:  { n: '战斗', ch: '斗', d: '一伙野蛊拦路。赢了可能掉食物和新蛊' },
+  elite:  { n: '精英', ch: '精', d: '强敌，开打前能看阵容。赢了必得食物，常有新蛊' },
+  event:  { n: '奇遇', ch: '遇', d: '一段小事，两个选择，结果都先写明' },
+  camp:   { n: '篝火', ch: '火', d: '歇脚，全队回满血的一半' },
+  market: { n: '坊市', ch: '市', d: '小货摊：花元气买回血、食物或新蛊' },
+  boss:   { n: '首领', ch: '劫', d: '秘境最深处的首领。赢了带着全部战利品回洞府；打赢本境界秘境的首领就是渡劫成功，境界加一' },
+};
+
+// ───────────── 地图：三条路，每层三个房间。左路通 左/中，右路通 中/右，中路通 中 + 本层指定的一侧；最深处汇成首领 ─────────────
+const ROW_TYPES = ['fight', 'event', 'elite', 'camp', 'market'];
+const roomCost = (d, j = 0) => Math.round((TRIP_CFG.cost.base + TRIP_CFG.cost.per * d) * (1 + TRIP_CFG.cost.jit * j));
+function tripMap(seed, realm = 0) {
+  const C = TRIP_CFG, rng = makeRng('trip:' + seed + ':' + (realm | 0)), rows = [], D = C.depth;
+  for (let d = 0; d < D - 1; d++) {
+    const mid = rng() < 0.5 ? 0 : 2, cnt = {}, types = [null, null, null];
+    if (d === 0) { types[0] = types[2] = 'fight'; types[1] = 'event'; }        // 第一层平缓：两场小仗、一个奇遇
+    if (d === D - 2) types[1] = 'camp';                                      // 首领前一层，中路必有篝火（中路从哪条路都走得到）
+    types.forEach(t => { if (t) cnt[t] = (cnt[t] || 0) + 1; });
+    for (let l = 0; l < 3; l++) {
+      if (types[l]) continue;
+      const pool = ROW_TYPES.filter(t => d >= (C.from[t] || 0) && (cnt[t] || 0) < (C.rowMax[t] || 9));
+      let x = rng() * pool.reduce((a, t) => a + C.w[t], 0), t = pool[0];
+      for (const k of pool) { x -= C.w[k]; if (x < 0) { t = k; break; } }
+      types[l] = t; cnt[t] = (cnt[t] || 0) + 1;
+    }
+    rows.push({ d, mid, rooms: types.map((type, lane) => ({ type, lane, d, cost: roomCost(d, rng() * 2 - 1) })) });
+  }
+  rows.push({ d: D - 1, mid: 1, boss: true, rooms: [{ type: 'boss', lane: 1, d: D - 1, cost: roomCost(D - 1) }] });
+  return rows;
+}
+// 从第 d 层的 lane 出发，下一层能去哪几条路
+function nextLanes(map, d, lane) {
+  const nx = map[d + 1]; if (!nx) return [];
+  if (nx.boss) return [1];
+  if (lane === 0) return [0, 1]; if (lane === 2) return [1, 2];
+  return [1, map[d].mid].sort();
+}
+
+// ───────────── 秘境列表：每个境界两三个，同境界额度相同，主道和首领不同。渡过本境界任一秘境的首领 = 渡劫，境界加一 ─────────────
+// 额度 = 上阵蛊转数总和的上限；境界 r 能驱使 r+1 转及以下的蛊（敌人也一样）。名字取原著里的大地名，描述是自己写的
+const rankCapOf = q => Math.min(RANK.max, q < 7 ? 1 : q < 10 ? 2 : q < 14 ? 3 : q < 18 ? 4 : 5);   // 额度对应的最高转数（斗幽灵 4/9/15/22 档也按这个）
+const LAND_DEF = [   // [id, 名, 境界, 主道, 一句介绍, 首领强度微调 bk（攻血再乘几倍；由 TUNE=1 node tools/trip-test.mjs 算出，让配队一般时首领每只蛊死亡率约 40%）]
+  ['qingmao', '青茅山', 0, 'li', '山寨外的竹林里野蛊成群，蛊师入门的第一道坎。', 0.9],
+  ['suishi', '碎石滩', 0, 'jin', '河滩上全是碎石，甲壳硬的野蛊躲在石缝里，不好啃。', 1.19],
+  ['shangjia', '商家城外', 1, 'zhi', '城外的商路上常有劫道的蛊师，阵法摆得比力气重要。', 1.3],
+  ['zhangze', '南疆瘴泽', 1, 'xue', '泥沼里瘴气终年不散，这里的蛊靠吸血熬人。', 1.3],
+  ['caohai', '北原草海', 2, 'nu', '草比人高，牧蛊的部族一放就是一群，以多打少。', 1.06],
+  ['liusha', '西漠流沙', 2, 'jin', '风一起沙就动，披甲的蛊埋在沙下等人踩上来。', 0.71],
+  ['wangting', '王庭福地', 3, 'li', '北原诸部争了几百年的福地，守在这里的都是硬骨头。', 1.57],
+  ['jiaodao', '东海礁岛', 3, 'xue', '潮水退了才露出来的礁岛，礁缝里的蛊受了伤反而更凶。', 1.23],
+  ['maigu', '埋骨荒原', 3, 'hun', '大战之后没人收的战场，倒下的蛊在这里不肯散。', 2.26],
+  ['langya', '琅琊福地', 4, 'nu', '云上的福地，满山的毛民听一个声音调遣。', 1.52],
+  ['yitian', '义天山', 4, 'hun', '正魔两道在山上打了一场大仗，山里至今魂火不灭。', 1.05],
+  ['baohuang', '宝黄天', 5, 'jin', '天下蛊师做买卖的地方，守库的蛊一身金甲。', 0.63],
+  ['tianting', '天庭', 5, 'zhi', '中洲之上的天庭，一步一阵，算无遗策。', 2.75],
+];
+const LANDS = LAND_DEF.map(([id, n, realm, dao, d, bk = 1]) => ({ id, n, realm, quota: QUOTA[realm], cap: rankCapOf(QUOTA[realm]), dao, d, bk }));
+const LAND = Object.fromEntries(LANDS.map(l => [l.id, l]));
+const landsOf = realm => LANDS.filter(l => l.realm === realm);
+const landOf = x => (x && typeof x === 'object' ? x : LAND[x] || landsOf(Math.max(0, Math.min(5, x | 0)))[0] || LANDS[0]);
+const teamQuota = team => team.reduce((a, g) => a + (g.rank || baseRank(g.sp)), 0);   // 这队占多少额度
+
+// ───────────── 敌阵：只按额度生成（纯函数，斗幽灵和战帖分场也用）─────────────
+// foeByBudget(rng, budget, { dao, kind: 'room'|'elite'|'boss'|'ghost', depth, maxRank, mul }) → [{ uid, sp, rank, atk, hp, pos, boss? }]（mul = 攻血再乘几倍，默认 1）
+// 用掉的额度：room = 额度 × (前 3 层 0.6，之后每层 +0.067，第 9 层满额)；elite / ghost = 满额；boss = 额度 × 1.2 向下取整（首领超额约 20%：7→8、10→12、14→16、18→21、22→26，凡人境 4 不超；领头攻血再 +30%）
+const normalPool = r => poolFor(r).filter(id => SP[id] && !SP[id].immortal);
+function foeStat(kind, depth, cap) {   // 敌蛊攻血按转数表的几成（见 TRIP_CFG.foe.st）
+  const F = TRIP_CFG.foe, b = kind === 'room' ? F.st.room[0] + F.st.room[1] * Math.max(0, depth - F.ramp) : F.st[kind] ?? 1;
+  const qk = typeof F.qk === 'number' ? F.qk : F.qk[kind] ?? F.qk.room;
+  return kind === 'ghost' ? b : b * Math.max(0.2, 1 - qk * (cap - 1));
+}
+function foeByBudget(rng, budget, o = {}) {
+  const F = TRIP_CFG.foe, kind = o.kind || 'room', cap = Math.max(1, Math.min(RANK.max, o.maxRank || rankCapOf(budget)));
+  const frac = kind === 'boss' ? F.boss : kind === 'elite' ? F.elite : kind === 'ghost' ? F.ghost : Math.min(1, F.frac[0] + F.frac[1] * Math.max(0, (o.depth || 0) - F.ramp));
+  let left = Math.max(1, (kind === 'boss' ? Math.floor : Math.round)(budget * frac + 1e-9)); const ranks = [];   // 首领向下取整：4 点的凡人境不超，22 点超到 26
+  while (left > 0 && ranks.length < F.maxN) {   // 多用接近上限的转数，偶尔低一两转，最后的零头用小转数补满
+    const hi = Math.min(cap, left), r = hi > 1 && rng() < 0.3 ? hi - 1 - (hi > 2 && rng() < 0.3 ? 1 : 0) : hi;
+    ranks.push(r); left -= r;
+  }
+  const all = NORMAL_SPECIES.map(s => s.id), up = foeStat(kind, o.depth || 0, cap) * (o.mul || 1);
+  const team = ranks.sort((a, b) => b - a).map((r, i) => {
+    const ok = all.filter(id => baseRank(id) <= r), main = o.dao ? ok.filter(id => daoOf(id) === o.dao) : [];
+    const sp = rng.pick(main.length && (rng() < F.daoP || (kind === 'boss' && i === 0)) ? main : ok.length ? ok : all), st = statFor(sp, r);
+    return { uid: 'f' + i, sp, rank: r, atk: Math.max(1, Math.round(st.atk * up)), hp: Math.max(1, Math.round(st.hp * up)), food: null, xing: null };
+  });
+  if (kind === 'boss' && team[0]) { const b = team[0]; b.atk = Math.round(b.atk * (1 + F.lead)); b.hp = Math.round(b.hp * (1 + F.lead)); b.boss = 1; }
+  return autoPlace(arrangeTeam(team));
+}
+// 首领：每个秘境一伙固定的（同一秘境永远同一伙），领头尽量是主道的蛊
+function landBoss(land) {
+  const L = landOf(land), team = foeByBudget(makeRng('boss:v4:' + L.id), L.quota, { dao: L.dao, kind: 'boss', maxRank: L.cap, mul: L.bk });
+  return team;
+}
+LANDS.forEach(l => { l.boss = landBoss(l).map(g => ({ sp: g.sp, rank: g.rank, pos: g.pos ? { ...g.pos } : null, boss: g.boss || 0 })); });
+// 房间里的敌阵（同一种子、同一层、同一条路永远是同一伙）
+function foeTeam(seed, land, d, lane, type) {
+  const L = landOf(land); if (type === 'boss') return landBoss(L);
+  return foeByBudget(makeRng(`trip:${seed}:foe:${d}:${lane}`), L.quota, { dao: L.dao, kind: type === 'elite' ? 'elite' : 'room', depth: d, maxRank: L.cap });
+}
+const foeFor = (seed, quota, opts = {}) => foeByBudget(makeRng('foe:' + seed), quota, opts);   // 给洞府（斗幽灵、战帖分场）
+
+// ───────────── 战利品：新蛊（物种 + 转数，回洞府时变成蛊）和食物 id ─────────────
+const foodPoolOf = t => (t && t.foodPool && t.foodPool.length ? t.foodPool : FOODS.filter(f => f.trip !== 'stone').map(f => f.id));   // 元石已删，寻宝图不再掉
+const foodName = id => (FOODS.find(f => f.id === id) || { n: id }).n;
+function foodPick(rng, pool, d) {   // 越深越偏向贵的（稀有）
+  const w = pool.map(id => Math.pow((FOODS.find(f => f.id === id) || { cost: 3 }).cost || 3, d / 4)), tot = w.reduce((a, b) => a + b, 0); let r = rng() * tot;
+  for (let i = 0; i < pool.length; i++) { r -= w[i]; if (r < 0) return pool[i]; } return pool[pool.length - 1];
+}
+function lootGu(rng, realm, d, bump = 0) {
+  const L = TRIP_CFG.loot, cap = Math.min(RANK.max, (realm | 0) + 1), rare = d >= L.rare && rng() < 0.5;
+  const pool = normalPool(Math.min(5, (realm | 0) + (rare ? 1 : 0))).filter(id => baseRank(id) <= cap), sp = rng.pick(pool.length ? pool : normalPool(0));
+  const r = Math.min(cap, Math.max(baseRank(sp), baseRank(sp) + bump + (rng() < L.up[0] + L.up[1] * d ? 1 : 0)));   // 不超过这个境界能驱使的转数
+  return { sp, rank: r };
+}
+function roomLoot(seed, realm, d, lane, type, foodPool) {
+  const L = TRIP_CFG.loot[type], out = { foods: [], gu: [] }; if (!L) return out;
+  const rng = makeRng(`trip:${seed}:loot:${d}:${lane}`), pool = foodPoolOf({ foodPool });
+  const roll = ([p, per]) => { const q = p + per * d; let n = Math.floor(q); if (rng() < q - n) n++; return n; };
+  for (let i = roll(L.food); i > 0; i--) out.foods.push(foodPick(rng, pool, d));
+  for (let i = roll(L.gu); i > 0; i--) out.gu.push(lootGu(rng, realm, d, type === 'boss' ? 1 : 0));
+  return out;
+}
+function addLoot(bag, l) { (l.foods || []).forEach(f => bag.foods.push(f)); (l.gu || []).forEach(g => bag.gu.push(g)); return bag; }
+const lootEmpty = l => !l || (!(l.foods || []).length && !(l.gu || []).length);
+const guName = g => RANK.names[g.rank] + (SP[g.sp] ? SP[g.sp].n : g.sp);
+function lootText(l) {
+  const a = []; if ((l.gu || []).length) a.push('新蛊：' + l.gu.map(guName).join('、'));
+  if ((l.foods || []).length) a.push('食物：' + l.foods.map(foodName).join('、'));
+  return a.join('；');
+}
+
+// ───────────── 奇遇：两个选项，两个结果都写明。fx 见 applyFx ─────────────
+// heal/hurt = 按满血的比例；Front = 只作用在最前那只活着的蛊；healLow = 只回伤得最重的那只；hurtAll = 全队掉（不会掉到 0）
+// shortcut / slow = 下一个房间路程倍数（0.5 = 减半，1.5 = 多走一半）；pay = 花几份元气（×单位×境界系数，先花攒着的，不够就选不了）
+// bump = 新蛊更稀有一档。越深的奇遇给的食物越偏贵（foodPick），新蛊转数随层数涨（lootGu）
+const EVENTS = [
+  { id: 'yishui', n: '古修遗蜕', s: '崖下坐着一具古修士的遗蜕，衣袍一碰就碎，掌心还托着一团温热的灵光。',
+    o: [{ t: '吸了这团灵光', fx: { heal: 0.3 } }, { t: '翻他的遗物', fx: { food: 1 } }] },
+  { id: 'yegu', n: '迷路的野蛊', s: '草丛里窸窸窣窣，一只野蛊跟了你们半天，像是想找个主人。',
+    o: [{ t: '收下它', fx: { gu: 1 } }, { t: '分它点灵气，打发走', fx: { heal: 0.1 } }] },
+  { id: 'lingquan', n: '山泉灵眼', s: '石缝里涌出一眼灵泉，水是凉的，带着淡淡的灵气。',
+    o: [{ t: '全队泡一泡', fx: { heal: 0.4 } }, { t: '装一壶带走', fx: { food: 1 } }] },
+  { id: 'duanya', n: '断崖窄道', s: '前面是断崖，崖壁上有一条窄道，走过去能省下大半段路。',
+    o: [{ t: '走窄道', fx: { shortcut: 0.5, hurtFront: 0.4 } }, { t: '绕远路', fx: {} }] },
+  { id: 'guzhen', n: '古阵残影', s: '地上刻着残缺的阵纹，阵里有一道虚影，在等人进来过招。',
+    o: [{ t: '让最前的蛊入阵过招', fx: { xing: 'ruiqi', hurtFront: 0.2 } }, { t: '不进阵', fx: {} }] },
+  { id: 'guchao', n: '树洞蛊巢', s: '老树洞里结着一个野蛊巢，里面有动静，守巢的那只脾气不好。',
+    o: [{ t: '掏巢', fx: { gu: 1, bump: 1, hurtFront: 0.35 } }, { t: '不惊动它', fx: {} }] },
+  { id: 'duzhang', n: '毒瘴林', s: '前面一片林子笼着灰绿的瘴气。穿过去最近，绕开要多走不少路。',
+    o: [{ t: '屏住气穿过去', fx: { hurtAll: 0.15, shortcut: 0.5 } }, { t: '绕开走', fx: { slow: 1.5 } }] },
+  { id: 'shibei', n: '无字石碑', s: '路边立着一块无字石碑，盯久了，碑面像有一座山压下来。',
+    o: [{ t: '让最前的蛊对着石碑静坐', fx: { xing: 'zhenyue', slow: 1.3 } }, { t: '不看它，接着走', fx: {} }] },
+  { id: 'xuechi', n: '赤水潭', s: '一潭暗红的水冒着热气。泡进去伤口发烫，出来却像换了一身筋骨。',
+    o: [{ t: '让伤得最重的蛊泡进去', fx: { healLow: 0.6 } }, { t: '让最前的蛊泡到发烫', fx: { xing: 'yuxue', hurtFront: 0.25 } }] },
+  { id: 'luonan', n: '落难修士', s: '一个修士靠着石头喘气，元气耗尽了，身边一只蛊守着他不肯走。',
+    o: [{ t: '分他一些元气', fx: { pay: 30, gu: 1, bump: 1 } }, { t: '问他前面的路', fx: { shortcut: 0.7 } }] },
+];
+const EVENT = Object.fromEntries(EVENTS.map(e => [e.id, e]));
+function pickEvent(seed, d, lane, seen = []) {
+  const rng = makeRng(`trip:${seed}:ev:${d}:${lane}`), pool = EVENTS.filter(e => !seen.includes(e.id));
+  return rng.pick(pool.length ? pool : EVENTS).id;
+}
+// 一个选项写成人话：结果是什么、放到哪
+const evPay = (t, fx, unit) => fx && fx.pay ? Math.round(fx.pay * unit * (1 + (t ? t.realm : 0) * TRIP_CFG.pay.realm)) : 0;
+function fxText(fx, pay = 0) {
+  const out = [], pc = p => Math.round(p * 100) + '%';
+  if (fx.pay) out.push(`花 ${fmtTok(pay || fx.pay)} 元气`);
+  if (fx.heal) out.push(`全队回满血的 ${pc(fx.heal)}`);
+  if (fx.food) out.push(`食物 ×${fx.food}（进战利品袋）`);
+  if (fx.healLow) out.push(`伤得最重的那只回满血的 ${pc(fx.healLow)}`);
+  if (fx.gu) out.push(`新蛊 ×${fx.gu}${fx.bump ? '，转数高一档' : ''}（进战利品袋，回洞府放进蛊囊）`);
+  if (fx.xing) out.push(`最前的蛊得蛊性「${XING[fx.xing].n}」：${XING[fx.xing].d}`);
+  if (fx.shortcut) out.push(`下一个房间少走 ${pc(1 - fx.shortcut)} 的路`);
+  if (fx.slow) out.push(`下一个房间多走 ${pc(fx.slow - 1)} 的路`);
+  if (fx.hurtFront) out.push(`最前的蛊掉满血的 ${pc(fx.hurtFront)}（不会掉到 0）`);
+  if (fx.hurtAll) out.push(`全队掉满血的 ${pc(fx.hurtAll)}（不会掉到 0）`);
+  return out.length ? out.join('，') : '什么也不发生';
+}
+
+// ───────────── 出征状态（S.trip）─────────────
+// { v, seed, land, realm, quota, d, lane, pick, prog, order, hp, mx, dead, fallen, loot, log, room, end, kills, seen, short, foodPool, pre }
+//   d 当前第几层（0 起）；lane 上一层走的路（第一层前为 null）；pick 这一层选好的路；prog 这个房间已走的元气
+//   room 走到后待处理的房间 { type, d, lane, foe?, ev?, wares?, done? }；end 结束结果；short 下一个房间路程倍数（断崖窄道）
+// purse：放元气的对象（界面传 S，用 S.bank），选路时先从里面花；等待时进账的 token 也存回去
+function tripStart(seed, land, team, opts = {}) {   // land = 秘境 id（也认境界数字，取那个境界的第一个秘境）
+  const L = landOf(land), fielded = team.slice(0, SLOTS);
+  const t = { v: 2, seed: String(seed), land: L.id, realm: L.realm, quota: L.quota, d: 0, lane: null, pick: null, prog: 0, order: fielded.map(g => g.uid), hp: {}, mx: {}, dead: [], fallen: [],
+    loot: { foods: [], gu: [] }, log: [], room: null, end: null, kills: {}, seen: [], rooms: 0, short: 1, foodPool: (opts.foods || []).slice(),
+    pre: Math.min(1, (opts.trip || []).reduce((a, id) => { const f = FOODS.find(x => x.id === id); return a + (f && f.kind === 'trip' && f.trip === 'heal' ? (f.pct || 0) / 100 : 0); }, 0)) };   // pre = 出征食物（回春茶）：每场开打前全队回的比例
+  fielded.forEach(g => { t.hp[g.uid] = g.hp; t.mx[g.uid] = g.hp; t.kills[g.uid] = 0; });
+  tlog(t, `出征${L.n}：${fielded.map(g => SP[g.sp] ? SP[g.sp].n : g.sp).join('、')}。共 ${TRIP_CFG.depth} 层，最深处是首领。`);
+  return t;
+}
+const tlog = (t, s) => { t.log.push(s); if (t.log.length > 60) t.log.splice(0, t.log.length - 60); };
+const MAPC = new Map();   // 地图由种子现算，不进存档
+function tripMapOf(t) { const k = t.seed + '|' + t.realm; if (!MAPC.has(k)) { if (MAPC.size > 8) MAPC.clear(); MAPC.set(k, tripMap(t.seed, t.realm)); } return MAPC.get(k); }
+const tripAlive = t => t.order.filter(u => !t.dead.includes(u));
+// 这一层能选哪几条路
+function tripReach(t) {
+  const map = tripMapOf(t); if (t.end || t.room || t.d >= map.length) return [];
+  if (map[t.d].boss) return [1];
+  return t.d === 0 || t.lane == null ? [0, 1, 2] : nextLanes(map, t.d - 1, t.lane);
+}
+const roomAt = (t, d, lane) => { const row = tripMapOf(t)[d]; return row ? row.rooms.find(r => r.lane === lane) || null : null; };
+const curRoom = t => t.pick != null ? roomAt(t, t.d, t.pick) : null;
+const needTok = (t, unit) => { const r = curRoom(t); return r ? r.cost * unit * (t.short || 1) : 0; };
+// 选路：先花攒着的元气；返回是否当场就走到了
+function tripPick(t, lane, unit, purse) {
+  if (!tripReach(t).includes(lane) || t.pick != null) return false;
+  t.pick = lane; t.prog = 0; return tripPour(t, unit, purse);
+}
+function tripPour(t, unit, purse) {
+  if (!curRoom(t) || t.room) return false;
+  const take = Math.max(0, Math.min(needTok(t, unit) - t.prog, purse ? purse.bank || 0 : 0));
+  if (take) purse.bank -= take; t.prog += take;
+  if (t.prog >= needTok(t, unit) - 0.5) { arrive(t); return true; }
+  return false;
+}
+// 实时 token：在走路就推进（多出来的存回 purse），否则全部存回 purse。返回是否刚走到一个房间
+function tripFeed(t, tok, unit, purse) {
+  if (!(tok > 0)) return false;
+  const add = n => { if (purse && n > 0) purse.bank = (purse.bank || 0) + n; };
+  if (!t || t.end || !curRoom(t) || t.room) { add(tok); return false; }
+  const take = Math.min(needTok(t, unit) - t.prog, tok); t.prog += take; add(tok - take);
+  if (t.prog >= needTok(t, unit) - 0.5) { arrive(t); return true; }
+  return false;
+}
+function arrive(t) {
+  const r = curRoom(t), room = { type: r.type, d: t.d, lane: r.lane };
+  if (r.type === 'fight' || r.type === 'elite' || r.type === 'boss') room.foe = 1;   // 阵容用 roomFoe(t) 现算（同种子永远相同），不进存档
+  if (r.type === 'event') { room.ev = pickEvent(t.seed, t.d, r.lane, t.seen); t.seen.push(room.ev); }
+  if (r.type === 'market') room.wares = marketWares(t, r);
+  t.room = room; t.rooms++; t.short = 1; t.prog = 0;
+  tlog(t, `第 ${t.d + 1} 层 · ${ROOMS[r.type].n}`);
+}
+const roomFoe = t => t.room && t.room.foe ? foeTeam(t.seed, t.land || t.realm, t.room.d, t.room.lane, t.room.type) : null;
+const tripLand = t => landOf(t.land || t.realm);
+function leave(t) {   // 房间处理完：进下一层（首领打完就结束）
+  t.lane = t.pick; t.pick = null; t.prog = 0; t.room = null; t.d++;
+  if (t.d >= tripMapOf(t).length) tripEnd(t, 'clear');
+}
+// 出战阵容：出征时的站位，去掉倒下的；每只带 hpNow（上一场剩的血）
+function fieldTeam(t, team) {
+  const by = Object.fromEntries(team.map(g => [g.uid, g]));
+  return tripAlive(t).filter(u => by[u]).map(u => ({ ...by[u], hpNow: t.hp[u] }));
+}
+// 引擎还没给 hpEnd 时：从最后一帧快照读我方剩血（我方出场蛊按顺序登记为 a0, a1 …）
+function hpFromLog(res, n) {
+  const last = res.log && res.log[res.log.length - 1], s = last && last.s ? last.s[0] : [], hp = new Array(n).fill(0);
+  s.forEach(([uid, , h]) => { const i = /^a(\d+)$/.test(uid) ? +uid.slice(1) : -1; if (i >= 0 && i < n) hp[i] = Math.max(0, h | 0); });
+  return hp;
+}
+// 战斗结果落地：res = battle() 的返回（或 api.playBattle 给的 res），fielded = 开打时的 fieldTeam(t, team)。
+// 返回 { win, dead:[uid], loot, offers:[{uid, xing, old, auto}] }；全灭时直接结束
+function tripFight(t, team, fielded, res) {
+  const room = t.room; if (!room || !room.foe || room.done) return null;
+  const win = res.winner === 'A', dead = [], offers = [], by = Object.fromEntries(team.map(g => [g.uid, g]));
+  const hpEnd = res.hpEnd || res.hpA || hpFromLog(res, fielded.length), stat = res.statA || [];
+  fielded.forEach((g, i) => {
+    const hp = Math.max(0, Math.round(hpEnd[i] || 0)), st = stat[i] || null, real = by[g.uid];
+    if (st) t.kills[g.uid] = (t.kills[g.uid] || 0) + (st.kills | 0);
+    if (hp <= 0) { dead.push(g.uid); t.dead.push(g.uid); t.hp[g.uid] = 0;
+      t.fallen.push({ uid: g.uid, sp: g.sp, rank: g.rank, d: room.d, type: room.type, kills: t.kills[g.uid] || 0, xing: real ? real.xing || null : null }); return; }
+    t.hp[g.uid] = Math.min(t.mx[g.uid], hp);
+    const k = real ? xingEarned(st, win, real.xing) : null;
+    if (k) { if (!real.xing) { real.xing = k; offers.push({ uid: g.uid, xing: k, old: null, auto: true }); } else offers.push({ uid: g.uid, xing: k, old: real.xing }); }
+  });
+  room.done = true;
+  const name = id => (SP[(by[id] || {}).sp] || {}).n || '';
+  let loot = null;
+  if (win) { loot = roomLoot(t.seed, t.realm, room.d, room.lane, room.type, t.foodPool); addLoot(t.loot, loot); }
+  tlog(t, `${win ? '胜' : res.winner === 'draw' ? '僵持不下，各自退开' : '败'}${dead.length ? '。永久倒下：' + dead.map(name).join('、') : ''}${loot && !lootEmpty(loot) ? '。' + lootText(loot) : ''}`);
+  offers.filter(o => o.auto).forEach(o => tlog(t, `${name(o.uid)} 得蛊性「${XING[o.xing].n}」`));
+  if (!tripAlive(t).length) { tripEnd(t, 'wipe'); return { win, dead, loot, offers: [], wiped: true }; }
+  if (room.type === 'boss') { if (win) { leave(t); return { win, dead, loot, offers, cleared: true }; } tripEnd(t, 'retreat'); return { win, dead, loot, offers, fled: true }; }   // 首领平手：退回洞府
+  leave(t);
+  return { win, dead, loot, offers };
+}
+// 出征食物：每场开打前全队回 t.pre 比例的血。返回回了多少
+function tripPreFight(t) {
+  if (!t || !t.pre) return 0; let sum = 0;
+  tripAlive(t).forEach(u => { const v = Math.min(t.mx[u] - t.hp[u], Math.max(1, Math.round(t.mx[u] * t.pre))); t.hp[u] += v; sum += v; });
+  return sum;
+}
+function acceptXing(team, uid, key) { const g = team.find(x => x.uid === uid); if (g && XING[key]) { g.xing = key; return true; } return false; }
+// 奇遇：选第 i 个选项。返回 { ok, lines, offer? }
+function tripEvent(t, team, i, unit = 0, purse = null) {
+  const room = t.room; if (!room || room.type !== 'event' || room.done) return { ok: false };
+  const e = EVENT[room.ev], o = e && e.o[i]; if (!o) return { ok: false };
+  const pay = evPay(t, o.fx, unit); if (pay) { if (!purse || (purse.bank || 0) < pay) return { ok: false, why: '元气不够' }; purse.bank -= pay; }
+  const r = applyFx(t, team, o.fx, room);
+  room.done = true; tlog(t, `${e.n}：${o.t}。${r.lines.join('，') || '无事发生'}`); leave(t); return r;
+}
+function applyFx(t, team, fx, room) {
+  const lines = [], al = tripAlive(t), front = al[0], by = Object.fromEntries(team.map(g => [g.uid, g])), nm = u => (SP[(by[u] || {}).sp] || {}).n || '';
+  const rng = makeRng(`trip:${t.seed}:fx:${room.d}:${room.lane}`); let offer = null;
+  if (fx.heal) { al.forEach(u => { t.hp[u] = Math.min(t.mx[u], t.hp[u] + Math.max(1, Math.round(t.mx[u] * fx.heal))); }); lines.push(`全队回血 ${Math.round(fx.heal * 100)}%`); }
+  for (let k = 0; k < (fx.food || 0); k++) { const id = foodPick(rng, foodPoolOf(t), room.d); t.loot.foods.push(id); lines.push(`食物：${foodName(id)}`); }
+  if (fx.healLow) { const u = al.slice().sort((a, b) => t.hp[a] / t.mx[a] - t.hp[b] / t.mx[b])[0]; if (u) { const v = Math.min(t.mx[u] - t.hp[u], Math.round(t.mx[u] * fx.healLow)); t.hp[u] += v; lines.push(`${nm(u)} 回 ${v} 血`); } }
+  for (let k = 0; k < (fx.gu || 0); k++) { const g = lootGu(rng, t.realm, room.d, fx.bump || 0); t.loot.gu.push(g); lines.push(`新蛊：${guName(g)}`); }
+  if (fx.shortcut) { t.short = fx.shortcut; lines.push(`下一个房间少走 ${Math.round((1 - fx.shortcut) * 100)}% 的路`); }
+  if (fx.slow) { t.short = fx.slow; lines.push(`下一个房间多走 ${Math.round((fx.slow - 1) * 100)}% 的路`); }
+  if (fx.hurtAll) { al.forEach(u => { t.hp[u] -= Math.max(0, Math.min(t.hp[u] - 1, Math.max(1, Math.round(t.mx[u] * fx.hurtAll)))); }); lines.push(`全队掉 ${Math.round(fx.hurtAll * 100)}% 血`); }
+  if (fx.hurtFront && front) { const v = Math.max(0, Math.min(t.hp[front] - 1, Math.round(t.mx[front] * fx.hurtFront))); t.hp[front] -= v; lines.push(`${nm(front)} 掉 ${v} 血`); }
+  if (fx.xing && front && by[front]) {
+    const g = by[front]; if (!g.xing) { g.xing = fx.xing; lines.push(`${nm(front)} 得蛊性「${XING[fx.xing].n}」`); }
+    else if (g.xing !== fx.xing) offer = { uid: front, xing: fx.xing, old: g.xing };
+  }
+  return { ok: true, lines, offer };
+}
+function tripCamp(t) {
+  const room = t.room; if (!room || room.type !== 'camp' || room.done) return null;
+  let sum = 0; tripAlive(t).forEach(u => { const v = Math.min(t.mx[u] - t.hp[u], Math.round(t.mx[u] * TRIP_CFG.camp)); t.hp[u] += v; sum += v; });
+  room.done = true; tlog(t, `篝火边歇了一阵，全队共回 ${sum} 血`); leave(t); return { healed: sum };
+}
+// 坊市：三样货，花元气（先花攒着的）
+function marketWares(t, r) {
+  const M = TRIP_CFG.market, rng = makeRng(`trip:${t.seed}:mk:${t.d}:${r.lane}`), m = 1 + t.realm * M.realm;
+  return [{ k: 'heal', p: M.heal, price: Math.round(M.price.heal * m) }, { k: 'food', id: foodPick(rng, foodPoolOf(t), t.d), price: Math.round(M.price.food * m) }, { k: 'gu', g: lootGu(rng, t.realm, t.d), price: Math.round(M.price.gu * m) }];
+}
+const wareTok = (w, unit) => w.price * unit;
+function tripBuy(t, i, unit, purse) {
+  const room = t.room; if (!room || room.type !== 'market' || room.done) return { ok: false };
+  const w = room.wares[i], c = w ? wareTok(w, unit) : 0; if (!w || w.sold) return { ok: false }; if (!purse || (purse.bank || 0) < c) return { ok: false, why: '元气不够' };
+  purse.bank -= c; w.sold = true;
+  if (w.k === 'heal') tripAlive(t).forEach(u => { t.hp[u] = Math.min(t.mx[u], t.hp[u] + Math.round(t.mx[u] * w.p)); });
+  if (w.k === 'food') t.loot.foods.push(w.id);
+  if (w.k === 'gu') t.loot.gu.push(w.g);
+  tlog(t, `坊市：${wareText(w)}`); return { ok: true };
+}
+const wareText = w => w.k === 'heal' ? `药汤：全队回满血的 ${Math.round(w.p * 100)}%` : w.k === 'food' ? `食物：${foodName(w.id)}（进战利品袋）` : `新蛊：${guName(w.g)}（进战利品袋）`;
+function tripLeaveRoom(t) { const room = t.room; if (!room || room.type !== 'market') return false; room.done = true; tlog(t, '离开坊市'); leave(t); return true; }
+// 结束：retreat 撤退（带回全部）/ wipe 全灭（战利品全丢）/ clear 渡劫成功（带回全部，含首领战利品）
+function tripEnd(t, why) {
+  if (t.end) return t.end;
+  const wiped = why === 'wipe', copy = l => ({ foods: l.foods.slice(), gu: l.gu.map(g => ({ ...g })) });
+  t.end = { why, dead: t.dead.slice(), survivors: tripAlive(t), loot: wiped ? { foods: [], gu: [] } : copy(t.loot), lost: wiped ? copy(t.loot) : null, cleared: why === 'clear', wiped, depth: t.d, fallen: t.fallen.slice() };
+  t.room = null; t.pick = null; t.prog = 0;
+  tlog(t, wiped ? '全灭。这一趟的战利品全部丢在了秘境里。' : why === 'clear' ? '渡劫成功，带着战利品回洞府。' : '撤退，带着战利品回洞府。');
+  return t.end;
+}
+// 给 api.onTripEnd 的结果（hooks.js）：新蛊写成 { sp, rank }，洞府放进蛊囊；规则第二版没有元石
+const tripResult = t => t.end ? { dead: t.end.dead, survivors: t.end.survivors, loot: { foods: t.end.loot.foods.slice(), gu: t.end.loot.gu.map(g => ({ sp: g.sp, rank: g.rank })) }, cleared: t.end.cleared, wiped: t.end.wiped } : null;
+function epitaph(f) {   // 告别词：倒在哪、这一趟斩敌几只、带着什么蛊性
+  return `倒在第 ${f.d + 1} 层的${ROOMS[f.type] ? ROOMS[f.type].n : ''}${f.kills ? `，这一趟斩敌 ${f.kills} 只` : ''}${f.xing && XING[f.xing] ? `，带着「${XING[f.xing].n}」走了` : ''}。`;
+}
+const toBoss = t => Math.max(0, TRIP_CFG.depth - 1 - t.d);
+const tripSeed = (base, n) => (hashStr(String(base) + ':trip:' + n) >>> 0).toString(36);
+
+// ---- src/trip-ui.js
+// 蛊码 GuCode · 秘境界面。只通过 hooks.js 的 TRIP 和洞府打交道（不 import ui.js）。逻辑全在 trip.js。
+// 一屏只有一个主按钮；「撤退」一直在右上角但不是主按钮；精英和首领开打前先给看阵容并写明「这一场可能会死蛊」。
+// 倒下的蛊先停在原地送别（点了才过去），整次出征结束再列一遍带回了什么、谁没回来，然后交给洞府（api.onTripEnd）。
+
+
+
+
+
+
+
+
+const tuUnit = () => (VSC ? 8000 : 200);   // 1 份路程 = 多少 token（插件 8000，网页模拟 200），和 TokenSource.unit 一致
+const tuEsc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const tuFood = id => (FOOD[id] ? FOOD[id].n : id);
+const tuGuN = g => (g ? (RANK.names[g.rank] || '') + (SP[g.sp] ? SP[g.sp].n : g.sp) : '');
+let tuBusy = false;   // 战斗回放中不接点击
+
+// ───────────── 状态 ─────────────
+const tuT = api => { const S = api.S(); return S && S.trip && S.trip.v ? S.trip : null; };
+function tuInit(api) {
+  const S = api.S(), at = (S.trip && S.trip.at) || Date.now();
+  const land = (S.trip && S.trip.land) || S.realm;   // 洞府选好的秘境 id（没选时取本境界第一个）
+  const t = tripStart(tripSeed(S.seed, at), land, S.team, { trip: S.tripFood || [] });
+  S.trip = Object.assign({ at }, t, { ui: { msg: [], fare: [], offers: [], ask: null } });
+  api.save();
+  return S.trip;
+}
+const tuUI = t => t.ui || (t.ui = { msg: [], fare: [], offers: [], ask: null });
+
+// ───────────── 画面 ─────────────
+function tuDraw(api) {
+  const box = api.el; if (!box) return;
+  const S = api.S(); let t = tuT(api);
+  if (!t && S.trip) t = tuInit(api);
+  if (!t) { box.innerHTML = ''; return; }
+  const ui = tuUI(t), by = Object.fromEntries(S.team.map(g => [g.uid, g]));
+  let body;
+  if (ui.fare.length) body = tuFare(t, ui.fare[0]);
+  else if (ui.offers.length) body = tuOffer(t, by, ui.offers[0]);
+  else if (t.end) body = tuEnd(t, by, S);
+  else if (ui.ask === 'flee') body = tuAsk(t);
+  else if (t.room && !t.room.done) body = tuRoom(t, S);
+  else body = tuMap(t, S) + tuWalk(t);
+  const msg = ui.msg && ui.msg.length && !t.end ? `<p class="tu-msg">${ui.msg.map(tuEsc).join('<br>')}</p>` : '';
+  box.innerHTML = `${tuHead(t)}${tuTeam(t, by)}${msg}<div class="tu-body">${body}</div>${t.end ? '' : tuBag(t)}`;
+}
+function tuHead(t) {
+  const N = tripMapOf(t).length, d = Math.min(t.d, N - 1);
+  const dots = Array.from({ length: N }, (_, i) => `<i class="${i < t.d ? 'past' : i === t.d && !t.end ? 'now' : ''}${i === N - 1 ? ' boss' : ''}">${i === N - 1 ? '劫' : ''}</i>`).join('');
+  const flee = t.end || tuUI(t).ask ? '' : `<button class="tu-flee" data-trip="flee" title="带着战利品回洞府">撤退</button>`, L = tripLand(t);
+  return `<div class="tu-head"><span class="lbl">${tuEsc(tripLand(t).n)} <small>${t.end ? '出征结束' : `第 ${d + 1} / ${N} 层`}</small></span><span class="tu-dots" aria-label="第 ${d + 1} 层，共 ${N} 层，最深处是首领" title="${tuEsc(`${L.n}：额度 ${L.quota}，主道是${DAO[L.dao] ? DAO[L.dao].n : L.dao}，最深处是首领`)}">${dots}</span>${flee}</div>`;
+}
+function tuTeam(t, by) {
+  return `<div class="tu-team">${t.order.map(u => {
+    const g = by[u], f = t.fallen.find(x => x.uid === u), sp = g ? g.sp : f && f.sp, rank = g ? g.rank : f && f.rank; if (!sp) return '';
+    const dead = t.dead.includes(u), hp = t.hp[u] || 0, mx = t.mx[u] || 1, pc = Math.max(0, Math.min(100, Math.round(hp / mx * 100)));
+    const xg = g && g.xing && XING[g.xing];
+    return `<div class="tu-g${dead ? ' dead' : pc <= 30 ? ' low' : ''}" title="${tuEsc(xg ? `蛊性「${xg.n}」：${xg.d}` : '')}"><span class="tu-art">${guSVG(sp, { rank })}</span><span class="tu-gi"><b>${tuEsc(SP[sp] ? SP[sp].n : sp)}${xg ? `<em class="tu-xg">${tuEsc(xg.n[0])}</em>` : ''}</b>${dead ? '<small>倒下</small>' : `<span class="tu-hp"><i style="width:${pc}%"></i></span><small>${hp}/${mx}</small>`}</span></div>`;
+  }).join('')}</div>`;
+}
+function tuBag(t) {
+  const l = t.loot, items = [...l.gu.map(tuGuN), ...l.foods.map(tuFood)];
+  return `<div class="tu-bag"><span class="lbl">战利品袋</span><span>${items.length ? items.map(tuEsc).join('、') : '还是空的'}</span><small>撤退或通关全部带回；全灭全部丢在秘境里。</small></div>`;
+}
+const tuX = lane => [50, 150, 250][lane];
+function tuNode(t, d, lane, o = {}) {
+  const r = roomAt(t, d, lane); if (!r) return '<span class="tu-room none"></span>';
+  const R = ROOMS[r.type], cost = r.cost * tuUnit() * (d === t.d ? t.short || 1 : 1);
+  const tag = o.pick ? 'button' : 'span', cls = `tu-room t-${r.type}${o.on ? ' on' : ''}${o.off ? ' off' : ''}${o.cur ? ' cur' : ''}`;
+  return `<${tag} class="${cls}"${o.pick ? ` data-trip="pick" data-lane="${lane}"` : ''} title="${tuEsc(R.n + '：' + R.d)}"><b class="tu-seal">${R.ch}</b><span>${R.n}</span><small>${fmtTok(cost)}</small></${tag}>`;
+}
+function tuMap(t, S) {
+  const map = tripMapOf(t); if (t.d >= map.length) return '';
+  const reach = tripReach(t), walking = t.pick != null, d = t.d, nx = map[d + 1];
+  const now = [0, 1, 2].map(l => tuNode(t, d, l, walking ? { on: l === t.pick, off: l !== t.pick, cur: l === t.pick } : { pick: reach.includes(l), off: !reach.includes(l) })).join('');
+  const from = walking ? [t.pick] : reach, to = new Set(), lines = [];
+  if (nx) from.forEach(l => { if (!roomAt(t, d, l)) return; nextLanes(map, d, l).forEach(n => { to.add(n); lines.push(`<line x1="${tuX(l)}" y1="0" x2="${tuX(n)}" y2="40"/>`); }); });
+  const next = nx ? [0, 1, 2].map(l => tuNode(t, d + 1, l, { off: !to.has(l) })).join('') : '';
+  return `<div class="tu-map"><p class="tu-cap">${walking ? '正在走这条路' : '这一层走哪条路？'}<small>数字 = 要走多少元气</small></p><div class="tu-row">${now}</div>${nx ? `<svg class="tu-links" viewBox="0 0 300 40" preserveAspectRatio="none" aria-hidden="true">${lines.join('')}</svg><p class="tu-cap sub">再往下一层${map[d + 1].boss ? '：渡劫首领' : ''}</p><div class="tu-row next">${next}</div>` : ''}</div>`
+    + (walking ? '' : `<p class="tu-hint">路程花元气：先花洞府攒着的（现在 ${fmtTok(S.bank)}），不够就等你写代码，token 会推着蛊往前走。</p>`);
+}
+function tuWalk(t) {
+  const r = curRoom(t); if (!r || t.room) return '';
+  const need = needTok(t, tuUnit()), pc = Math.min(100, Math.round(t.prog / need * 100));
+  return `<div class="tu-walk"><b class="tu-seal">${ROOMS[r.type].ch}</b><div><p>走向第 ${t.d + 1} 层的${ROOMS[r.type].n}</p><div class="tu-bar"><i id="tuBar" style="width:${pc}%"></i></div><small id="tuProg">${fmtTok(t.prog)} / ${fmtTok(need)} 元气 · 写代码的 token 推着蛊往前走</small></div></div>`;
+}
+function tuFoes(foe) {
+  return `<div class="tu-foes">${foe.map(f => `<div class="tu-f${f.boss ? ' boss' : ''}"><span class="tu-art">${guSVG(f.sp, { rank: f.rank })}</span><b>${tuEsc(SP[f.sp] ? SP[f.sp].n : f.sp)}</b><span class="st"><i class="a">${f.atk}</i><i class="h">${f.hp}</i></span></div>`).join('')}</div>`;
+}
+function tuRoom(t, S) {
+  const room = t.room, R = ROOMS[room.type], title = `<p class="tu-eyebrow">第 ${room.d + 1} 层</p><h3><b class="tu-seal">${R.ch}</b>${R.n}</h3>`;
+  if (room.foe) {
+    const foe = roomFoe(t) || [], risky = room.type === 'elite' || room.type === 'boss';
+    return `<div class="tu-panel t-${room.type}">${title}<p>${tuEsc(R.d)}</p>${risky ? '<p class="tu-warn">这一场可能会死蛊。倒下的蛊永远回不来；不想冒险，现在撤退，战利品都能带走。</p>' : ''}
+      <p class="tu-cap">对面</p>${tuFoes(foe)}${t.pre ? `<p class="tu-hint">回春茶：开打前全队回 ${Math.round(t.pre * 100)}% 血。</p>` : ''}
+      <div class="tu-main"><button class="zhu big" data-trip="fight">${room.type === 'boss' && t.realm === S.realm ? '渡劫' : '开打'}</button></div></div>`;
+  }
+  if (room.type === 'event') {
+    const e = EVENT[room.ev];
+    return `<div class="tu-panel t-event">${title.replace(R.n, tuEsc(e.n))}<p>${tuEsc(e.s)}</p><div class="tu-opts">${e.o.map((o, i) => { const pay = evPay(t, o.fx, tuUnit()), can = !pay || S.bank >= pay; return `<button class="tu-opt" data-trip="ev" data-i="${i}"${can ? '' : ' disabled'}><b>${tuEsc(o.t)}</b><small>${tuEsc(fxText(o.fx, pay))}${can ? '' : `（元气不够，现在 ${fmtTok(S.bank)}）`}</small></button>`; }).join('')}</div></div>`;
+  }
+  if (room.type === 'camp') return `<div class="tu-panel t-camp">${title}<p>${tuEsc(R.d)}</p><div class="tu-main"><button class="zhu big" data-trip="camp">歇一阵 · 全队回 ${Math.round(TRIP_CFG.camp * 100)}% 血</button></div></div>`;
+  if (room.type === 'market') {
+    const u = tuUnit();
+    return `<div class="tu-panel t-market">${title}<p>${tuEsc(R.d)}</p><div class="tu-wares">${room.wares.map((w, i) => {
+      const c = wareTok(w, u), can = !w.sold && S.bank >= c;
+      return `<div class="tu-ware${w.sold ? ' sold' : ''}">${w.k === 'gu' ? `<span class="tu-art">${guSVG(w.g.sp, { rank: w.g.rank })}</span>` : `<b class="tu-seal">${w.k === 'heal' ? '药' : '食'}</b>`}<span>${tuEsc(wareText(w))}</span><button data-trip="buy" data-i="${i}"${can ? '' : ' disabled'}>${w.sold ? '买了' : fmtTok(c)}</button></div>`;
+    }).join('')}</div><p class="tu-hint">花的是元气，洞府攒着的 ${fmtTok(S.bank)}。</p><div class="tu-main"><button class="zhu big" data-trip="leave">继续上路</button></div></div>`;
+  }
+  return '';
+}
+function tuOffer(t, by, o) {
+  const g = by[o.uid], nw = XING[o.xing], old = XING[o.old]; if (!g || !nw || !old) return '';
+  return `<div class="tu-panel"><p class="tu-eyebrow">蛊性</p><h3>${tuEsc(SP[g.sp].n)} 打出了新的蛊性</h3><p>每只蛊只能带一个蛊性，换了旧的就没了。</p>
+    <ul class="tu-xl"><li><b>新的「${tuEsc(nw.n)}」</b>${tuEsc(nw.d)}</li><li><b>现在的「${tuEsc(old.n)}」</b>${tuEsc(old.d)}</li></ul>
+    <div class="tu-main"><button class="zhu big" data-trip="xing" data-y="1">换成「${tuEsc(nw.n)}」</button><button class="tu-sec" data-trip="xing" data-y="0">留着「${tuEsc(old.n)}」</button></div></div>`;
+}
+function tuFare(t, uid) {
+  const f = t.fallen.find(x => x.uid === uid); if (!f) return '';
+  return `<div class="tu-panel tu-fare"><span class="tu-art gone">${guSVG(f.sp, { rank: f.rank })}</span><p class="tu-eyebrow">永远留在了秘境里</p><h3>${tuEsc(tuGuN(f))}</h3><p>${tuEsc(epitaph(f))}</p><p class="tu-hint">倒下的蛊不会再回来。</p>
+    <div class="tu-main"><button class="zhu big" data-trip="fare">送它走</button></div></div>`;
+}
+function tuAsk(t) {
+  const l = t.loot, items = [...l.gu.map(tuGuN), ...l.foods.map(tuFood)];
+  return `<div class="tu-panel"><h3>撤退回洞府？</h3><p>${items.length ? `战利品袋里的全部带回：${tuEsc(items.join('、'))}。` : '战利品袋是空的。'}活着的蛊回洞府就养好伤。</p>
+    <div class="tu-main"><button class="zhu big" data-trip="fleeYes">撤退</button><button class="tu-sec" data-trip="fleeNo">继续走</button></div></div>`;
+}
+function tuEnd(t, by, S) {
+  const e = t.end, trib = t.realm === S.realm, head = { clear: trib ? ['渡劫成功', '闯到了最深处，赢了首领，境界加一'] : ['通关', '闯到了最深处，赢了首领'], wipe: ['全灭', '出征的蛊全部倒下了'], retreat: ['撤退', '带着战利品回洞府'] }[e.why] || ['回洞府', ''];
+  const N = tripMapOf(t).length, deep = Math.min(N, e.why === 'clear' ? N : e.depth + (t.rooms > e.depth ? 1 : 0));
+  const got = [...e.loot.gu.map(g => `<li><span class="tu-art">${guSVG(g.sp, { rank: g.rank })}</span>${tuEsc(tuGuN(g))}<small>放进蛊囊</small></li>`), ...e.loot.foods.map(id => `<li><b class="tu-seal">食</b>${tuEsc(tuFood(id))}<small>放进食物架</small></li>`)];
+  const lost = e.lost && !lootEmpty(e.lost) ? `<p class="tu-hint">丢在秘境里的：${tuEsc([...e.lost.gu.map(tuGuN), ...e.lost.foods.map(tuFood)].join('、'))}</p>` : '';
+  const back = e.survivors.map(u => by[u]).filter(Boolean).map(g => tuEsc(SP[g.sp].n));
+  return `<div class="tu-panel tu-end w-${e.why}"><p class="tu-eyebrow">${head[0]}</p><h3>${head[1]}</h3><p>这一趟走了 ${t.rooms} 个房间，最深到第 ${deep} 层。${back.length ? `回来的：${back.join('、')}，回洞府就养好伤。` : ''}</p>
+    <p class="tu-cap">带回洞府</p>${got.length ? `<ul class="tu-got">${got.join('')}</ul>` : '<p class="tu-hint">什么也没带回。</p>'}${lost}
+    ${e.fallen.length ? `<p class="tu-cap">没有回来的</p><ul class="tu-gone">${e.fallen.map(f => `<li><span class="tu-art gone">${guSVG(f.sp, { rank: f.rank })}</span><span><b>${tuEsc(tuGuN(f))}</b><small>${tuEsc(epitaph(f))}</small></span></li>`).join('')}</ul>` : ''}
+    <div class="tu-main"><button class="zhu big" data-trip="home">回洞府</button></div></div>`;
+}
+
+// ───────────── 操作 ─────────────
+async function tuFight(api, t) {
+  const S = api.S(), room = t.room, ui = tuUI(t);
+  const healed = tripPreFight(t), fielded = fieldTeam(t, S.team), foe = roomFoe(t);
+  if (!fielded.length || !foe) return;
+  tuBusy = true; api.save();
+  let out;
+  try {
+    out = await api.playBattle(foe, { team: fielded, seed: `${t.seed}:${room.d}:${room.lane}`, title: `秘境第 ${room.d + 1} 层 · ${ROOMS[room.type].n}`, foeName: room.type === 'boss' ? `${tripLand(t).n}首领` : room.type === 'elite' ? `${tripLand(t).n}精英` : tripLand(t).n });
+  } finally { tuBusy = false; }
+  const r = tripFight(t, S.team, fielded, out.res); if (!r) return;
+  const nm = u => { const g = S.team.find(x => x.uid === u); return g ? SP[g.sp].n : ''; };
+  ui.msg = [`${r.win ? '胜' : out.res.winner === 'draw' ? '僵持不下，各自退开' : '败'}${healed ? `（开打前回春茶回了 ${healed} 血）` : ''}${r.loot && !lootEmpty(r.loot) ? '。进战利品袋：' + [...r.loot.gu.map(tuGuN), ...r.loot.foods.map(tuFood)].join('、') : ''}`];
+  r.offers.filter(o => o.auto).forEach(o => ui.msg.push(`${nm(o.uid)} 打出了蛊性「${XING[o.xing].n}」：${XING[o.xing].d}`));
+  ui.fare = r.dead.slice(); ui.offers = r.offers.filter(o => !o.auto);
+}
+const TU_ACT = {
+  pick(api, t, a) { tuUI(t).msg = []; tripPick(t, +a.dataset.lane, tuUnit(), api.S()); },
+  fight(api, t) { return tuFight(api, t); },
+  ev(api, t, a) {
+    const S = api.S(), r = tripEvent(t, S.team, +a.dataset.i, tuUnit(), S), ui = tuUI(t); if (!r.ok) { ui.msg = [r.why || '选不了']; return; }
+    ui.msg = [r.lines.length ? r.lines.join('，') : '什么也没发生'];
+    if (r.offer) ui.offers = [r.offer];
+  },
+  camp(api, t) { const r = tripCamp(t); if (r) tuUI(t).msg = [`篝火边歇了一阵，全队共回 ${r.healed} 血`]; },
+  buy(api, t, a) { const r = tripBuy(t, +a.dataset.i, tuUnit(), api.S()); tuUI(t).msg = r.ok ? ['买下了'] : [r.why || '买不了']; },
+  leave(api, t) { tuUI(t).msg = []; tripLeaveRoom(t); },
+  xing(api, t, a) {
+    const ui = tuUI(t), o = ui.offers.shift(); if (!o) return;
+    if (a.dataset.y === '1') { acceptXing(api.S().team, o.uid, o.xing); ui.msg = [`换上了蛊性「${XING[o.xing].n}」`]; }
+  },
+  fare(api, t) { tuUI(t).fare.shift(); },
+  flee(api, t) { tuUI(t).ask = 'flee'; },
+  fleeNo(api, t) { tuUI(t).ask = null; },
+  fleeYes(api, t) { const ui = tuUI(t); ui.ask = null; ui.msg = []; tripEnd(t, 'retreat'); },
+  home(api, t) { const r = tripResult(t); if (r) api.onTripEnd(r); return 'done'; },
+};
+async function tuClick(e) {
+  const a = e.target.closest && e.target.closest('[data-trip]'); if (!a || a.disabled || tuBusy) return;
+  const api = TRIP.api; if (!api || !api.el || !api.el.contains(a)) return;
+  const t = tuT(api), f = TU_ACT[a.dataset.trip]; if (!t || !f) return;
+  const r = await f(api, t, a);
+  if (r === 'done') return;   // 洞府接手（onTripEnd 会重绘整页）
+  api.save(); tuDraw(api);
+  const top = api.el && api.el.getBoundingClientRect(); if (top && top.top < 0) api.el.scrollIntoView({ block: 'start' });
+}
+if (typeof document !== 'undefined') document.addEventListener('click', tuClick);
+
+// ───────────── 挂到洞府 ─────────────
+TRIP.lands = LANDS;            // 秘境列表 [{ id, n, realm, quota, cap, dao, d, boss: [{ sp, rank, pos, boss }] }]，洞府出征前给玩家选
+TRIP.foeFor = foeFor;          // (seed, quota, { dao, kind: 'room'|'elite'|'boss'|'ghost', depth }) → 敌阵，斗幽灵和战帖分场也用
+TRIP.start = api => { tuInit(api); tuDraw(api); if (api.el) api.el.scrollIntoView({ block: 'start' }); };
+TRIP.render = api => tuDraw(api);
+TRIP.active = S => !!S.trip;
+TRIP.feed = (S, tok) => {
+  const t = S.trip && S.trip.v ? S.trip : null;
+  if (!t) { S.bank += tok; return; }
+  const api = TRIP.api;
+  if (tripFeed(t, tok, tuUnit(), S)) { tuUI(t).msg = []; if (api) tuDraw(api); return; }
+  if (t.pick != null && !t.room && typeof document !== 'undefined') {   // 走路中：只更新进度条，不整屏重画
+    const need = needTok(t, tuUnit()), bar = document.getElementById('tuBar'), tx = document.getElementById('tuProg');
+    if (bar) bar.style.width = Math.min(100, Math.round(t.prog / need * 100)) + '%';
+    if (tx) tx.textContent = `${fmtTok(t.prog)} / ${fmtTok(need)} 元气 · 写代码的 token 推着蛊往前走`;
+  }
+};
+
 // ---- src/ui.js
 // 蛊码 GuCode · 界面与流程：洞府（养成）、斗幽灵与战帖（切磋）、战斗回放、秘境接口。规则只认 docs/design.md
 
@@ -4231,12 +4846,13 @@ const TXT = {
   landsHead: '选秘境',
   landsSub: '每个秘境写明出战额度：上阵蛊的转数加起来不能超过它。敌人按额度配，不看你的蛊池。渡过本境界任一秘境最深处的首领劫，开放下一境界的秘境。',
   landLock: '渡过上一境界的首领劫后开放',
-  landLine: l => `${REALMS[l.realm]} · 额度 ${l.quota} · 敌人多${DAO[l.dao] ? DAO[l.dao].n : '杂道'}`,
+  landLine: l => `${REALMS[l.realm]} · 额度 ${l.quota}${l.cap ? ` · 最高${RANK.names[l.cap]}` : ''} · 敌人多${DAO[l.dao] ? DAO[l.dao].n : '杂道'}`,
   quotaTip: (u, q) => `上阵蛊的转数加起来是 ${u}，这个秘境的额度是 ${q}。额度 9 可以带三只三转，也可以一只五转加两只二转；只限转数总和，不限只数。`,
   driveTip: () => `${REALMS[S.realm]}境界能驱使${RANK.names[driveCap(S.realm)]}及以下的蛊上阵；渡劫成功后能驱使更高转数的蛊。`,
   whyEmpty: '空窍里还没有蛊',
   whyQuota: (u, q) => `上阵转数 ${u}，超过额度 ${q}：收一只进蛊囊再出征`,
   whyDrive: g => `${rankName(g)}要${REALMS[rankOf(g) - 1]}境界才能驱使：先收进蛊囊`,
+  whyCap: (g, l) => `「${l.n}」最高只让${RANK.names[l.cap]}的蛊上场，${rankName(g)}先收进蛊囊`,
   driveNo: g => `${REALMS[S.realm]}境界只能驱使${RANK.names[driveCap(S.realm)]}及以下的蛊，${rankName(g)}先留在蛊囊`,
   overDrive: '境界不够，驱使不了：出征前收进蛊囊',
   ateLine: g => `加攻血的食物 已吃 ${ateOf(g)}/${ATE_MAX}`,
@@ -4568,14 +5184,15 @@ const LANDS0 = () => lands0 || (lands0 = QUOTA.flatMap((q, r) => LAND_NAMES[r].s
   return { id, n, realm: r, quota: q, dao, boss: quotaTeam(makeRng('land:' + id), q + 2 + r, { dao }).map(g => ({ ...g, boss: 1 })), d: '' };
 })));
 const lands = () => (TRIP.lands && TRIP.lands.length ? TRIP.lands : LANDS0());
-const landOf = id => lands().find(l => l.id === id);
-const curLand = () => { const l = landOf(S.land); return l && l.realm <= S.realm ? l : lands().find(x => x.realm === S.realm) || lands()[0]; };
+const landById = id => lands().find(l => l.id === id);
+const curLand = () => { const l = landById(S.land); return l && l.realm <= S.realm ? l : lands().find(x => x.realm === S.realm) || lands()[0]; };
 const bossOf = l => (l.boss || []).map(b => (b.atk ? b : { ...newGu(b.sp, b.rank), ...b }));
 // 出征前的检查：空窍不能空、转数总和不超过额度、每只都在驱使上限内。返回原因（能出征时返回空）
 function goWhy(land = curLand()) {
   if (!S.team.length) return TXT.whyEmpty;
   const used = quotaOf(S.team); if (used > land.quota) return TXT.whyQuota(used, land.quota);
   const over = S.team.find(g => rankOf(g) > driveCap(S.realm)); if (over) return TXT.whyDrive(over);
+  const big = land.cap && S.team.find(g => rankOf(g) > land.cap); if (big) return TXT.whyCap(big, land);
   return '';
 }
 function landCard(l, lock) {
@@ -4597,7 +5214,7 @@ function goSheet() {
   sheet(`<h3>${TXT.go} · ${esc(land.n)}</h3><p class="sm">${esc(TXT.landLine(land))} · 已用 ${quotaOf(S.team)}</p><p>${esc(TXT.goSub(S.team.length, land))}：</p>${miniRow(S.team)}<details><summary>最深处的首领</summary>${miniRow(bossOf(land))}</details><p class="trialnote">${esc(TXT.goWarn)}</p><p class="sm">攒着的元气 ${fmtTok(S.bank)}：出征时先用它一口气往深处走。</p><div class="row2"><button class="zhu big" data-act="goConfirm">确认出征</button></div>`);
 }
 function onTripEnd(result = {}) {
-  const dead = new Set(result.dead || []), loot = result.loot || {}, land = landOf(S.trip && S.trip.land);
+  const dead = new Set(result.dead || []), loot = result.loot || {}, land = landById(S.trip && S.trip.land);
   const lost = S.team.filter(g => dead.has(g.uid));
   S.team = S.team.filter(g => !dead.has(g.uid));
   lost.forEach(g => note(`${rankName(g)} 倒在了秘境里`));
@@ -5042,7 +5659,7 @@ const ACT = {
   sell(a) { const L = a.dataset.k === 'bag' ? S.bag : S.team, i = +a.dataset.i, g = L[i]; if (!g || tripOn()) return; const v = price(sellValue(g)); L.splice(i, 1); S.bank += v; note(TXT.sold(g, v)); closeSheet(); afterChange(); snd('coin'); },
   go() { if (tripOn() || goWhy()) return; goSheet(); },
   lands() { if (!tripOn()) openLands(); },
-  land(a) { const l = landOf(a.dataset.id); if (!l || l.realm > S.realm) return; S.land = l.id; closeSheet(); renderHome(); save(); },
+  land(a) { const l = landById(a.dataset.id); if (!l || l.realm > S.realm) return; S.land = l.id; closeSheet(); renderHome(); save(); },
   goConfirm() { closeSheet(); if (goWhy()) return; if (!TRIP.start) { note(TXT.goSoon); return; } S.trip = S.trip || { at: Date.now(), land: curLand().id }; save(); renderHome(); TRIP.start(TRIP.api); },
   ghost() { openGhosts(); },
   ghostNew() { S.ghosts = null; openGhosts(); },
