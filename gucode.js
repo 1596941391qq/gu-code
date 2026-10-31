@@ -75,11 +75,11 @@ const QUIRK_KEYS = Object.keys(QUIRKS);
 // 杀招：本体 + 附蛊 的物种集合命中配方即成（三蛊配方优先）
 const COMBOS = [
   { id: 'sanzhu',   n: '烈火三豕冲', need: ['boar', 'fire', 'twin'], d: '开战：冲阵，对敌方前三只各造成本蛊攻击一半的伤害' },
-  { id: 'jinjia',   n: '金甲不坏身', need: ['iron', 'thorn'],  d: '开战再得 3 护体；护体未破时受击，反噬翻倍' },
-  { id: 'wangu',    n: '万蛊朝宗',   need: ['queen', 'bone'],  d: '任一友蛊被召唤时，全体友蛊 +1/+1' },
+  { id: 'jinjia',   n: '金甲不坏身', need: ['iron', 'thorn'],  d: '开战再得 2 护体；护体未破时受击，反噬翻倍' },
+  { id: 'wangu',    n: '万蛊朝宗',   need: ['queen', 'bone'],  d: '首次受击存活：身后召唤一只 1/1 蛊蛹；任一友蛊被召唤时，全体友蛊 +1/+1' },
   { id: 'tuoke',    n: '金蝉脱壳',   need: ['cicada', 'twin'], d: '首次阵亡时，以一半攻血原地蜕生' },
   { id: 'duopo',    n: '噬心夺魄',   need: ['mantis', 'scorp'], d: '击杀后，立刻对下一只敌蛊造成等同攻击的伤害（每回合一次）' },
-  { id: 'pozhen',   n: '擂鼓破阵',   need: ['drum', 'boar'],   d: '回合开始：全体友蛊 +1 攻' },
+  { id: 'pozhen',   n: '擂鼓破阵',   need: ['drum', 'boar'],   d: '回合开始：全体友蛊 +1/+1' },
   { id: 'shishan',  n: '尸山月影',   need: ['moth', 'bone'],   d: '亡语：再召唤一只继承本蛊一半攻击的月影' },
   { id: 'fenshen',  n: '焚身诀',     need: ['fire', 'mantis'], d: '击杀：对敌方全体造成 3 伤害' },
   { id: 'jingji',   n: '荆棘王座',   need: ['thorn', 'queen'], d: '受击：全体友蛊获得 1 点护体' },
@@ -489,10 +489,10 @@ function battle(ta, tb, seed, ma = [], mb = []) {
       if (T.vanguard && pos === 0 && alive(u)) { tg('vanguard'); buff(u, T.vanguard, 2 * T.vanguard); }
       if (T.snipe && pos > 0 && alive(u)) { const fs = foes(u); if (fs.length) { tg('snipe'); deal(u, fs[fs.length - 1], 2 * T.snipe + 1, 'skill'); } }
       if (u.combo === 'sanzhu' && alive(u)) { comboEv(u); fired = true; const dd = Math.max(1, Math.ceil(u.atk / 2)); foes(u).slice(0, 3).forEach(f => deal(u, f, dd, 'skill')); }
-      if (u.combo === 'jinjia' && alive(u)) { comboEv(u); fired = true; shield(u, 3); }
+      if (u.combo === 'jinjia' && alive(u)) { comboEv(u); fired = true; shield(u, 2); }
     } else if (h === 'turn') {
       if (T.war) { const a = allies(u)[0]; if (a) { tg('war'); buff(a, T.war, 0); } }
-      if (u.combo === 'pozhen') { comboEv(u); fired = true; allies(u).forEach(a => buff(a, 1, 0)); }
+      if (u.combo === 'pozhen') { comboEv(u); fired = true; allies(u).forEach(a => buff(a, 1, 1)); }
       if (u.q.includes('blood')) deal(null, u, 1, 'self');
       if (u.q.includes('timid') && alive(u) && allies(u)[0] !== u) buff(u, 0, 1);
     } else if (h === 'hurt') {
@@ -501,6 +501,7 @@ function battle(ta, tb, seed, ma = [], mb = []) {
       if (alive(u)) {
         if (T.frenzy) { tg('frenzy'); buff(u, T.frenzy, 0); }
         if (T.split && !u.f.split) { u.f.split = 1; tg('split'); summon(u.side, S[u.side].indexOf(u) + 1, { sp: 'shade', atk: T.split + 1, hp: T.split + 1 }, u); }
+        if (u.combo === 'wangu' && !u.f.wangu) { u.f.wangu = 1; fired = true; comboEv(u); summon(u.side, S[u.side].indexOf(u) + 1, { sp: 'pupa', atk: 1, hp: 1 }, u); }
         if (u.combo === 'jingji' && c.kind !== 'self') { fired = true; ev('combo', { uid: u.uid, n: u.cname, quiet: 1 }); allies(u).forEach(a => shield(a, 1)); }
       }
     } else if (h === 'kill') {
