@@ -194,6 +194,10 @@ i{font-style:normal}
 /* ---------- 空窍 ---------- */
 .qiao{position:relative;margin-top:14px}
 .qhead{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}
+/* 试阵入口：阵盘右上角一个小按钮，摆完阵随手点 */
+.qhead .qmeta{margin-left:auto}
+.qhead .trybtn{margin-left:10px;font:13px var(--kai);color:var(--zhu2);border:1px solid var(--line2);border-radius:3px;padding:1px 8px;align-self:center}
+.qhead .trybtn:hover{border-color:var(--zhu2)}
 #qmeta{font-size:12px;color:var(--mu)}
 .will{color:var(--zhu2);font-weight:400;letter-spacing:1px}
 .slots{display:grid;grid-template-columns:repeat(var(--cn,5),1fr);gap:6px;position:relative}
@@ -511,7 +515,12 @@ button.mg{font:inherit;font-size:11px;border:0;cursor:pointer;position:relative;
 .wbuy .fu{font:11px var(--kai);color:var(--zhu2)}
 .shead{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .pantry{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:10px}.pfood{font:13px var(--kai);padding:3px 9px}
-.gorow{margin:16px 0 4px}.gorow .go{width:100%;display:flex;flex-direction:column;align-items:center;gap:2px}.gorow .go small{font:12px var(--sans);opacity:.85}
+.gorow{margin:16px 0 4px;display:flex;gap:8px;align-items:stretch}.gorow .go{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:2px}
+.gorow .trygo{flex:0 0 auto;padding:0 12px;font:14px var(--kai);border:1px solid var(--line2);border-radius:3px;color:var(--tx)}.gorow .trygo:disabled{opacity:.45}
+/* 试阵面板 */
+.segs.simfoes{flex-wrap:wrap}
+.simres{margin-top:10px;min-height:1.4em}.simres p{margin:3px 0}
+.foeopt .fh .ib{margin-left:auto;font-size:12px;color:var(--mu)}.gorow .go small{font:12px var(--sans);opacity:.85}
 .gorow .go:disabled{background:transparent;color:var(--mu);border:1px dashed var(--line2);box-shadow:none}.gorow .go:disabled small{color:var(--zhu2);opacity:1}
 .compass2{margin-top:16px}.dopts{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}
 .dopt{display:flex;flex-direction:column;gap:4px;align-items:flex-start;text-align:left;background:var(--paper);color:var(--ink);border-radius:3px;padding:10px}

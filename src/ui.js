@@ -78,9 +78,19 @@ const TXT = {
   floor: g => `洞府里一只蛊都没有了，免费领到${rankName(g)}`,
   poor: (need) => `元气不够：还差 ${fmtTok(need)}，写会儿代码就有了`,
   spar: '纯切磋：不死蛊，也不给东西',
-  arenaSub: '按额度分场：你和对手上阵蛊的转数总和都不超过这一场的额度，谁和谁打都公平。',
+  tryName: '试阵', tryGo: '先试阵', tryOne: '模拟一场', try20: '连打 20 场',
+  trySub: '用阵盘上现在的摆法打',
+  tryTip: '试阵：拿阵盘上现在的摆法和幽灵、本秘境的精英或首领打一场看看。纯模拟，什么都不会变。',
+  tryQ: '额度', tryFoe: '对手',
+  tryOver: (u, q) => `你的阵转数 ${u}，超过额度 ${q}：真渡劫要先收几只进蛊囊`,
+  tryBossQ: q => `首领按秘境原样（额度 ${q}）`,
+  tryRun: (i, n) => `打了 ${i} / ${n} 场…`,
+  tryRes: (w, l, d, n) => `${n} 场：胜 ${w} · 负 ${l}${d ? ' · 平 ' + d : ''}`,
+  tryWin: p => `胜率 ${p}%`,
+  tryLeft: (x, n) => `平均剩 ${x} / ${n} 只`,
+  tryTop: (nm, x) => `伤害最高：${nm}（每场平均 ${x}）`,
+  tryOneRes: (left, n, top) => `剩 ${left} / ${n} 只${top ? ' · 伤害最高：' + top : ''}`,
   arenaName: q => `${q} 点场`,
-  arenaMine: (u, q) => `你的空窍：转数 ${u} / 额度 ${q}`,
   arenaOver: (u, q) => `你的空窍转数 ${u}，超过 ${q} 点场：收几只进蛊囊，或者换高一档的场`,
   arenaNone: u => `转数 ${u}，超过最高的 22 点场`,
   duelArena: q => `这张战帖是 ${q} 点场：双方上阵转数都不超过 ${q}`,
@@ -109,7 +119,7 @@ const trialTag = on => on ? `<span class="trialtag">${TXT.trial}</span>` : '';
 // bank = 元气（token），没有上限；所有价格都是 token 数
 const BAK_KEY = 'gucode.v1.bak-v2';
 const fresh = () => ({ v: 3, sx: STAT_SCALE, started: false, name: '', realm: 0, bank: 0, total: 0, team: [], bag: [], shop: [], dao: null, compass: null, tripFood: [], pantry: [], trip: null, land: null,
-  seed: (Math.random() * 1e9) >>> 0, step: 0, speed: 1, mute: true, theme: 'auto', calm: false, codex: {}, combosSeen: [], log: [], hlog: [], meta: null, todayKey: '', todayTok: 0, ghosts: null, trial: false, sotaAt: 0 });
+  seed: (Math.random() * 1e9) >>> 0, step: 0, speed: 1, mute: true, theme: 'auto', calm: false, codex: {}, combosSeen: [], log: [], hlog: [], meta: null, todayKey: '', todayTok: 0, sim: null, trial: false, sotaAt: 0 });
 const today = () => { const d = new Date(); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); };
 const curCap = () => SLOTS, BC = () => Math.max(bagCap(S.realm), S.bag.length);
 // sx = 存档里的攻血按几倍存的。没有 sx 的是放大十倍之前的存档：空窍、蛊囊、秘境里的血量和战利品蛊一律乘 STAT_SCALE（只做一次）
@@ -122,7 +132,7 @@ function scaleSave(s) {
     ['hp', 'mx'].forEach(f => { if (t[f]) for (const u in t[f]) t[f][u] = Math.max(t[f][u] > 0 ? 1 : 0, Math.round(t[f][u] * k)); });
     [t.loot, t.end && t.end.loot].forEach(l => l && (l.gu || []).forEach(g => scaleGu(g, k)));
   }
-  s.ghosts = null; s.sx = STAT_SCALE; return s;
+  delete s.ghosts; s.sx = STAT_SCALE; return s;
 }
 const migrate = s => s && s.v === 3 ? scaleSave(s) : null;
 const price = k => Math.round(k * src.unit);   // 价格表（core.PRICE，单位 = 罗盘「千」）换成 token 数
@@ -274,7 +284,7 @@ function mainHTML() {
   <div class="seg" id="demo">${[['coding', '写代码中'], ['rest', '停手休息']].map(([m, t]) => `<button data-act="demo" data-m="${m}">${t}</button>`).join('')}</div>
   <section class="home" id="home"></section>
   <section class="trip" id="trip"></section>
-  <footer class="foot"><button data-act="duelInput">粘贴坐标码应战</button><button data-act="ghost">斗幽灵</button><button data-act="codex">蛊典</button><button data-act="path">道途</button><button data-act="ledger">履历</button><button data-act="reset" id="bReset">重开一局</button></footer>`;
+  <footer class="foot"><button data-act="duelInput">粘贴坐标码应战</button><button data-act="tryOpen">试阵</button><button data-act="codex">蛊典</button><button data-act="path">道途</button><button data-act="ledger">履历</button><button data-act="reset" id="bReset">重开一局</button></footer>`;
 }
 // 卡面只放攻、血、速三个数，加被动技、主动技两个小印（没有主动技就不显示）；杀招成形时右上角亮朱印
 function guCard(g, combo) {
@@ -291,11 +301,11 @@ function renderHome() {
   const land = curLand(), used = quotaOf(S.team), why = goWhy(land);
   box.innerHTML = `<div class="hhead"><span class="lbl" data-tip="${esc(TXT.daoTip)}">${S.dao ? TXT.daoLine(S.dao) : TXT.daoNone}</span><span id="reso" class="reso"></span></div>
   <section class="qiao" id="qiao"><button class="landbtn" data-act="lands"${t ? ' disabled' : ''}><span class="lbl">秘境</span><b>${esc(land.n)}</b><small>${esc(TXT.landLine(land))}</small><span class="lchg">${t ? '渡劫中' : '换秘境'}</span></button>
-  <div class="qhead"><span class="lbl">${TXT.slotsHead} <small>${TXT.slotsSub}</small></span><span class="qmeta quota${used > land.quota ? ' over' : ''}" data-tip="${esc(TXT.quotaTip(used, land.quota) + '\n' + TXT.driveTip())}">已用 ${used} / 额度 ${land.quota}</span></div><div class="slots" id="slots"></div>
+  <div class="qhead"><span class="lbl">${TXT.slotsHead} <small>${TXT.slotsSub}</small></span><span class="qmeta quota${used > land.quota ? ' over' : ''}" data-tip="${esc(TXT.quotaTip(used, land.quota) + '\n' + TXT.driveTip())}">已用 ${used} / 额度 ${land.quota}</span>${t ? '' : `<button class="trybtn" data-act="tryOpen" data-tip="${esc(TXT.tryTip)}">${TXT.tryName}</button>`}</div><div class="slots" id="slots"></div>
   <div class="bagline" id="bagline"></div></section>
   <ul class="hlog" id="hlog"></ul>
   ${t ? `<p class="hint">${TXT.inTrip}</p>` : S.compass ? compassHTML() : `<section class="shop" id="shop"></section>`}
-  ${t ? '' : `<div class="gorow"><button class="zhu big go" data-act="go"${why ? ' disabled' : ''}>${TXT.go} · ${esc(land.n)}<small>${esc(why || TXT.goSub(S.team.length, land))}</small></button></div>`}`;
+  ${t ? '' : `<div class="gorow"><button class="trygo" data-act="tryOpen"${S.team.length ? '' : ' disabled'}>${TXT.tryGo}</button><button class="zhu big go" data-act="go"${why ? ' disabled' : ''}>${TXT.go} · ${esc(land.n)}<small>${esc(why || TXT.goSub(S.team.length, land))}</small></button></div>`}`;
   renderSlots(); renderBagLine(); renderShop(); renderReso(); renderLog();
 }
 // 阵盘：3 行 × 3 列，屏幕上从左到右是 后、中、前（前列朝向敌人）。9 格随便摆；能带几只看秘境额度（转数总和）
@@ -662,24 +672,64 @@ function spar(kind, foe) {
   const res = allCombos(() => battle(placed(A.team), placed(Bt.team), 'r:' + seed, { sota }));
   save(); runBattle({ kind, title: (kind === 'duel' ? '战帖 · ' : '幽灵 · ') + (foe.name || '无名'), res, A, B: Bt, sota, replay: [ca, cb, seed, kind[0], 's' + sotaFlag(sota)].join('.') });
 }
-// 斗幽灵：先挑几点场，再从三个幽灵里挑一个。幽灵阵容用秘境一侧的按额度出敌（满额度，和玩家同口径）
+// ---------- 试阵：拿阵盘上现在的摆法和幽灵 / 本秘境的精英 / 首领打着看。纯模拟：不死蛊、不给东西、不花元气、不记道途 ----------
+// S.sim = { q, foe: 'ghost' | 'elite' | 'boss:i', seed }（只记面板上的选择，换一个就换 seed）
 const ghostFoe = (seed, q, dao) => (TRIP.foeFor ? TRIP.foeFor(seed, q, { kind: 'ghost', dao }) : quotaTeam(makeRng('ghost:' + seed), q, { dao }));
-function rollGhosts(q) {
-  const r = R(), names = [...GHOST_NAMES], daos = DAOS.map(d => d.id), tag = (S.seed + ':' + S.step).toString(36);
-  S.ghosts = { q, list: [0, 1, 2].map(i => { const dao = daos.splice(r.int(daos.length), 1)[0], name = names.splice(r.int(names.length), 1)[0];
-    return { name, dao, code: encodeTeam(ghostFoe(tag + ':' + i, q, dao), { name: '幽灵·' + name, realm: S.realm }) }; }) };
-  save();
-}
 const myArenaTeam = () => (S.team.length ? S.team : starterTeam());
-function openGhosts(q) {
-  const mine = myArenaTeam(), used = quotaOf(mine);
-  q = q || (S.ghosts && S.ghosts.q) || arenaOf(mine) || ARENAS[ARENAS.length - 1];
-  if (!S.ghosts || S.ghosts.q !== q || !S.ghosts.list) rollGhosts(q);
-  const over = used > q ? TXT.arenaOver(used, q) : '';
-  sheet(`<h3>斗幽灵</h3><p class="sm">${TXT.spar}。${esc(TXT.arenaSub)}</p>
-  <div class="segs arenas">${ARENAS.map(a => `<button data-act="arena" data-q="${a}" class="${a === q ? 'on' : ''}">${TXT.arenaName(a)}</button>`).join('')}</div>
-  <p class="sm ${over ? 'err' : ''}">${esc(over || TXT.arenaMine(used, q))}</p>
-  ${S.ghosts.list.map((o, i) => { const d = decodeTeam(o.code); return `<div class="foeopt"><div class="fh"><span class="fn">${esc(o.name)}</span><small>${DAO[o.dao] ? '多' + DAO[o.dao].n : ''} · 转数 ${quotaOf(d.team)}</small></div>${miniRow(d.team)}<button class="zhu" data-act="ghostGo" data-i="${i}"${over ? ' disabled' : ''}>切磋</button></div>`; }).join('')}<div class="row2"><button data-act="ghostNew">换一批</button></div>`);
+const bossPool = l => (l.bosses && l.bosses.length ? l.bosses.map(b => ({ n: b.n, team: (b.team || []).map(g => (g.atk ? g : { ...newGu(g.sp, g.rank), ...g })) })) : [{ n: '', team: bossOf(l) }]);
+const simQs = land => [...new Set([...ARENAS, land.quota])].sort((a, b) => a - b);
+function simState() {
+  const land = curLand(), o = S.sim && typeof S.sim === 'object' ? S.sim : {};
+  const q = simQs(land).includes(o.q) ? o.q : land.quota, foe = /^(ghost|elite|boss:\d+)$/.test(o.foe || '') ? o.foe : 'ghost';
+  S.sim = { q, foe, seed: o.seed || (S.seed + ':' + S.step).toString(36) }; return { land, ...S.sim };
+}
+// 对手阵容：幽灵 = 同额度满配、随机一道；精英 = 本秘境主道、按精英的强度；首领 = 本秘境首领池里选的那一伙（按秘境原样）
+function simFoe(st) {
+  const { land, q, foe, seed } = st;
+  if (foe.startsWith('boss:')) { const pool = bossPool(land), b = pool[+foe.slice(5)] || pool[0]; return { name: (b.n || '首领') + ' · ' + land.n, team: b.team, boss: true }; }
+  if (foe === 'elite') return { name: '精英 · ' + land.n, team: TRIP.foeFor ? TRIP.foeFor('sim:' + seed, q, { kind: 'elite', dao: land.dao, depth: 6 }) : quotaTeam(makeRng('sim:' + seed), q, { dao: land.dao }) };
+  const r = makeRng('simg:' + seed), dao = DAOS[r.int(DAOS.length)].id, name = GHOST_NAMES[r.int(GHOST_NAMES.length)];
+  return { name: '幽灵 · ' + name, team: ghostFoe('sim:' + seed, q, dao), dao };
+}
+function simFight(foe, seed) {
+  const mine = myArenaTeam();
+  return battle(placed(mine), placed(foe.team), 'sim:' + seed, { sota: { A: sotaOn(), B: false } });
+}
+function openTry(res20) {
+  if (inBattle) return;
+  const st = simState(), foe = simFoe(st), mine = myArenaTeam(), used = quotaOf(mine), boss = foe.boss, pool = bossPool(st.land);
+  const fq = boss ? quotaOf(foe.team) : st.q, over = used > (boss ? st.land.quota : st.q);
+  const foes = [['ghost', '幽灵'], ['elite', '精英'], ...pool.map((b, i) => ['boss:' + i, pool.length > 1 ? '首领 · ' + (b.n || i + 1) : '首领'])];
+  sheet(`<h3>${TXT.tryName}</h3><p class="sm">${TXT.trySub}</p>
+  <p class="lbl">${TXT.tryQ}</p><div class="segs arenas">${simQs(st.land).map(a => `<button data-act="simQ" data-q="${a}" class="${a === st.q ? 'on' : ''}"${boss ? ' disabled' : ''}>${a}</button>`).join('')}</div>
+  <p class="lbl">${TXT.tryFoe} · ${esc(st.land.n)}</p><div class="segs simfoes">${foes.map(([k, n]) => `<button data-act="simFoe" data-k="${k}" class="${k === st.foe ? 'on' : ''}">${esc(n)}</button>`).join('')}</div>
+  <div class="foeopt"><div class="fh"><span class="fn">${esc(foe.name)}</span><small>${boss ? esc(TXT.tryBossQ(st.land.quota)) : (foe.dao && DAO[foe.dao] ? '多' + DAO[foe.dao].n + ' · ' : '') + '转数 ' + fq}</small>${boss ? '' : `<button class="ib" data-act="simNew" title="换一个">换一个</button>`}</div>${miniRow(foe.team)}</div>
+  <p class="vsline">— 你的阵盘 · 转数 ${used} —</p>${miniRow(placed(mine))}${over ? `<p class="sm err">${esc(TXT.tryOver(used, boss ? st.land.quota : st.q))}</p>` : ''}
+  <div class="row2"><button class="zhu" data-act="simOne">${TXT.tryOne}</button><button data-act="sim20">${TXT.try20}</button></div>
+  <div class="simres" id="simres">${res20 ? simResHTML(res20) : ''}</div>`);
+}
+function simResHTML(r) {
+  return `<p><b>${TXT.tryWin(Math.round(r.w / r.n * 100))}</b> · ${TXT.tryRes(r.w, r.l, r.d, r.n)}</p><p class="sm">${TXT.tryLeft((r.left / r.n).toFixed(1), r.size)}</p>${r.top ? `<p class="sm">${TXT.tryTop(r.top, Math.round(r.topDmg / r.n))}</p>` : ''}`;
+}
+// 连打 20 场：不播动画，分几批算（每批之间让一下界面）
+async function sim20() {
+  const st = simState(), foe = simFoe(st), mine = myArenaTeam(), N = 20, box = $('#simres');
+  const agg = { n: N, w: 0, l: 0, d: 0, left: 0, size: mine.length, dmg: new Array(mine.length).fill(0) };
+  for (let i = 0; i < N; i++) {
+    if (box && i % 4 === 0) { box.innerHTML = `<p class="sm">${TXT.tryRun(i, N)}</p>`; await sleep(0); }
+    const res = simFight(foe, st.seed + ':' + i);
+    if (res.winner === 'A') agg.w++; else if (res.winner === 'B') agg.l++; else agg.d++;
+    agg.left += (res.hpA || []).filter(h => h > 0).length;
+    (res.statA || []).forEach((x, k) => { if (x && k < agg.dmg.length) agg.dmg[k] += x.dmg || 0; });
+  }
+  const placedMine = placed(mine), k = agg.dmg.reduce((b, v, i) => v > agg.dmg[b] ? i : b, 0);
+  if (agg.dmg[k] > 0) { agg.top = rankName(placedMine[k]); agg.topDmg = agg.dmg[k]; }
+  openTry(agg);
+}
+function simOne() {
+  const st = simState(), foe = simFoe(st), mine = myArenaTeam(), seed = st.seed + ':' + (++S.step);
+  const res = simFight(foe, seed); closeSheet(); save();
+  runBattle({ kind: 'sim', title: TXT.tryName + ' · ' + foe.name, res, A: { team: mine, name: S.name || '无名蛊师', trial: S.trial }, B: { team: foe.team, name: foe.name }, sota: { A: sotaOn(), B: false }, done: () => setTimeout(() => openTry(), 50) });
 }
 function parseReplay(text) {
   const m = String(text || '').match(/r=([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)\.([0-9a-z]+)(?:\.([tgd]))?(?:\.s([0-3]))?/); if (!m) return null;
@@ -918,10 +968,12 @@ const ACT = {
   lands() { if (!tripOn()) openLands(); },
   land(a) { const l = landById(a.dataset.id); if (!l || !landOpen(l)) return; S.land = l.id; closeSheet(); renderHome(); save(); },
   goConfirm() { closeSheet(); if (goWhy()) return; if (!TRIP.start) { note(TXT.goSoon); return; } S.trip = S.trip || { at: Date.now(), land: curLand().id }; save(); renderHome(); TRIP.start(TRIP.api); },
-  ghost() { openGhosts(); },
-  ghostNew() { const q = S.ghosts && S.ghosts.q; S.ghosts = null; openGhosts(q); },
-  arena(a) { openGhosts(+a.dataset.q); },
-  ghostGo(a) { const o = S.ghosts && S.ghosts.list[+a.dataset.i]; if (!o || quotaOf(myArenaTeam()) > S.ghosts.q) return; closeSheet(); const d = decodeTeam(o.code); spar('ghost', { team: d.team, name: o.name, realm: S.realm }); },
+  tryOpen() { openTry(); },
+  simQ(a) { simState(); S.sim.q = +a.dataset.q; S.sim.seed = (S.seed + ':' + (++S.step)).toString(36); openTry(); },
+  simFoe(a) { simState(); S.sim.foe = a.dataset.k; S.sim.seed = (S.seed + ':' + (++S.step)).toString(36); openTry(); },
+  simNew() { simState(); S.sim.seed = (S.seed + ':' + (++S.step)).toString(36); openTry(); },
+  simOne() { simOne(); },
+  sim20(a) { a.disabled = true; sim20(); },
   share() { openShare(); },
   copyCode(a) { copy(myCode(), a); },
   copyLink(a) { const c = myCode(); copy(shareText(c) + '\n' + shareURL(c), a); },
