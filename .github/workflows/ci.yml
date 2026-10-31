@@ -20,3 +20,7 @@ jobs:
           git diff --exit-code -- gucode.js vscode-ext/media || { echo "::error::gucode.js 和 src/ 不一致，请本地跑 node tools/build.mjs 后一起提交"; exit 1; }
       - name: 平衡模拟能跑完
         run: timeout 120 node tools/sim.mjs
+      - name: 道途与秘境自检
+        run: |
+          node tools/meta-test.mjs
+          timeout 120 node tools/trip-test.mjs
