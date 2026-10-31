@@ -2,7 +2,7 @@
 // 规则正本：docs/design.md 第 2 节。界面在 trip-ui.js。战斗引擎归战斗一侧：秘境给出场蛊带 hpNow，读回 res.hpEnd（每只剩血，0 = 倒下）
 // 和 res.statA（每只这一场的经历，判蛊性用）；引擎还没给 hpEnd 时，用最后一帧快照兜底（hpFromLog）。
 // 资源只有元气（= 消耗的 token）：房间路程、坊市、奇遇里要花的都按元气算，先花洞府攒着的（purse.bank），不够就等实时 token。
-import { makeRng, hashStr, SP, poolFor, baseRank, RANK, SLOTS, XING, fmtTok, statFor, daoOf, NORMAL_SPECIES, autoPlace, arrangeTeam } from './core.js';
+import { makeRng, hashStr, SP, poolFor, baseRank, RANK, SLOTS, XING, fmtTok, statFor, daoOf, NORMAL_SPECIES, autoPlace, arrangeTeam, QUOTA } from './core.js';   // QUOTA（各境界额度）定义在 core，洞府也用
 import { FOODS } from './foods.js';
 
 // ───────────── 蛊性：秘境里打出来的经历。每只蛊最多 1 个；数值按进场攻血的百分比，后期不贬值 ─────────────
@@ -94,7 +94,6 @@ export function nextLanes(map, d, lane) {
 
 // ───────────── 秘境列表：每个境界两三个，同境界额度相同，主道和首领不同。渡过本境界任一秘境的首领 = 渡劫，境界加一 ─────────────
 // 额度 = 上阵蛊转数总和的上限；境界 r 能驱使 r+1 转及以下的蛊（敌人也一样）。名字取原著里的大地名，描述是自己写的
-export const QUOTA = [4, 7, 10, 14, 18, 22];
 export const rankCapOf = q => Math.min(RANK.max, q < 7 ? 1 : q < 10 ? 2 : q < 14 ? 3 : q < 18 ? 4 : 5);   // 额度对应的最高转数（斗幽灵 4/9/15/22 档也按这个）
 const LAND_DEF = [   // [id, 名, 境界, 主道, 一句介绍, 首领强度微调 bk（攻血再乘几倍；由 TUNE=1 node tools/trip-test.mjs 算出，让配队一般时首领每只蛊死亡率约 40%）]
   ['qingmao', '青茅山', 0, 'li', '山寨外的竹林里野蛊成群，蛊师入门的第一道坎。', 0.9],

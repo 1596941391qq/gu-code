@@ -1,5 +1,5 @@
 // node tools/trip-test.mjs —— 秘境自检：同种子同图、不卡死、撤退/全灭都走得通、各层死亡率、战利品曲线、节奏（真实 token 画像）
-import { makeRng, arrangeTeam, autoPlace, XING, NORMAL_SPECIES, baseRank, daoOf, statFor, RANK } from '../src/core.js';
+import { makeRng, arrangeTeam, autoPlace, XING, NORMAL_SPECIES, baseRank, daoOf, statFor, RANK, QUOTA } from '../src/core.js';
 import { battle } from '../src/battle.js';
 import * as T from '../src/trip.js';
 if (process.env.FOE) Object.assign(T.TRIP_CFG.foe, JSON.parse(process.env.FOE));   // 调参：FOE='{"st":{...},"qk":0.1}' node tools/trip-test.mjs
@@ -22,7 +22,7 @@ function teamBy(rng, quota, style = 'avg') {
   });
   return autoPlace(arrangeTeam(team));
 }
-const player = (rng, r, style) => teamBy(rng, T.QUOTA[Math.max(0, Math.min(5, r))], style);
+const player = (rng, r, style) => teamBy(rng, QUOTA[Math.max(0, Math.min(5, r))], style);
 
 console.log('# 1 地图');
 {
@@ -36,8 +36,8 @@ console.log('# 1 地图');
 
 console.log('# 1b 秘境列表与按额度出敌');
 {
-  ok([0, 1, 2, 3, 4, 5].every(r => { const L = T.landsOf(r); return L.length >= 2 && L.length <= 3 && L.every(l => l.quota === T.QUOTA[r]) && new Set(L.map(l => l.dao)).size === L.length && new Set(L.map(l => JSON.stringify(l.boss))).size === L.length; }),
-    `每个境界 2–3 个秘境，额度相同（${T.QUOTA.join('/')}），主道、首领都不同：${T.LANDS.map(l => l.n).join('、')}`);
+  ok([0, 1, 2, 3, 4, 5].every(r => { const L = T.landsOf(r); return L.length >= 2 && L.length <= 3 && L.every(l => l.quota === QUOTA[r]) && new Set(L.map(l => l.dao)).size === L.length && new Set(L.map(l => JSON.stringify(l.boss))).size === L.length; }),
+    `每个境界 2–3 个秘境，额度相同（${QUOTA.join('/')}），主道、首领都不同：${T.LANDS.map(l => l.n).join('、')}`);
   ok(T.LANDS.every(l => l.d && l.boss.length >= 2 && l.boss.every(g => g.rank <= l.cap)), '每个秘境有介绍、首领阵容，转数不超过这个境界能驱使的');
   let over = 0, under = 0, capBad = 0, det = 0; const fr = { room0: [], room8: [], elite: [], boss: [], ghost: [] };
   for (const q of [4, 7, 9, 10, 14, 15, 18, 22]) for (let k = 0; k < 60; k++) {

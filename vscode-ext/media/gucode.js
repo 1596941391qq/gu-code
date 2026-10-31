@@ -3477,18 +3477,21 @@ function timelineView(M) {
 //
 // 秘境挂上来的：
 //   TRIP.start(api)        玩家在洞府确认出征后调用一次。秘境自己往 S.trip 写状态，画在 <section id="trip"> 里（api.el）。
-//   TRIP.feed(S, tok)      出征中每次有 token 进账调用（洞府攒着的灵气 S.bank 出征时由秘境自己先用掉）。
+//   TRIP.feed(S, tok)      出征中每次有 token 进账调用（洞府攒着的元气 S.bank 出征时由秘境自己先用掉）。
 //   TRIP.render(api)       洞府重绘时、读档后出征仍未结束时调用，让秘境把界面画回来。
 //   TRIP.active(S)         可选：出征中返回 true（默认按 !!S.trip 判断）。
+//   TRIP.lands             秘境列表 [{ id, n, realm, quota, cap, dao, d, bk, boss: [{ sp, rank, pos, boss }] }]：洞府的「选秘境」列它
+//   TRIP.foeFor(seed, quota, { dao, kind: 'room'|'elite'|'boss'|'ghost', depth }) → 敌阵：斗幽灵、战帖按额度分场时洞府也调它
+// 出征前洞府已经查过：上阵转数总和 ≤ 秘境额度、每只 ≤ 驱使上限和秘境的 cap；然后设 S.trip = { at, land: id } 再调 TRIP.start。
 // 洞府提供的 api（TRIP.api，启动时就挂好）：
 //   api.S()                当前存档对象（直接读写；改完调 api.save()）
 //   api.save()             落盘（节流）
 //   api.el                 <section id="trip"> 元素
-//   api.playBattle(foeTeam, opts) → Promise<{ res, A, B }>：复用洞府的战斗回放；opts = { title, team（默认 S.team）, seed, oa, ob }
-//                          oa / ob 原样传给 battle() 的第 4、5 个参数（血量延续等由秘境在 battle.js 里处理）
+//   api.playBattle(foeTeam, opts) → Promise<{ res, A, B }>：复用洞府的战斗回放；opts = { title, team（默认 S.team）, seed, foeName, oa }
+//                          oa 并进 battle() 的第 4 个参数（SOTA 由洞府补上；血量延续读每只蛊的 hpNow）
 //   api.onTripEnd(result)  秘境结束（撤退、通关或全灭）时调用一次。
-//                          result = { dead: [uid], survivors: [uid], loot: { stone, foods: [id], gu: [蛊对象] }, cleared, wiped }
-//                          洞府负责：删掉倒下的蛊、发战利品（全灭时秘境应传空 loot）、cleared 时渡劫（境界 +1，全屏）、全员回满、
+//                          result = { dead: [uid], survivors: [uid], loot: { foods: [id], gu: [{ sp, rank, xing? }] }, cleared, wiped }
+//                          洞府负责：删掉倒下的蛊、发战利品（全灭时秘境应传空 loot）、cleared 且秘境属于当前境界时渡劫（境界 +1，全屏）、全员回满、
 //                          清掉 S.trip 和只在这次出征有效的食物（S.tripFood）、罗盘重转、蛊市刷新。
 //   api.big(kind, title, lines)  全屏时刻（只给 design.md 第 5 节那三种用：'trib' 渡劫成功、'ach' 成就解锁、'combo' 杀招第一次成形）
 //   api.note(text)         在原地战报加一行（其余反馈都用这个）
@@ -4282,7 +4285,6 @@ function nextLanes(map, d, lane) {
 
 // ───────────── 秘境列表：每个境界两三个，同境界额度相同，主道和首领不同。渡过本境界任一秘境的首领 = 渡劫，境界加一 ─────────────
 // 额度 = 上阵蛊转数总和的上限；境界 r 能驱使 r+1 转及以下的蛊（敌人也一样）。名字取原著里的大地名，描述是自己写的
-const QUOTA = [4, 7, 10, 14, 18, 22];
 const rankCapOf = q => Math.min(RANK.max, q < 7 ? 1 : q < 10 ? 2 : q < 14 ? 3 : q < 18 ? 4 : 5);   // 额度对应的最高转数（斗幽灵 4/9/15/22 档也按这个）
 const LAND_DEF = [   // [id, 名, 境界, 主道, 一句介绍, 首领强度微调 bk（攻血再乘几倍；由 TUNE=1 node tools/trip-test.mjs 算出，让配队一般时首领每只蛊死亡率约 40%）]
   ['qingmao', '青茅山', 0, 'li', '山寨外的竹林里野蛊成群，蛊师入门的第一道坎。', 0.9],
@@ -4844,12 +4846,13 @@ const TXT = {
   landsHead: '选秘境',
   landsSub: '每个秘境写明出战额度：上阵蛊的转数加起来不能超过它。敌人按额度配，不看你的蛊池。渡过本境界任一秘境最深处的首领劫，开放下一境界的秘境。',
   landLock: '渡过上一境界的首领劫后开放',
-  landLine: l => `${REALMS[l.realm]} · 额度 ${l.quota} · 敌人多${DAO[l.dao] ? DAO[l.dao].n : '杂道'}`,
+  landLine: l => `${REALMS[l.realm]} · 额度 ${l.quota}${l.cap ? ` · 最高${RANK.names[l.cap]}` : ''} · 敌人多${DAO[l.dao] ? DAO[l.dao].n : '杂道'}`,
   quotaTip: (u, q) => `上阵蛊的转数加起来是 ${u}，这个秘境的额度是 ${q}。额度 9 可以带三只三转，也可以一只五转加两只二转；只限转数总和，不限只数。`,
   driveTip: () => `${REALMS[S.realm]}境界能驱使${RANK.names[driveCap(S.realm)]}及以下的蛊上阵；渡劫成功后能驱使更高转数的蛊。`,
   whyEmpty: '空窍里还没有蛊',
   whyQuota: (u, q) => `上阵转数 ${u}，超过额度 ${q}：收一只进蛊囊再出征`,
   whyDrive: g => `${rankName(g)}要${REALMS[rankOf(g) - 1]}境界才能驱使：先收进蛊囊`,
+  whyCap: (g, l) => `「${l.n}」最高只让${RANK.names[l.cap]}的蛊上场，${rankName(g)}先收进蛊囊`,
   driveNo: g => `${REALMS[S.realm]}境界只能驱使${RANK.names[driveCap(S.realm)]}及以下的蛊，${rankName(g)}先留在蛊囊`,
   overDrive: '境界不够，驱使不了：出征前收进蛊囊',
   ateLine: g => `加攻血的食物 已吃 ${ateOf(g)}/${ATE_MAX}`,
@@ -5181,14 +5184,15 @@ const LANDS0 = () => lands0 || (lands0 = QUOTA.flatMap((q, r) => LAND_NAMES[r].s
   return { id, n, realm: r, quota: q, dao, boss: quotaTeam(makeRng('land:' + id), q + 2 + r, { dao }).map(g => ({ ...g, boss: 1 })), d: '' };
 })));
 const lands = () => (TRIP.lands && TRIP.lands.length ? TRIP.lands : LANDS0());
-const landOf = id => lands().find(l => l.id === id);
-const curLand = () => { const l = landOf(S.land); return l && l.realm <= S.realm ? l : lands().find(x => x.realm === S.realm) || lands()[0]; };
+const landById = id => lands().find(l => l.id === id);
+const curLand = () => { const l = landById(S.land); return l && l.realm <= S.realm ? l : lands().find(x => x.realm === S.realm) || lands()[0]; };
 const bossOf = l => (l.boss || []).map(b => (b.atk ? b : { ...newGu(b.sp, b.rank), ...b }));
 // 出征前的检查：空窍不能空、转数总和不超过额度、每只都在驱使上限内。返回原因（能出征时返回空）
 function goWhy(land = curLand()) {
   if (!S.team.length) return TXT.whyEmpty;
   const used = quotaOf(S.team); if (used > land.quota) return TXT.whyQuota(used, land.quota);
   const over = S.team.find(g => rankOf(g) > driveCap(S.realm)); if (over) return TXT.whyDrive(over);
+  const big = land.cap && S.team.find(g => rankOf(g) > land.cap); if (big) return TXT.whyCap(big, land);
   return '';
 }
 function landCard(l, lock) {
@@ -5210,7 +5214,7 @@ function goSheet() {
   sheet(`<h3>${TXT.go} · ${esc(land.n)}</h3><p class="sm">${esc(TXT.landLine(land))} · 已用 ${quotaOf(S.team)}</p><p>${esc(TXT.goSub(S.team.length, land))}：</p>${miniRow(S.team)}<details><summary>最深处的首领</summary>${miniRow(bossOf(land))}</details><p class="trialnote">${esc(TXT.goWarn)}</p><p class="sm">攒着的元气 ${fmtTok(S.bank)}：出征时先用它一口气往深处走。</p><div class="row2"><button class="zhu big" data-act="goConfirm">确认出征</button></div>`);
 }
 function onTripEnd(result = {}) {
-  const dead = new Set(result.dead || []), loot = result.loot || {}, land = landOf(S.trip && S.trip.land);
+  const dead = new Set(result.dead || []), loot = result.loot || {}, land = landById(S.trip && S.trip.land);
   const lost = S.team.filter(g => dead.has(g.uid));
   S.team = S.team.filter(g => !dead.has(g.uid));
   lost.forEach(g => note(`${rankName(g)} 倒在了秘境里`));
@@ -5655,7 +5659,7 @@ const ACT = {
   sell(a) { const L = a.dataset.k === 'bag' ? S.bag : S.team, i = +a.dataset.i, g = L[i]; if (!g || tripOn()) return; const v = price(sellValue(g)); L.splice(i, 1); S.bank += v; note(TXT.sold(g, v)); closeSheet(); afterChange(); snd('coin'); },
   go() { if (tripOn() || goWhy()) return; goSheet(); },
   lands() { if (!tripOn()) openLands(); },
-  land(a) { const l = landOf(a.dataset.id); if (!l || l.realm > S.realm) return; S.land = l.id; closeSheet(); renderHome(); save(); },
+  land(a) { const l = landById(a.dataset.id); if (!l || l.realm > S.realm) return; S.land = l.id; closeSheet(); renderHome(); save(); },
   goConfirm() { closeSheet(); if (goWhy()) return; if (!TRIP.start) { note(TXT.goSoon); return; } S.trip = S.trip || { at: Date.now(), land: curLand().id }; save(); renderHome(); TRIP.start(TRIP.api); },
   ghost() { openGhosts(); },
   ghostNew() { S.ghosts = null; openGhosts(); },
