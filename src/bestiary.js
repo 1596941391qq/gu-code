@@ -4,19 +4,19 @@
 // ===================== 集成说明（集成方照做，本文件不改 core.js / battle.js） =====================
 // 〇、数据格式（全部 export）
 //   NEW_SPECIES[i] = { id, n 名, ab 简字, atk, hp, t 词条, v 层数, tier 蛊池档(0–5，仙蛊 6), rank 基础转数(1–6), role 流派说明,
-//                      lore 一句话（末尾带喂食偏好，如「嗜金气（Claude）」）, how 大白话机制, food, eats, school, counters[], counteredBy[],
+//                      lore 一句话, how 大白话机制, school, counters[], counteredBy[],
 //                      meta?（战斗外效果说明）, legend?/immortal?（六转仙蛊：只能开茧获得，天地间唯一） }
 //   NEW_TRAITS[k]  = { n, ch, trig, d(v), innate?（true = 物种专属、不进突变池）, hooks }
 //   NEW_COMBOS[i]  = { id, n, need[2], d, hooks, school, counters[], counteredBy[] }
 //   NEW_RECIPES[i] = { id, n, need[2–3]（物种 id 或 { rank: n } = 任意一只 n 转蛊）, out, d }   —— 蛊方，META.matchRecipe / META.discover
 //   NEW_SUMMONS = { 召唤物 id: 名 }；NEW_POOL[0..5] = 各档新蛊 id；IMMORTALS（= LEGENDS）= 仙蛊 id
-//   FOODS / FOOD_BONUS(0.3) / FOOD_ANY_BONUS(0.1)：喂食偏好；OLD_EXTRA = 旧 12 种的 { rank, food, eats, school }
+//   OLD_EXTRA = 旧 12 种的 { rank, nat, school }（按模型挑食的设定已删除，见 docs/design.md 3.5）
 //   SCHOOLS / FLOW：15 个流派标签与克制表；trCapOf(sp)：词条上限（五转、仙蛊 4，其余 3）；DOOM = 20：天劫压阵回合
 //   META：战斗外钩子（卖价、胜利元石、转市价、光阴蝉的蜕、喂食倍率、仙蛊唯一、蛊方匹配与发现）
 //
 // 一、core.js 合并数据
-//   import { NEW_SPECIES, NEW_TRAITS, NEW_COMBOS, NEW_SUMMONS, NEW_POOL, IMMORTALS, OLD_EXTRA, loreWithEats } from './bestiary.js';
-//   0. 旧 12 种：Object.assign(SP[id], OLD_EXTRA[id])，lore = loreWithEats(lore, food)。
+//   import { NEW_SPECIES, NEW_TRAITS, NEW_COMBOS, NEW_SUMMONS, NEW_POOL, IMMORTALS, OLD_EXTRA } from './bestiary.js';
+//   0. 旧 12 种：Object.assign(SP[id], OLD_EXTRA[id])。
 //   0b. 词条上限：trCap(g) 改为 Math.min(现有算法, trCapOf(g.sp))；MAXQ 改 1（策略性守则：怪癖最多 1 个）。
 //   1. SPECIES.push(...NEW_SPECIES)；SP 重建。仙蛊（s.legend / s.immortal）进 SP 和蛊典，但 genTeam / mkNode / rollShop 的随机池
 //      要排除：const NORMAL = SPECIES.filter(s => !s.legend)，genTeam 首蛊和 mkNode 的 rng.pick(SPECIES) 改用 NORMAL。
@@ -554,40 +554,18 @@ export const NEW_SPECIES = [
   S('fate',     '织命蛛', '命', 2, 5, 'fate',    1, 6, '仙蛊·控制', '它不咬人，只是把你的命线换了个结法', { legend: 1, immortal: true }),
   S('nirvana',  '涅火蛾', '涅', 3, 3, 'phoenix', 1, 6, '仙蛊·亡语', '扑进火里的蛾子很多，从火里飞出来的只有它', { legend: 1, immortal: true }),
 ];
-// ---------- 转数与喂食偏好 ----------
+// ---------- 转数 ----------
 // rank：基础转数。凡人池 = 一转蛊，一转池 = 二转蛊，二转池 = 三转蛊，三转池 = 四转蛊，四转池与五转池 = 五转蛊，仙蛊 = 六转。
-// food：偏好的模型族。烧对应模型的 token 时这只蛊灵气成长 +30%（any 不挑食：吃什么都 +10%）。只加成，不惩罚。
-export const FOODS = {
-  claude: { n: '金气', model: 'Claude', verb: '嗜' },
-  gpt:    { n: '青气', model: 'GPT',    verb: '爱吃' },
-  glm:    { n: '玄气', model: 'GLM',    verb: '偏好' },
-  gemini: { n: '星气', model: 'Gemini', verb: '喜食' },
-  qwen:   { n: '云气', model: 'Qwen',   verb: '好饮' },
-  any:    { n: '百气', model: '不挑食', verb: '' },
-};
-export const FOOD_BONUS = 0.3;
-export const FOOD_ANY_BONUS = 0.1;
-const FOOD_OF = {
-  ant: 'gpt', firefly: 'gemini', stick: 'qwen', leech: 'any', dung: 'claude', tiger: 'gpt', webspider: 'glm', aphid: 'any', hairy: 'qwen', cent: 'glm',
-  wasp: 'gpt', spider: 'glm', mole: 'qwen', gecko: 'qwen', qingfu: 'claude', bomb: 'glm', silk: 'claude', mosq: 'any', rhino: 'qwen', gold: 'claude',
-  qant: 'gpt', flea: 'any', bfly: 'gemini', sleep: 'gemini', stag: 'gpt', glut: 'any', toad: 'glm', cricket: 'qwen', locust: 'gpt',
-  mirror: 'claude', hive: 'gpt', fly: 'any', bury: 'glm', frost: 'gemini', lure: 'gemini', antlion: 'qwen', mayfly: 'gemini',
-  thunder: 'gpt', tortoise: 'qwen', puppet: 'glm', hairworm: 'glm', urn: 'glm', hex: 'gemini', saw: 'qwen',
-  dfly: 'gpt', orchid: 'gemini', taisui: 'qwen', yue: 'qwen', jinchan: 'claude', guangyin: 'claude', fate: 'gemini', nirvana: 'claude',
-};
-export const eatsOf = food => food === 'any' ? '百气不忌，什么都吃' : `${FOODS[food].verb}${FOODS[food].n}（${FOODS[food].model}）`;
-const withEats = (lore, food) => lore + (/[。！？]$/.test(lore) ? '' : '。') + eatsOf(food);
-// 旧 12 种的补充字段（集成时 Object.assign 到 core 的 SPECIES 上；lore 用 withEats 后的版本）
+// 旧 12 种的补充字段（集成时 Object.assign 到 core 的 SPECIES 上）
 // nat = 本命技；sub = 炼附/吞噬时教给本体的副词条；dup = 与本命重复、不能再得的副词条（旧存档里这些会被清掉）
 export const OLD_EXTRA = Object.fromEntries([
-  ['boar', 1, 'any', 'rage', 'frenzy', 'frenzy'], ['fire', 1, 'claude', 'blaze', 'strike', 'strike'], ['twin', 1, 'gemini', 'mirage', 'split', 'split'],
-  ['iron', 1, 'qwen', 'ironskin', 'shell', 'shell'], ['thorn', 1, 'glm', 'bramble', 'thorn', 'thorn,vanguard'], ['bone', 1, 'glm', 'rot', 'spawn', 'spawn,guard'],
-  ['mantis', 2, 'gpt', 'heart', 'devour', 'devour'], ['queen', 2, 'gpt', 'royal', 'rally', 'rally,link'], ['cicada', 2, 'claude', 'molt', 'legacy', 'legacy'],
-  ['drum', 3, 'gpt', 'beat', 'war', 'war'], ['scorp', 3, 'glm', 'sting', 'snipe', 'snipe,strike'], ['moth', 3, 'gemini', 'moon', 'legacy', 'legacy'],
-].map(([id, rank, food, nat, sub, dup]) => [id, { rank, food, eats: eatsOf(food), nat, t: nat, v: 1, sub, dup: dup.split(',') }]));
-export const loreWithEats = withEats;
+  ['boar', 1, 'rage', 'frenzy', 'frenzy'], ['fire', 1, 'blaze', 'strike', 'strike'], ['twin', 1, 'mirage', 'split', 'split'],
+  ['iron', 1, 'ironskin', 'shell', 'shell'], ['thorn', 1, 'bramble', 'thorn', 'thorn,vanguard'], ['bone', 1, 'rot', 'spawn', 'spawn,guard'],
+  ['mantis', 2, 'heart', 'devour', 'devour'], ['queen', 2, 'royal', 'rally', 'rally,link'], ['cicada', 2, 'molt', 'legacy', 'legacy'],
+  ['drum', 3, 'beat', 'war', 'war'], ['scorp', 3, 'sting', 'snipe', 'snipe,strike'], ['moth', 3, 'moon', 'legacy', 'legacy'],
+].map(([id, rank, nat, sub, dup]) => [id, { rank, nat, t: nat, v: 1, sub, dup: dup.split(',') }]));
 
-// 大白话机制：trait 描述 + 战斗外效果；补转数、仙蛊标记、喂食偏好
+// 大白话机制：trait 描述 + 战斗外效果；补转数、仙蛊标记
 const TD = Object.fromEntries(Object.entries(NEW_TRAITS).map(([k, t]) => [k, t.d]));
 const SUB = { ant: 'rally', firefly: 'strike', stick: 'mend', leech: 'siphon', dung: 'shell', tiger: 'vanguard', webspider: 'insight', aphid: 'spawn', hairy: 'thorn', cent: 'toxin',
   wasp: 'strike', spider: 'rally', mole: 'snipe', gecko: 'guard', qingfu: 'spawn', bomb: 'spark', silk: 'mend', mosq: 'siphon', rhino: 'shell', gold: 'legacy',
@@ -598,7 +576,6 @@ const SUB = { ant: 'rally', firefly: 'strike', stick: 'mend', leech: 'siphon', d
 const DUP = { leech: ['siphon'], cent: ['toxin'], glut: ['devour'], dung: ['shell'], thunder: ['spark'], locust: ['spark'], wasp: ['snipe'], gecko: ['guard'], taisui: ['mend'] };
 NEW_SPECIES.forEach(s => {
   s.rank = s.legend ? 6 : Math.min(5, s.tier + 1); s.nat = s.t; s.sub = SUB[s.id]; s.dup = DUP[s.id] || [];
-  s.food = FOOD_OF[s.id]; s.eats = eatsOf(s.food); s.lore = withEats(s.lore, s.food);
   s.how = TD[s.t](1) + (s.meta ? '；' + s.meta : '');
 });
 
@@ -819,8 +796,6 @@ const SPX = Object.fromEntries([...NEW_SPECIES.map(x => [x.id, x]), ...Object.en
 const has = (team, sp) => team.filter(g => g.sp === sp || (g.att || []).includes(sp)).length;
 const hasCombo = (team, need) => team.some(g => { const s = new Set([g.sp, ...(g.att || [])]); return need.every(x => s.has(x)); });
 export const META = {
-  // 喂食：烧 family（claude/gpt/glm/gemini/qwen）的 token 时，这只蛊灵气成长倍率
-  feedMul(g, family) { const f = (SPX[g.sp] || {}).food; return f === family ? 1 + FOOD_BONUS : f === 'any' ? 1 + FOOD_ANY_BONUS : 1; },
   // 仙蛊天地间唯一：owned 为玩家当前拥有的全部蛊（阵上 + 寄存），已有同名仙蛊则不能再得
   canOwn(owned, sp) { return !(SPX[sp] && SPX[sp].immortal && owned.some(g => g.sp === sp)); },
   // 蛊方匹配：gus 为准备投炉的蛊（2–3 只），返回命中的蛊方或 null。物种原料优先配对，{rank} 通配用剩下的蛊补

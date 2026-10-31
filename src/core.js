@@ -1,5 +1,5 @@
 // 蛊码 GuCode · 纯逻辑：种子随机、数据表、洞府养成（蛊市、合成、食物、道、杀招）、坐标码。不碰 DOM。规则见 docs/design.md
-import { NEW_SPECIES, NEW_TRAITS, NEW_COMBOS, NEW_SUMMONS, NEW_POOL, OLD_EXTRA, loreWithEats, natMulOf } from './bestiary.js';
+import { NEW_SPECIES, NEW_TRAITS, NEW_COMBOS, NEW_SUMMONS, NEW_POOL, OLD_EXTRA, natMulOf } from './bestiary.js';
 import { DAOS, DAO, DAO_BY_SCHOOL } from './daos.js';
 import { FOODS, FOOD } from './foods.js';
 export const natMulFor = r => natMulOf(r);   // 本命描述里〔〕数字按转数换算（界面用）
@@ -26,9 +26,11 @@ export const baseRank = sp => (SP[sp] && SP[sp].rank) || (POOL_TIERS.findIndex(t
 export const rankOf = g => g.rank || baseRank(g.sp);
 export const fuseLv = g => Math.max(0, rankOf(g) - baseRank(g.sp));     // 合成过几次（0 = 原生转数）
 export const rankName = g => RANK.names[rankOf(g)] + SP[g.sp].n;          // 「一转野猪蛊」
-// 元石：start 新档起步；buy 买蛊；refresh 转市；sell 卖蛊 = sell × 3^(合成次数)（三只合一只，卖价也按三倍走）；
-// floor 保底：洞府里没有蛊、元石又不够买一只时补到这个数；oldPer 旧存档折算（见 ui 的迁移）
-export const ECON = { start: 10, buy: 3, refresh: 1, sell: 1, floor: 6 };
+// 各转的主色（升转外貌、转数角标用）：一转青铜、二转赤铁、三转白银、四转黄金、五转紫晶
+export const ZHENYUAN = { colors: ['#a0703f', '#a0703f', '#a4442c', '#9aa4ab', '#d9a441', '#7d62a8'] };
+// 价格（元气 = 消耗的 token）：单位是「千」，乘 tokens.js 的 unit 才是 token 数（插件 8000，网页 200）。
+// gu 买一只蛊；refresh 转市；sell 卖蛊退回 = sell × 3^(合成次数)（三只合一只，退回也按三倍走）；食物的价格 = FOODS[].cost × food
+export const PRICE = { gu: 75, refresh: 25, sell: 25, food: 25 };
 // 蛊囊（场下）：凑合成用，不上场、不出征，放在里面绝对安全。固定 8 格
 export const BAG = { cap: 8 };
 export const bagCap = () => BAG.cap;
@@ -80,7 +82,7 @@ export const SPECIES = [
   { id: 'moth',   n: '月蛾蛊', ab: '蛾', atk: 1, hp: 2, t: 'legacy', v: 2, lore: '燃尽自己照亮后人' },
 ];
 // 旧 12 种补上转数 / 喂食偏好 / 流派；蛊典扩充的 52 种接在后面（坐标码按下标编码，只能往后加）
-SPECIES.forEach(s => { Object.assign(s, OLD_EXTRA[s.id]); s.lore = loreWithEats(s.lore, s.food); });
+SPECIES.forEach(s => { Object.assign(s, OLD_EXTRA[s.id]); });
 SPECIES.push(...NEW_SPECIES);
 export const NORMAL_SPECIES = SPECIES.filter(s => !s.immortal);   // 随机池（幽灵、天劫、招蛊）：六转仙蛊只能开茧获得
 export const SP = Object.fromEntries(SPECIES.map(s => [s.id, s]));
@@ -149,7 +151,7 @@ export function rollShop(rng, realm, dao, old = [], unlocked) {
   const fd = Array.from({ length: SHOP.foodSlots }, (_, i) => { const o = old.filter(w => w.kind === 'food')[i]; return keep(o) ? o : (fds.length ? { kind: 'food', id: pickDao(rng, fds, dao, id => FOOD[id].dao), frozen: false, sold: false } : null); }).filter(Boolean);
   return [...gu, ...fd];
 }
-export const foodCost = id => (FOOD[id] ? FOOD[id].cost : 3);
+export const foodCost = id => (FOOD[id] ? FOOD[id].cost : 3) * PRICE.food;   // 单位同 PRICE
 
 // ---------- 收蛊与合成 ----------
 export const sameRank = (list, sp, rk) => list.filter(g => g.sp === sp && rankOf(g) === rk).length;
@@ -181,7 +183,7 @@ export function mergeAll(team, bag = [], pick) {
   }
   return done;
 }
-export const sellValue = g => ECON.sell * Math.pow(3, fuseLv(g)) + (g.food ? 1 : 0);
+export const sellValue = g => PRICE.sell * Math.pow(3, fuseLv(g));   // 单位同 PRICE
 
 // ---------- 食物 ----------
 // 喂一个直接加攻血的食物：targets = 要加的蛊。永久加成记在 bonusA/bonusH（合成换表值时保留）
