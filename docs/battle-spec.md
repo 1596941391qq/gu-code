@@ -369,10 +369,25 @@ const res = battle(teamA, teamB, seed, opts);
 
 另有 `{ when: 'prep', op: 'copyNat', tg: 'foe.front' }`：照抄目标的被动技能（含已觉醒的部分，按施放者转数算），本场有效，一场只抄一次。
 
+`{ when: 'start', op: 'echo', tg: 'self', k: 'death' }`：把目标身上 `when === k`（默认亡语）的效果原样跑一遍，目标本身不倒（引魂香）。发 `trig { uid, …, echo: k }`。
+
+挂件或单位上的 `noMove: true`（镇石）：跳过击退、拉近、换位，不移动也不撞，发 `move { k: 'hold' }`。`mul` 的 `v: 0` 表示这一下全免（伤害最少记 1）。
+
+受击连锁的保险：受击反应里打出去的伤害（照回、反刺），不再触发对方的受击效果；旧钩子最多再嵌两层。镜对镜不会无限互弹。
+
+### 11.1 数值放大十倍（design 2.8）
+
+攻血由 `core.statFor` 乘 `STAT_SCALE`，数据里只有百分比。引擎里写死的固定数同步乘 10：毒的叠加上限保底 6 → 60、护体上限保底 99 → 990、灼没写数值时每轮 1 → 10、攻血上限 99999 / 999999 → 999999 / 9999999。所有「最少 1 点」的保底不变。
+
+### 11.2 状态与杀招的总体强度 `TUNE`
+
+`TUNE = { burn, psn, chill, combo }`（battle.js 导出，可改）：灼每轮伤害、毒每轮伤害、寒每层减速（默认 15%）、杀招效果的倍率。模拟调参用 `GU_TUNE='{"burn":0.6}' node tools/sim.mjs`。
+
 ## 12. 画面接口（battle-view.js / combo-fx.js）
 
 - `playBattle(el, result, opts) → Promise<{ closed, skipped }>`：结算页点「继续」才 resolve。`opts = { title, mode: 'trip' | 'spar', names: [我方, 对方], mySide: 0 | 1, speed: 1 | 2, reduceMotion, sota }`。
   - `mode: 'trip'`（秘境）：赢了，倒下的蛊在画面上从倒地起身，结算写「救回 N 只（剩 1 血）」；没赢，结算页「全队告别」逐只列出永久离开的蛊，停住等点击。
   - `mode: 'spar'`（斗幽灵、战帖、复盘）：结算不提死亡，只写「切磋：不死蛊」。没写 `mode` 时按旧参数猜（`perm` 或 `kind: 'trip'` 当秘境）。
   - 跳过：直接到结算页。`reduceMotion` 关掉震屏、把闪白压到很淡、镜头推拉减半（对应设置「减弱震屏和闪光」）。
+- `skillText(sp, rank, opts) → [{ kind, n, text, locked?, at?, lines? }]`（battle.js）：蛊详情和合成预览用。`kind` = `passive` 被动技、`active` 主动技、`aw3` / `aw5` 三转 / 五转觉醒（`lines` 分被动、主动两条）；没到的觉醒 `locked: true`，数字按觉醒那一转算。`text` = 数据里的说明（随转数变的数已换成这一转的值）+ 括号里这一转的实际数字，例如「（这一转约 41 伤害，撞上约 12）」。血按战斗里的血算（卡面血 × HPK）。`opts.est === false` 不补括号。
 - `playCombo(stage, o) → Promise`：杀招动画（每个杀招一份配方，进阶杀招名字条带金边）；`comboSheet(el)` 画全部杀招的关键帧总览；`drawComboFrame(ctx, id, ms, w, h)` 画单帧。没写配方的新杀招按 id 稳定地拼一份，进阶杀招（`xxx2`）在原版上加金光收尾。

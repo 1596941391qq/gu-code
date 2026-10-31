@@ -194,6 +194,10 @@ i{font-style:normal}
 /* ---------- 空窍 ---------- */
 .qiao{position:relative;margin-top:14px}
 .qhead{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}
+/* 试阵入口：阵盘右上角一个小按钮，摆完阵随手点 */
+.qhead .qmeta{margin-left:auto}
+.qhead .trybtn{margin-left:10px;font:13px var(--kai);color:var(--zhu2);border:1px solid var(--line2);border-radius:3px;padding:1px 8px;align-self:center}
+.qhead .trybtn:hover{border-color:var(--zhu2)}
 #qmeta{font-size:12px;color:var(--mu)}
 .will{color:var(--zhu2);font-weight:400;letter-spacing:1px}
 .slots{display:grid;grid-template-columns:repeat(var(--cn,5),1fr);gap:6px;position:relative}
@@ -347,6 +351,11 @@ body:has(#tut-layer) .sheet-bg{z-index:1001}   /* 引导进行中打开的面板
 /* ---------- 斗场 ---------- */
 .battle{position:fixed;inset:0;z-index:30;background:inherit;background-color:var(--bg);display:flex;flex-direction:column;overflow:hidden}
 .bbar{display:flex;align-items:center;gap:8px;padding:10px 16px;border-bottom:1px solid var(--line)}
+/* 新战斗画面（battle-view.js）：整层可滚动，画面居中 */
+.battle.bv2{overflow:auto;padding:10px 16px 18px}
+.bv2 .bvbox{width:100%;max-width:760px;margin:0 auto}
+.bv2 .bvx{max-width:760px;margin:8px auto 0;text-align:center}
+.bv2 .bvx button{font-size:13px;color:var(--mu)}
 .btitle{font:18px var(--kai);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bturn{font:13px var(--kai);color:var(--mu)}
 .arena{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:6px 16px;min-height:0}
@@ -487,6 +496,20 @@ button.mg{font:inherit;font-size:11px;border:0;cursor:pointer;position:relative;
 /* ---- v2 洞府：主道与共鸣、蛊囊行、战报、食物位、出征、罗盘、全屏时刻 ---- */
 .home.away .qiao{opacity:.72}
 .hhead{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:baseline;margin:12px 0 6px}
+/* 道共鸣常驻小签（reso.js，洞府和秘境共用）：已触发描朱，差一只虚线，相冲加波浪下划线，杀招朱底 */
+.reso2{display:flex;flex-wrap:wrap;gap:5px;width:100%}
+.rz{display:inline-flex;align-items:center;gap:4px;font:12px/1.5 var(--sans);color:var(--mu);border:1px solid var(--line2);border-radius:3px;padding:0 6px 0 3px;white-space:nowrap}
+.rz b{font:400 12px/1 var(--kai);color:var(--dc,var(--mu));border:1px solid currentColor;border-radius:2px;padding:1px 2px}
+.rz.on{color:var(--zhu2);border-color:var(--zhu2)}
+.rz.near{border-style:dashed}
+.rz.clash{text-decoration:underline wavy rgba(216,85,63,.55);text-underline-offset:3px}
+.rz.combo{color:var(--on-zhu);background:var(--zhu);border-color:var(--zhu)}.rz.combo b{color:var(--on-zhu)}
+.rz.none{border:0;padding:0}
+/* 蛊卡右上角的小道字 */
+.gu .dz,.mg .dz,.ware .dz{position:absolute;top:3px;right:3px;font:11px/1 var(--kai);color:var(--dc,var(--mu));border:1px solid currentColor;border-radius:2px;padding:1px 2px;background:var(--paper)}
+.gu .mseal + .dz{top:22px}
+.ware .dz{left:3px;right:auto}
+.ware .fu.rzg{background:var(--paper);color:var(--zhu2);border:1px solid var(--zhu2)}
 .reso{display:flex;flex-wrap:wrap;gap:6px}.reso .ro{font:12px var(--sans);color:var(--mu)}.reso .ro.on{color:var(--qing);border:1px solid var(--qing);border-radius:10px;padding:0 7px}
 .bagline .bhead{display:flex;justify-content:space-between;align-items:baseline}
 .mini.bagrow{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;overflow:visible}
@@ -506,7 +529,12 @@ button.mg{font:inherit;font-size:11px;border:0;cursor:pointer;position:relative;
 .wbuy .fu{font:11px var(--kai);color:var(--zhu2)}
 .shead{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .pantry{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:10px}.pfood{font:13px var(--kai);padding:3px 9px}
-.gorow{margin:16px 0 4px}.gorow .go{width:100%;display:flex;flex-direction:column;align-items:center;gap:2px}.gorow .go small{font:12px var(--sans);opacity:.85}
+.gorow{margin:16px 0 4px;display:flex;gap:8px;align-items:stretch}.gorow .go{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:2px}
+.gorow .trygo{flex:0 0 auto;padding:0 12px;font:14px var(--kai);border:1px solid var(--line2);border-radius:3px;color:var(--tx)}.gorow .trygo:disabled{opacity:.45}
+/* 试阵面板 */
+.segs.simfoes{flex-wrap:wrap}
+.simres{margin-top:10px;min-height:1.4em}.simres p{margin:3px 0}
+.foeopt .fh .ib{margin-left:auto;font-size:12px;color:var(--mu)}.gorow .go small{font:12px var(--sans);opacity:.85}
 .gorow .go:disabled{background:transparent;color:var(--mu);border:1px dashed var(--line2);box-shadow:none}.gorow .go:disabled small{color:var(--zhu2);opacity:1}
 .compass2{margin-top:16px}.dopts{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}
 .dopt{display:flex;flex-direction:column;gap:4px;align-items:flex-start;text-align:left;background:var(--paper);color:var(--ink);border-radius:3px;padding:10px}
