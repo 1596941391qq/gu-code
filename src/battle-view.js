@@ -524,6 +524,7 @@ async function run(el, res, opts, resolve) {
   layout();
   const onR = () => layout(); window.addEventListener('resize', onR);
   const big = new Set(); let round = 0, castMode = 0;
+  { const o = log.find(e => e.t === 'order'); if (o) drawOrder(null, o.q); }   // 开场的护体、挂状态先演，出手顺序一开始就摆出来，不空着
   for (let i = 0; i < log.length; i++) {
     if (skip) break;
     const e = log[i], u = U[e.uid];
