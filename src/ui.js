@@ -1,5 +1,5 @@
 // 蛊码 GuCode · 界面与流程（渲染层；逻辑都在 core/battle）
-import { mergeAll, makeRng, SPECIES, SP, TRAITS, QUIRKS, NODES, REALMS, TRIB_NAMES, GHOST_NAMES, SLOTS, MAXTR, MAXV, newGu, starterTeam, skillOf, comboOf, nodeOk, rollCompass, applyNode, genTeam, tribTeam, encodeTeam, decodeTeam, fmtTok, addTrait, COMBOS, hashStr, slotCap, SLOT_BY_REALM, poolFor, ECON, MARKS, rollMarks, nodeChoices, rollShop, canBuy, buyGu, sellValue, ghostTrio, trCap, REALM_NOTES, POOL_TIERS, endlessTeam, ENDLESS, EV_MS, playMs, tempoFor, fmtNum, spTraits, posLinks, posNote, WOUND } from './core.js';
+import { mergeAll, makeRng, SPECIES, SP, TRAITS, QUIRKS, NODES, REALMS, TRIB_NAMES, GHOST_NAMES, SLOTS, MAXTR, MAXV, newGu, starterTeam, skillOf, comboOf, nodeOk, rollCompass, applyNode, genTeam, tribTeam, encodeTeam, decodeTeam, fmtTok, addTrait, COMBOS, hashStr, slotCap, SLOT_BY_REALM, poolFor, ECON, MARKS, rollMarks, nodeChoices, rollShop, canBuy, buyGu, sellValue, ghostTrio, trCap, REALM_NOTES, POOL_TIERS, endlessTeam, ENDLESS, EV_MS, playMs, tempoFor, fmtNum, spTraits, posLinks, posNote, WOUND, ZHENYUAN } from './core.js';
 import { battle } from './battle.js';
 import { guSVG, ART_DEFS } from './art.js';
 import { TokenSource, VSC } from './tokens.js';
@@ -21,7 +21,7 @@ function migrate(s) { if (!s || !s.v) return null; if (s.v === 1) { s.v = 2; s.s
 let S = fresh(), phase = 'yang', rate = 0, hot = false, inBattle = false, booted = false, skip = false, resetArm = 0;
 const src = new TokenSource(onTick);
 const R = () => makeRng(S.seed + ':' + (S.step++));
-const bankCap = () => 120 * src.unit;
+const bankCap = () => ZHENYUAN.cap * src.unit;
 const effA = g => Math.max(1, g.atk - (g.wound || 0)), effH = g => Math.max(1, g.hp - (g.wound || 0));
 const trChars = tr => (Array.isArray(tr) ? tr : Object.entries(tr)).map(([id, v]) => TRAITS[id].ch + (v > 1 ? `<sup>${v}</sup>` : '')).join('');
 
@@ -357,12 +357,24 @@ function renderPhase() {
   if (S.compass.length === 0 || S.compass.every(n => !nodeOk(n.type, S.team, curCap()))) { S.compass = rollCompass(R(), S.team, false, curCap()); S.sel = null; S.prog = 0; }
   const canFight = S.will > 0, nextWill = Math.max(0, Math.ceil(WILL_SEC - S.willT / 1000));
   const tribLabel = S.realm < 5 ? `渡${TRIB_NAMES[Math.min(S.realm, 4)]}` : '五转大成';
-  box.innerHTML = (S.pending ? choiceHTML(S.pending) : `<div class="compass"><div class="ch"><span class="lbl">罗盘 · 三岔</span><span id="bank" class="bank"></span></div>
+  box.innerHTML = (S.pending ? choiceHTML(S.pending) : `<div class="compass"><div class="ch"><span class="lbl">罗盘 · 三岔</span></div>${zyHTML()}
   <div class="nodes">${S.compass.map((n, i) => { const ok = nodeOk(n.type, S.team, curCap()), cur = S.sel === i; return `<button class="node${cur ? ' on' : ''}" data-act="node" data-i="${i}"${ok ? '' : ' disabled'}><span class="nseal">${NODES[n.type].ch}</span><span class="nbody"><b>${NODES[n.type].n}</b><small>${esc(nodeDesc(n))}</small></span><span class="ncost">${fmtTok(n.cost * src.unit)}</span><span class="nbar"><i></i></span></button>`; }).join('')}</div></div>`) + `
   ${!on('battle') ? lockHTML('battle') : `<div class="gate${canFight ? ' open' : ''}"><div class="gh"><span class="lbl">斗蛊</span><span class="gsub">${canFight ? `每场耗 1 点意志 · 余 ${S.will}` : `意志已尽 · 约 ${Math.ceil(nextWill / 60)} 分钟回 1 点，养蛊也会回`}</span></div>
   <div class="gbtns">${S.realm < 5 ? `<button class="gbtn" data-act="trib"${canFight ? '' : ' disabled'}><b>${tribLabel}</b><small>${REALMS[S.realm + 1]}境 Boss · 胜则升阶</small></button>` : `<button class="gbtn" data-act="endless"${canFight ? '' : ' disabled'}><b>无尽劫 · 第 ${S.floor} 层</b><small>最高 ${S.endless} 层 · 逐层变强</small></button>`}<button class="gbtn" data-act="ghost"${canFight ? '' : ' disabled'}><b>斗幽灵</b><small>易 · 中 · 难 任选 · 胜得元石夺蛊</small></button></div></div>`}`;
   meters();
 }
+// 空窍真元：已存量 / 上限，一句话说明用途；灌进节点时有流动
+function zyHTML() {
+  const r = Math.min(5, S.realm | 0);
+  return `<div class="zy" id="zy" style="--zy:${ZHENYUAN.colors[r]}" data-tip="token 先化为真元存在空窍里；选了路，真元就灌进那个节点。存满后多出的 token 不再存，先选路。"><div class="zyh"><span class="zyl">${ZHENYUAN.names[r]}真元</span><b id="zyN"></b></div><span class="zyb"><i id="zyBar"></i></span><small id="zyT"></small></div>`;
+}
+function zyUpdate() {
+  const n = $('#zyN'); if (!n) return; const cap = bankCap(), pct = Math.min(100, 100 * S.bank / cap), full = S.bank >= cap - 1;
+  n.textContent = `${fmtTok(S.bank)} / ${fmtTok(cap)}`; $('#zyBar').style.width = pct.toFixed(1) + '%';
+  $('#zy').classList.toggle('full', full); $('#zy').classList.toggle('flow', rate > 0 && S.sel != null);
+  $('#zyT').textContent = full ? '真元已满：选一条路，它才有去处。' : S.sel != null ? (rate > 0 ? '灵流正灌进节点；没选路时才存进空窍。' : '选了路，真元灌进节点。') : 'token 先化为真元存在空窍里，选了路就灌进节点。';
+}
+function pourFx() { const z = $('#zy'); if (!z) return; z.classList.remove('pour'); void z.offsetWidth; z.classList.add('pour'); setTimeout(() => z.classList.remove('pour'), 1000); }
 function renderHint() {
   const h = $('#hint'); if (!h) return;
   let t;
@@ -383,7 +395,7 @@ function meters() {
   if (sl.length >= 2) sr.innerHTML = sl.map(x => `<span class="schip${x.rate > 0 ? '' : ' off'}">${esc(x.name)} <b>${fmtTok(x.rate)}/s</b></span>`).join('');
   const st = $('#srcTag'); st.textContent = src.mode === 'vscode' ? 'Claude 实时' : '演示';
   const dm = $('#demo'); dm.hidden = src.mode !== 'demo'; dm.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.m === src.demo));
-  const bk = $('#bank'); if (bk) bk.textContent = S.bank > 0 ? `灵气存 ${fmtTok(S.bank)}` : '';
+  zyUpdate();
   if (S.sel != null) { const n = S.compass[S.sel], bar = document.querySelector(`.node[data-i="${S.sel}"] .nbar i`); if (n && bar) bar.style.width = Math.min(100, 100 * S.prog / (n.cost * src.unit)).toFixed(1) + '%'; }
   const hb = $('#healBar'); if (hb) hb.style.width = (100 * healPct()).toFixed(0) + '%';
   const q = $('#qiao'); if (q) { q.classList.toggle('flow', rate > 0 && S.sel != null); q.classList.toggle('hot', hot && rate > 0); }
@@ -893,7 +905,7 @@ const ACT = {
     if (S.sel != null) S.bank = Math.min(bankCap(), S.bank + S.prog);
     S.sel = i; S.prog = 0; S.wh = 0;
     const cost = S.compass[i].cost * src.unit, take = Math.min(S.bank, cost); S.prog = take; S.bank -= take;
-    renderPhase(); renderHint(); snd('pluck'); save();
+    renderPhase(); renderHint(); snd('pluck'); save(); if (take > 0) { pourFx(); const nb = document.querySelector(`.node[data-i="${i}"]`); if (nb) nb.classList.add('pour'); }
     if (S.prog >= cost - 0.5) setTimeout(() => { if (S.sel === i && !inBattle) resolveNode(); }, 500);
   },
   gu(a) { openGu(+a.dataset.i); },

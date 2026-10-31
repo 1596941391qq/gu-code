@@ -389,6 +389,9 @@ export function decodeTeam(code) {
     return { team, realm, name: unutf8(nm), marks };
   } catch (e) { return null; }
 }
+// 空窍真元：token 先化为真元存在空窍里（上限 cap 个「千」单位，插件模式再乘 unit），选了路就灌进节点。
+// 颜色随境界：凡人/一转 青铜、二转 赤铁、三转 白银、四转 黄金、五转 紫晶
+export const ZHENYUAN = { cap: 120, names: ['青铜', '青铜', '赤铁', '白银', '黄金', '紫晶'], colors: ['#a0703f', '#a0703f', '#a4442c', '#9aa4ab', '#d9a441', '#7d62a8'] };
 // 受伤：每层 -1/-1，最多 3 层；写代码温养（token）或静置（时间）都会愈合，哪个先满算哪个。不做永久损失
 export const WOUND = { max: 3, healTok: 60000, healSec: 240, loseNodePct: 0.3 };
 // 战斗手感：暴击概率与倍数（种子随机，复盘可复现）
