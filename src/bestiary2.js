@@ -33,13 +33,13 @@ export const natText = (key, rank) => { const t = NATS[key]; return t ? fmt(t.sr
 // ======================= 被动技能（本命）· 120 种 =======================
 export const NATS = {
   // ---------- 力道 ----------
-  rage: N('越伤越狂', '猛', '受击', '被打中还活着：攻 +〔6〕%（每场最多 8 次）',
+  rage: N('越伤越狂', '猛', '受击', '开战嘲讽敌方（到下一轮）；被打中还活着：攻 +〔6〕%（每场最多 8 次）',
     ['血量第一次掉到一半以下：冲撞同一行最近的敌蛊，攻击 〔150〕%，击退一格', '第一次受到致命伤时留 1 血，攻 +〔30〕%'],
-    [E('hit', 'buff', 'self', { atk: 0.06, max: 8 })],
+    [E('start', 'st', 'self', { k: 'taunt', n: 2 }), E('hit', 'buff', 'self', { atk: 0.06, max: 8 })],
     [[E('low', 'dmg', 'foe.front', { atk: 1.5 }), E('low', 'knock', 'same', { v: 1 })], [E('lethal', 'endure', null, { v: 0, max: 1 }), E('lethal', 'buff', 'self', { atk: 0.3, max: 1 })]]),
-  blitz: N('黑豕冲阵', '疾', '出手', '第一次普攻额外打出攻击 〔100〕%',
+  blitz: N('黑豕冲阵', '疾', '出手', '第一次普攻额外打出攻击 〔100〕%，并把目标击退一格',
     ['开战先冲：同一行最近的敌蛊受攻击 〔60〕%，击退一格', '打满血的敌蛊，伤害 +40%'],
-    [E('attack', 'dmg', 'tg', { atk: 1.0, if: 'first' })],
+    [E('attack', 'dmg', 'tg', { atk: 1.0, if: 'first' }), E('attack', 'knock', 'tg', { v: 1, if: 'first' })],
     [[E('start', 'dmg', 'foe.front', { atk: 0.6 }), E('start', 'knock', 'same', { v: 1 })], [E('deal', 'mul', null, { v: 1.4, if: 'tg.full' })]]),
   beat: N('战鼓', '战', '每轮', '每轮开始：同一行身前的友蛊攻 +〔5〕%',
     ['同时给它本蛊最大血量 〔5〕% 的护体', '每 3 轮全体友蛊攻 +〔6〕%'],
@@ -61,9 +61,9 @@ export const NATS = {
     ['开战得到最大血量 〔10〕% 的护体', '血量第一次掉到一半以下时攻 +〔25〕%'],
     [E('attack', 'dmg', 'tg', { mx: 0.03 }), E('attack', 'knock', 'tg', { v: 1, chance: 0.4 })],
     [[E('start', 'shield', 'self', { mx: 0.1 })], [E('low', 'buff', 'self', { atk: 0.25 })]]),
-  skyhold: N('擎天', '擎', '每轮', '每轮开始攻 +〔4〕%；同一列的友蛊攻 +〔2〕%',
+  skyhold: N('擎天', '擎', '每轮', '每轮开始攻 +〔3〕%；同一列的友蛊攻 +〔2〕%（各最多 6 次）',
     ['开战：同一列的友蛊各得本蛊最大血量 〔10〕% 的护体', '击杀时攻 +〔10〕%'],
-    [E('round', 'buff', 'self', { atk: 0.04 }), E('round', 'buff', 'ally.col', { atk: 0.02 })],
+    [E('round', 'buff', 'self', { atk: 0.03, max: 6 }), E('round', 'buff', 'ally.col', { atk: 0.02, max: 6 })],
     [[E('start', 'shield', 'ally.col', { mx: 0.1 })], [E('kill', 'buff', 'self', { atk: 0.1 })]]),
 
   // ---------- 炎道 ----------
@@ -87,18 +87,18 @@ export const NATS = {
     ['血量低于一半时再烧一遍', '倒下时敌方全体灼烧 2 轮（攻击 〔20〕%）'],
     [E('round', 'dmg', 'self', { mx: 0.03, up: 0, pierce: 1 }), E('round', 'dmg', 'foe.all', { atk: 0.1 })],
     [[E('round', 'dmg', 'foe.all', { atk: 0.1, if: 'hp<50' })], [E('death', 'st', 'foe.all', { k: 'burn', n: 2, atk: 0.2 })]]),
-  coal: N('积炭', '炭', '受击', '被普攻打中：打它的那只灼烧 2 轮（攻击 〔12〕%），自己攻 +〔3〕%（每场最多 8 次）',
+  coal: N('积炭', '炭', '受击', '被普攻打中：打它的那只灼烧 2 轮（攻击 〔12〕%），自己攻 +〔2〕%（每场最多 5 次）',
     ['开战得到最大血量 〔10〕% 的护体', '倒下时炭火迸出：最近的敌蛊和它十字范围各受攻击 〔60〕%'],
-    [E('hit', 'st', 'src', { k: 'burn', n: 2, atk: 0.12, if: 'kind=hit' }), E('hit', 'buff', 'self', { atk: 0.03, if: 'kind=hit', max: 8 })],
+    [E('hit', 'st', 'src', { k: 'burn', n: 2, atk: 0.12, if: 'kind=hit' }), E('hit', 'buff', 'self', { atk: 0.02, if: 'kind=hit', max: 5 })],
     [[E('start', 'shield', 'self', { mx: 0.1 })], [E('death', 'dmg', 'foe.front', { atk: 0.6, shape: 'cross' })]]),
-  ignite: N('燧火', '燧', '引燃', '每有敌蛊被点燃（谁点的都算），燧石跟着对它打出攻击 〔25〕%；每 2 轮点燃最近的敌蛊 2 轮（攻击 〔10〕%）',
-    ['单数轮也点', '跟打的伤害再加 〔15〕%'],
-    [E('inflict', 'dmg', 'tg', { atk: 0.25, if: 'k=burn' }), E('allyInflict', 'dmg', 'tg', { atk: 0.25, if: 'k=burn' }), E('round', 'st', 'foe.front', { k: 'burn', n: 2, atk: 0.1, every: 2 })],
-    [[E('round', 'st', 'foe.front', { k: 'burn', n: 2, atk: 0.1, if: 'round%2' })], [E('inflict', 'dmg', 'tg', { atk: 0.15, if: 'k=burn' }), E('allyInflict', 'dmg', 'tg', { atk: 0.15, if: 'k=burn' })]]),
+  ignite: N('燧火', '燧', '引燃', '每有敌蛊被点燃（谁点的都算），燧石跟着对它打出攻击 〔12〕%（每场最多 10 次）；每 2 轮点燃最近的敌蛊 2 轮（攻击 〔10〕%）',
+    ['单数轮也点', '跟打的伤害再加 〔8〕%'],
+    [E('inflict', 'dmg', 'tg', { atk: 0.12, if: 'k=burn', max: 10 }), E('allyInflict', 'dmg', 'tg', { atk: 0.12, if: 'k=burn', max: 10 }), E('round', 'st', 'foe.front', { k: 'burn', n: 2, atk: 0.1, every: 2 })],
+    [[E('round', 'st', 'foe.front', { k: 'burn', n: 2, atk: 0.1, if: 'round%2' })], [E('inflict', 'dmg', 'tg', { atk: 0.08, if: 'k=burn', max: 10 }), E('allyInflict', 'dmg', 'tg', { atk: 0.08, if: 'k=burn', max: 10 })]]),
   lavashell: N('熔壳', '熔', '受击', '被近战打中：打它的那只受本蛊最大血量 〔3〕% 的伤害，灼烧 2 轮（攻击 〔12〕%）',
-    ['开战：上下左右相邻的友蛊各得本蛊最大血量 〔6〕% 的护体', '血量第一次掉到一半以下：熔壳爆开，最近的敌蛊和它周围一圈各受本蛊最大血量 〔8〕%'],
+    ['开战：上下左右相邻的友蛊各得本蛊最大血量 〔4〕% 的护体', '血量第一次掉到一半以下：熔壳爆开，最近的敌蛊和它周围一圈各受本蛊最大血量 〔8〕%'],
     [E('hit', 'dmg', 'src', { mx: 0.03, if: 'melee' }), E('hit', 'st', 'src', { k: 'burn', n: 2, atk: 0.12, if: 'melee' })],
-    [[E('start', 'shield', 'ally.adj', { mx: 0.06 })], [E('low', 'dmg', 'foe.front', { mx: 0.08, shape: 'ring' })]]),
+    [[E('start', 'shield', 'ally.adj', { mx: 0.04 })], [E('low', 'dmg', 'foe.front', { mx: 0.08, shape: 'ring' })]]),
 
   // ---------- 冰雪道 ----------
   frost: N('霜冻', '霜', '出手', '普攻命中：目标寒 1 层（每层速 -15%，叠到三层冻住一次）',
@@ -109,9 +109,9 @@ export const NATS = {
     ['开战：上下左右相邻的友蛊各得本蛊最大血量 〔8〕% 的冰茧护体', '开战：敌方速最快的那只寒 2 层'],
     [E('attack', 'st', 'tg', { k: 'chill', n: 1 })],
     [[E('start', 'shield', 'ally.adj', { mx: 0.08 })], [E('start', 'st', 'foe.fast', { k: 'chill', n: 2 })]]),
-  snowhop: N('踏雪', '踏', '出手', '普攻打寒中的敌蛊，额外打出攻击 〔40〕%',
+  snowhop: N('踏雪', '踏', '出手', '普攻打寒中的敌蛊，额外打出攻击 〔40〕%，并让它行动条推后 10%',
     ['第一次普攻让目标寒 2 层', '击杀后行动条提前 40%'],
-    [E('attack', 'dmg', 'tg', { atk: 0.4, if: 'tg.chill' })],
+    [E('attack', 'dmg', 'tg', { atk: 0.4, if: 'tg.chill' }), E('attack', 'delay', 'tg', { v: 0.1, if: 'tg.chill' })],
     [[E('attack', 'st', 'tg', { k: 'chill', n: 2, max: 1 })], [E('kill', 'adv', 'self', { v: 0.4 })]]),
   drag: N('迟滞', '迟', '开战', '开战：敌方速最快的两只各寒 1 层',
     ['每 3 轮再来一次', '寒中的敌蛊打它，伤害 -20%'],
@@ -169,9 +169,9 @@ export const NATS = {
     ['站在最前（同一行身前没有友蛊）时，再扎回 〔30〕%', '扎中的蛊中毒（攻击 〔15〕%）'],
     [E('hit', 'dmg', 'src', { n: 0.4, if: 'melee' })],
     [[E('hit', 'dmg', 'src', { n: 0.3, if: 'melee&front' })], [E('hit', 'st', 'src', { k: 'psn', atk: 0.15, if: 'melee' })]]),
-  ripen: N('蓄势', '蓄', '每轮', '同一行身前有友蛊挡着时，每轮开始攻血 +〔6〕%',
+  ripen: N('蓄势', '蓄', '每轮', '同一行身前有友蛊挡着时，每轮开始攻血 +〔6〕%；每 3 轮给身前那只友蛊挂「护」1 次',
     ['站在最前时，每轮得到最大血量 〔5〕% 的护体', '蓄势翻倍'],
-    [E('round', 'buff', 'self', { atk: 0.06, hp: 0.06, if: 'back' })],
+    [E('round', 'buff', 'self', { atk: 0.06, hp: 0.06, if: 'back' }), E('round', 'st', 'ally.ahead', { k: 'guard', n: 1, every: 3 })],
     [[E('round', 'shield', 'self', { mx: 0.05, if: 'front' })], [E('round', 'buff', 'self', { atk: 0.06, hp: 0.06, if: 'back' })]]),
   cocoon: N('结茧', '茧', '每轮', '第 3 轮开始破茧：攻 +〔60〕%，回满血（每场一次）',
     ['开战结茧时挂「护」2 次', '第 2 轮先破一层小茧：攻 +〔30〕%'],
@@ -193,9 +193,9 @@ export const NATS = {
     ['每场 4 株', '有友蛊被召唤时，全体友蛊回复最大血量 〔3〕%'],
     [E('attack', 'st', 'tg', { k: 'psn', atk: 0.1 }), E('kill', 'summon', null, { sp: 'grass', atk: 0.2, mx: 0.2, at: 'back', max: 2 })],
     [[E('kill', 'summon', null, { sp: 'grass', atk: 0.2, mx: 0.2, at: 'back', max: 2 })], [E('summon', 'heal', 'ally.all', { tmx: 0.03 })]]),
-  sunroot: N('扶桑', '桑', '每轮', '每轮开始：全体友蛊回复最大血量 〔3〕%',
+  sunroot: N('扶桑', '桑', '每轮', '每轮开始：全体友蛊回复最大血量 〔2〕%',
     ['同一列的友蛊再得本蛊最大血量 〔5〕% 的护体', '友蛊第一次倒下时，原地发出一株新芽（本蛊攻血 〔15〕%）'],
-    [E('round', 'heal', 'ally.all', { tmx: 0.03 })],
+    [E('round', 'heal', 'ally.all', { tmx: 0.02 })],
     [[E('round', 'shield', 'ally.col', { mx: 0.05 })], [E('allyDeath', 'summon', null, { sp: 'sprout', atk: 0.15, mx: 0.15, at: 'here', max: 1 })]]),
 
   // ---------- 土道 ----------
@@ -220,23 +220,23 @@ export const NATS = {
     [E('round', 'shield', 'ally.row', { mx: 0.04, if: 'col=2' })],
     [[E('round', 'shield', 'ally.col', { mx: 0.04, if: 'col=2' })], [E('take', 'mul', null, { v: 0.75 })]],
     { hooks: { auraTake: (ctx, h, v, tg, amt) => amt } }),   // bestiary.js 的 dmgMod 写死调用 aegis 的 auraTake，这里给个原样返回，集成时删掉那行即可
-  stoneskin: N('石衣', '石', '开战', '开战得到最大血量 〔10〕% 的护体；受到的伤害 -10%',
+  stoneskin: N('石衣', '石', '开战', '开战得到最大血量 〔10〕% 的护体，嘲讽敌方（到下一轮）；受到的伤害 -10%',
     ['站在最前时再 -10%', '被打中时得到最大血量 〔2〕% 的护体（每场最多 8 次）'],
-    [E('start', 'shield', 'self', { mx: 0.1 }), E('take', 'mul', null, { v: 0.9 })],
+    [E('start', 'shield', 'self', { mx: 0.1 }), E('start', 'st', 'self', { k: 'taunt', n: 2 }), E('take', 'mul', null, { v: 0.9 })],
     [[E('take', 'mul', null, { v: 0.89, if: 'front' })], [E('hit', 'shield', 'self', { mx: 0.02, max: 8 })]]),
   earthdragon: N('翻土', '蚓', '免死', '断成两截还能活：第一次受到致命伤时留 15% 血',
     ['起身时攻 +〔15〕%', '起身时身后分出半截地龙（本蛊攻血 〔30〕%）'],
     [E('lethal', 'endure', null, { v: 0.15, max: 1 })],
     [[E('lethal', 'buff', 'self', { atk: 0.15, max: 1 })], [E('lethal', 'summon', null, { sp: 'wormhalf', atk: 0.3, mx: 0.3, at: 'behind', max: 1 })]]),
-  shiftmount: N('搬山', '搬', '每轮', '每 2 轮：最近的敌蛊受攻击 〔30〕%，并被击退两格（撞上就两只都受伤）',
+  shiftmount: N('搬山', '搬', '每轮', '每 2 轮：最近的敌蛊受攻击 〔30〕%，并被击退一格（撞上就两只都受伤）',
     ['被搬走的蛊攻 -〔6〕%（2 轮）', '单数轮也搬'],
-    [E('round', 'dmg', 'foe.front', { atk: 0.3, every: 2 }), E('round', 'knock', 'same', { v: 2, every: 2 })],
-    [[E('round', 'buff', 'same', { atk: -0.06, dur: 2, every: 2 })], [E('round', 'dmg', 'foe.front', { atk: 0.3, if: 'round%2' }), E('round', 'knock', 'same', { v: 2, if: 'round%2' })]]),
+    [E('round', 'dmg', 'foe.front', { atk: 0.3, every: 2 }), E('round', 'knock', 'same', { v: 1, every: 2 })],
+    [[E('round', 'buff', 'same', { atk: -0.06, dur: 2, every: 2 })], [E('round', 'dmg', 'foe.front', { atk: 0.3, if: 'round%2' }), E('round', 'knock', 'same', { v: 1, if: 'round%2' })]]),
 
   // ---------- 雷道 ----------
-  chain: N('连雷', '雷', '出手', '普攻后雷光沿斜线弹开：目标和它斜对角的敌蛊各受这一下的 〔40〕%',
+  chain: N('连雷', '雷', '出手', '普攻后雷光沿斜线弹开：目标和它斜对角的敌蛊各受这一下的 〔30〕%',
     ['20% 机会让被弹到的蛊全部眩晕一次', '本蛊打灼烧中的敌蛊，伤害 +25%（雷火相生）'],
-    [E('attack', 'dmg', 'tg', { n: 0.4, shape: 'diag' })],
+    [E('attack', 'dmg', 'tg', { n: 0.3, shape: 'diag' })],
     [[E('attack', 'st', 'same', { k: 'stun', n: 1, chance: 0.2 })], [E('deal', 'mul', null, { v: 1.25, if: 'tg.burn' })]]),
   storm: N('霆击', '霆', '每轮', '单数轮开始：敌方全体各受攻击 〔15〕%',
     ['先劈最近的那一整列，多吃 〔15〕%', '本蛊打有标记的敌蛊，伤害 +20%'],
@@ -262,10 +262,10 @@ export const NATS = {
     ['磁力把目标拉近一格', '击杀时电到最近的敌蛊（攻击 〔50〕%）'],
     [E('attack', 'dmg', 'tg', { atk: 0.35, if: 'tg.stun' }), E('attack', 'st', 'tg', { k: 'stun', n: 1, chance: 0.15 })],
     [[E('attack', 'draw', 'tg', { v: 1 })], [E('kill', 'dmg', 'foe.front', { atk: 0.5 })]]),
-  ninebolt: N('九霄', '霄', '每轮', '每轮开始落 3 道雷，各劈敌方随机一只（攻击 〔12〕%）',
+  ninebolt: N('九霄', '霄', '每轮', '每轮开始落 3 道雷，各劈敌方随机一只（攻击 〔10〕%）',
     ['再多一道', '本蛊打有标记的敌蛊，伤害 +25%'],
-    [E('round', 'dmg', 'foe.rand', { atk: 0.12, times: 3 })],
-    [[E('round', 'dmg', 'foe.rand', { atk: 0.12 })], [E('deal', 'mul', null, { v: 1.25, if: 'tg.mark' })]]),
+    [E('round', 'dmg', 'foe.rand', { atk: 0.1, times: 3 })],
+    [[E('round', 'dmg', 'foe.rand', { atk: 0.1 })], [E('deal', 'mul', null, { v: 1.25, if: 'tg.mark' })]]),
 
   // ---------- 光道 ----------
   moon: N('月照', '月', '亡语', '倒下时月光照亮这一行：同一行身后的友蛊攻血 +〔25〕%，敌方最近的那一整行打上标记 2 轮',
@@ -356,10 +356,10 @@ export const NATS = {
     ['普攻后回复这一下的 〔15〕%', '血量第一次掉到一半以下时攻 +〔20〕%'],
     [E('attack', 'dmg', 'tg', { n: 0.25, shape: 'row' }), E('attack', 'dmg', 'tg', { n: 0.25, shape: 'row', if: 'hp<50' })],
     [[E('attack', 'heal', 'self', { n: 0.15 })], [E('low', 'buff', 'self', { atk: 0.2 })]]),
-  drought: N('旱血', '魃', '每轮', '每轮开始：敌方全体各受攻击 〔5〕%，自己回复攻击 〔10〕%',
-    ['每 3 轮敌方全体灼烧 2 轮（攻击 〔10〕%）', '血量不过 15% 的敌蛊直接吸干'],
-    [E('round', 'dmg', 'foe.all', { atk: 0.05 }), E('round', 'heal', 'self', { atk: 0.1 })],
-    [[E('round', 'st', 'foe.all', { k: 'burn', n: 2, atk: 0.1, every: 3 })], [E('round', 'dmg', 'foe.lowp', { tmx: 1, up: 0, pierce: 1, if: 'tg.hp<15' })]]),
+  drought: N('旱血', '魃', '每轮', '每轮开始：敌方全体各受攻击 〔4〕%，自己回复攻击 〔6〕%',
+    ['每 3 轮敌方全体灼烧 2 轮（攻击 〔10〕%）', '击杀时回复最大血量 〔15〕%'],
+    [E('round', 'dmg', 'foe.all', { atk: 0.04 }), E('round', 'heal', 'self', { atk: 0.06 })],
+    [[E('round', 'st', 'foe.all', { k: 'burn', n: 2, atk: 0.1, every: 3 })], [E('kill', 'heal', 'self', { mx: 0.15 })]]),
 
   // ---------- 毒道 ----------
   sting: N('蝎尾', '尾', '开战', '开战：一针扎敌方最靠后的蛊，攻击 〔150〕%，中毒（攻击 〔20〕%）',
@@ -446,15 +446,15 @@ export const NATS = {
     ['再扑一只', '自己倒下时扑三发'],
     [E('allyDeath', 'dmg', 'foe.rand', { atk: 0.4 }), E('allyDeath', 'st', 'same', { k: 'chill', n: 1 })],
     [[E('allyDeath', 'dmg', 'foe.rand', { atk: 0.4 })], [E('death', 'dmg', 'foe.rand', { atk: 0.4, times: 3 })]]),
-  dirge: N('骨笛', '笛', '友亡', '友蛊每倒下一只，全体友蛊攻 +〔5〕%',
+  dirge: N('骨笛', '笛', '友亡', '友蛊每倒下一只，全体友蛊攻 +〔3〕%',
     ['同时血 +〔5〕%', '敌蛊倒下也算（攻 +〔3〕%）'],
-    [E('allyDeath', 'buff', 'ally.all', { atk: 0.05 })],
+    [E('allyDeath', 'buff', 'ally.all', { atk: 0.03 })],
     [[E('allyDeath', 'buff', 'ally.all', { hp: 0.05 })], [E('foeDeath', 'buff', 'ally.all', { atk: 0.03 })]]),
 
   // ---------- 奴道 ----------
-  royal: N('王令', '王', '开战', '开战：上下左右相邻的友蛊攻血 +〔10〕%；每有友蛊被召唤，自己攻血 +〔5〕%（每场最多 8 次）',
+  royal: N('王令', '王', '开战', '开战：上下左右相邻的友蛊攻血 +〔8〕%；每有友蛊被召唤，自己攻血 +〔3〕%（每场最多 8 次）',
     ['开战先在身后召一只工蜂（本蛊攻血 〔40〕%）', '每有友蛊被召唤，全体友蛊攻 +〔2〕%（每场最多 6 次）'],
-    [E('start', 'buff', 'ally.adj', { atk: 0.1, hp: 0.1 }), E('summon', 'buff', 'self', { atk: 0.05, hp: 0.05, max: 8 })],
+    [E('start', 'buff', 'ally.adj', { atk: 0.08, hp: 0.08 }), E('summon', 'buff', 'self', { atk: 0.03, hp: 0.03, max: 8 })],
     [[E('start', 'summon', null, { sp: 'bee', atk: 0.4, mx: 0.4, at: 'behind' })], [E('summon', 'buff', 'ally.all', { atk: 0.02, max: 6 })]]),
   muster: N('点兵', '兵', '开战', '开战：身后召 2 只兵蚁（各本蛊攻血 〔35〕%）',
     ['有友蛊倒下时，自己攻 +〔6〕%', '每 3 轮补一只兵蚁'],
@@ -464,13 +464,13 @@ export const NATS = {
     ['召 3 只', '倒下时蚜汁溅到敌方最近的那只：中毒（攻击 〔15〕%）'],
     [E('death', 'summon', null, { sp: 'aphidling', atk: 0.35, mx: 0.35, at: 'here', count: 2 })],
     [[E('death', 'summon', null, { sp: 'aphidling', atk: 0.35, mx: 0.35, at: 'here' })], [E('death', 'st', 'foe.front', { k: 'psn', atk: 0.15 })]]),
-  brood: N('抱卵', '卵', '受击', '被打中还活着：身后召一只小蛛（本蛊攻血 〔30〕%，每场 2 只）',
+  brood: N('抱卵', '卵', '受击', '被打中还活着：身后召一只小蛛（本蛊攻血 〔20〕%，每场 2 只）',
     ['每场 4 只', '有友蛊被召唤时，自己回复最大血量 〔4〕%'],
-    [E('hit', 'summon', null, { sp: 'spiderling', atk: 0.3, mx: 0.3, at: 'behind', max: 2 })],
-    [[E('hit', 'summon', null, { sp: 'spiderling', atk: 0.3, mx: 0.3, at: 'behind', max: 2 })], [E('summon', 'heal', 'self', { mx: 0.04 })]]),
-  nurture: N('哺育', '哺', '召唤', '每有友蛊被召唤：全体友蛊攻 +〔3〕%（每场最多 6 次）',
+    [E('hit', 'summon', null, { sp: 'spiderling', atk: 0.2, mx: 0.2, at: 'behind', max: 2 })],
+    [[E('hit', 'summon', null, { sp: 'spiderling', atk: 0.2, mx: 0.2, at: 'behind', max: 2 })], [E('summon', 'heal', 'self', { mx: 0.04 })]]),
+  nurture: N('哺育', '哺', '召唤', '每有友蛊被召唤：全体友蛊攻 +〔2〕%（每场最多 6 次）',
     ['开战先召一只兵蚁（本蛊攻血 〔40〕%）', '每有友蛊被召唤，自己回复最大血量 〔5〕%'],
-    [E('summon', 'buff', 'ally.all', { atk: 0.03, max: 6 })],
+    [E('summon', 'buff', 'ally.all', { atk: 0.02, max: 6 })],
     [[E('start', 'summon', null, { sp: 'antling', atk: 0.4, mx: 0.4, at: 'behind' })], [E('summon', 'heal', 'self', { mx: 0.05 })]]),
   hive: N('蜂巢', '巢', '每轮', '每轮开始：身后召一只工蜂（本蛊攻血 〔25〕%，每场 3 只）',
     ['每场 5 只', '工蜂出巢时叮敌方最近的那只（攻击 〔30〕%，每场 5 次）'],
@@ -527,9 +527,9 @@ export const NATS = {
     ['被缠住的蛊中毒（攻击 〔25〕%）', '再缠一只（速最快的那只）'],
     [E('prep', 'draw', 'foe.last', { v: 2 }), E('prep', 'st', 'same', { k: 'web', n: 2 })],
     [[E('prep', 'st', 'same', { k: 'psn', atk: 0.25 })], [E('prep', 'st', 'foe.fast', { k: 'web', n: 2 })]]),
-  dawn: N('朝生', '朝', '开战', '开战攻 +〔40〕%，持续 2 轮（朝生暮死）',
+  dawn: N('朝生', '朝', '开战', '开战攻 +〔40〕%，持续 2 轮（朝生暮死）；开战全体友蛊行动条提前 10%',
     ['开战行动条提前 20%', '第一次普攻回复造成伤害的 〔30〕%'],
-    [E('start', 'buff', 'self', { atk: 0.4, dur: 2 })],
+    [E('start', 'buff', 'self', { atk: 0.4, dur: 2 }), E('start', 'adv', 'ally.all', { v: 0.1 })],
     [[E('start', 'adv', 'self', { v: 0.2 })], [E('attack', 'heal', 'self', { n: 0.3, if: 'first' })]]),
   backflow: N('倒流', '漏', '每轮', '每 3 轮：血量比例最低的友蛊回复最大血量 〔15〕%（时光倒流）',
     ['同时清掉它身上的减益', '每 2 轮：敌方速最快的那只寒 1 层'],
@@ -558,7 +558,7 @@ export const ACTS = {
     '吞的门槛提高到四成', [X('eat', 'same', { v: 0.4, gain: 0.5 })], '回复最大血量 20%', [X('heal', 'self', { mx: 0.2 })]),
   xiongli: A('熊力撼山', 120, 'pounce', '贯穿最近的那一整行，各攻击 110%，各击退一格', [X('dmg', 'foe.front', { atk: 1.1, shape: 'row' }), X('knock', 'same', { v: 1 })],
     '被撞的 50% 机会全部眩晕一次', [X('st', 'same', { k: 'stun', n: 1, chance: 0.5 })], '自己得到最大血量 20% 的护体', [X('shield', 'self', { mx: 0.2 })]),
-  qingtian: A('擎天一击', 130, 'slash', '最近的敌蛊和它十字范围各受攻击 140%，自己攻 +15%', [X('dmg', 'foe.front', { atk: 1.4, shape: 'cross' }), X('buff', 'self', { atk: 0.15 })],
+  qingtian: A('擎天一击', 130, 'slash', '最近的敌蛊和它十字范围各受攻击 90%，自己攻 +10%', [X('dmg', 'foe.front', { atk: 0.9, shape: 'cross' }), X('buff', 'self', { atk: 0.1 })],
     '同一列的友蛊各得本蛊最大血量 15% 的护体', [X('shield', 'ally.col', { mx: 0.15 })], '最近的敌蛊眩晕一次', [X('st', 'foe.front', { k: 'stun', n: 1 })]),
   // 炎道
   fire: A('流火喷吐', 100, 'fire', '贯穿最近的那一整行，各攻击 80%，灼烧 2 轮（攻击 20%）', [X('dmg', 'foe.front', { atk: 0.8, shape: 'row' }), X('st', 'same', { k: 'burn', n: 2, atk: 0.2 })],
@@ -588,7 +588,7 @@ export const ACTS = {
   // 木道
   vine: A('缠藤', 100, 'slash', '把敌方最靠后的蛊拉近两格，缠住它（眩晕一次）', [X('draw', 'foe.last', { v: 2 }), X('st', 'same', { k: 'stun', n: 1 })],
     '被缠的中毒（攻击 30%）', [X('st', 'same', { k: 'psn', atk: 0.3 })], '再拉近攻最高的那只', [X('draw', 'foe.top', { v: 1 })]),
-  fusang: A('扶桑朝晖', 120, 'heal', '全体友蛊回复最大血量 15%，清掉减益', [X('heal', 'ally.all', { tmx: 0.15 }), X('cleanse', 'ally.all')],
+  fusang: A('扶桑朝晖', 120, 'heal', '全体友蛊回复最大血量 10%，清掉减益', [X('heal', 'ally.all', { tmx: 0.1 }), X('cleanse', 'ally.all')],
     '同一列的友蛊再得本蛊最大血量 10% 的护体', [X('shield', 'ally.col', { mx: 0.1 })], '全体友蛊攻 +8%', [X('buff', 'ally.all', { atk: 0.08 })]),
   // 土道
   tortoise: A('玄武镇', 120, 'shield', '全体友蛊得到本蛊最大血量 12% 的护体，自己嘲讽 2 轮', [X('shield', 'ally.all', { mx: 0.12 }), X('st', 'self', { k: 'taunt', n: 2 })],
@@ -600,7 +600,7 @@ export const ACTS = {
     '被劈的打上标记 2 轮', [X('st', 'same', { k: 'mark', n: 2 })], '再劈一下（各 30%）', [X('dmg', 'same', { atk: 0.3 })]),
   dfly: A('九天引雷', 120, 'bolt', '敌方全体各受攻击 70%，行动条推后 20%', [X('dmg', 'foe.all', { atk: 0.7 }), X('delay', 'same', { v: 0.2 })],
     '20% 机会全部眩晕一次', [X('st', 'same', { k: 'stun', n: 1, chance: 0.2 })], '敌方后排再各受 30%', [X('dmg', 'foe.last', { atk: 0.3, shape: 'back' })]),
-  jiuxiao: A('九霄雷狱', 140, 'bolt', '敌方全体各受攻击 100%；35% 机会全部眩晕一次', [X('dmg', 'foe.all', { atk: 1.0 }), X('st', 'same', { k: 'stun', n: 1, chance: 0.35 })],
+  jiuxiao: A('九霄雷狱', 140, 'bolt', '敌方全体各受攻击 70%；25% 机会全部眩晕一次', [X('dmg', 'foe.all', { atk: 0.7 }), X('st', 'same', { k: 'stun', n: 1, chance: 0.25 })],
     '被劈的打上标记 2 轮', [X('st', 'same', { k: 'mark', n: 2 })], '自己行动条提前 40%', [X('adv', 'self', { v: 0.4 })]),
   // 光道
   yueguang: A('月华斜斩', 100, 'needle', '月刃斜斩：最近的敌蛊和它斜对角的敌蛊各受攻击 100%', [X('dmg', 'foe.front', { atk: 1.0, shape: 'diag' })],
@@ -619,7 +619,7 @@ export const ACTS = {
     '它打上标记 2 轮', [X('st', 'foe.top', { k: 'mark', n: 2 })], '自己行动条提前 30%', [X('adv', 'self', { v: 0.3 })]),
   xueyue: A('血月当空', 110, 'slash', '失去最大血量 12%，贯穿最近的那一整行，各攻击 160%', [X('dmg', 'self', { mx: 0.12, up: 0, pierce: 1 }), X('dmg', 'foe.front', { atk: 1.6, shape: 'row' })],
     '回复最大血量 15%', [X('heal', 'self', { mx: 0.15 })], '那一整行打上标记 2 轮', [X('st', 'foe.front', { k: 'mark', n: 2, shape: 'row' })]),
-  chiba: A('赤地千里', 140, 'drain', '敌方全体各受攻击 70%、灼烧 2 轮（攻击 20%），自己回复最大血量 25%', [X('dmg', 'foe.all', { atk: 0.7 }), X('st', 'same', { k: 'burn', n: 2, atk: 0.2 }), X('heal', 'self', { mx: 0.25 })],
+  chiba: A('赤地千里', 140, 'drain', '敌方全体各受攻击 50%、灼烧 2 轮（攻击 10%），自己回复最大血量 15%', [X('dmg', 'foe.all', { atk: 0.5 }), X('st', 'same', { k: 'burn', n: 2, atk: 0.1 }), X('heal', 'self', { mx: 0.15 })],
     '全体友蛊回复 8%', [X('heal', 'ally.all', { tmx: 0.08 })], '全体友蛊攻 +10%', [X('buff', 'ally.all', { atk: 0.1 })]),
   // 毒道
   scorp: A('三连毒针', 90, 'needle', '对敌方最靠后的蛊连射三针，各攻击 60%，中毒（攻击 30%）', [X('dmg', 'foe.last', { atk: 0.6, times: 3 }), X('st', 'same', { k: 'psn', atk: 0.3 })],
@@ -638,14 +638,14 @@ export const ACTS = {
   zhihui: A('一念', 130, 'roar', '敌方全体被封住 1 轮（蛊力不涨），全体友蛊蛊力 +25', [X('st', 'foe.all', { k: 'seal', n: 2 }), X('gp', 'ally.all', { v: 25 })],
     '攻最高的敌蛊打上标记 2 轮', [X('st', 'foe.top', { k: 'mark', n: 2 })], '清掉全体友蛊身上的减益', [X('cleanse', 'ally.all')]),
   // 魂道
-  boneflute: A('安魂曲', 120, 'summon', '在后排召回一只骨灵（本蛊攻血 40%），全体友蛊攻 +8%', [X('summon', null, { sp: 'bonesoul', atk: 0.4, mx: 0.4, at: 'back' }), X('buff', 'ally.all', { atk: 0.08 })],
+  boneflute: A('安魂曲', 120, 'summon', '在后排召回一只骨灵（本蛊攻血 25%），全体友蛊攻 +5%', [X('summon', null, { sp: 'bonesoul', atk: 0.25, mx: 0.25, at: 'back' }), X('buff', 'ally.all', { atk: 0.05 })],
     '全体友蛊回复 8%', [X('heal', 'ally.all', { tmx: 0.08 })], '敌方全体寒 1 层', [X('st', 'foe.all', { k: 'chill', n: 1 })]),
   // 奴道
-  queen: A('万蜂朝王', 120, 'summon', '后排召两只工蜂（各本蛊攻血 35%），全体友蛊攻 +8%', [X('summon', null, { sp: 'bee', atk: 0.35, mx: 0.35, at: 'back', count: 2 }), X('buff', 'ally.all', { atk: 0.08 })],
-    '全体友蛊得到本蛊最大血量 5% 的护体', [X('shield', 'ally.all', { mx: 0.05 })], '再召一只', [X('summon', null, { sp: 'bee', atk: 0.35, mx: 0.35, at: 'back' })]),
-  spider: A('万蛛归巢', 110, 'summon', '身后召两只小蛛（各本蛊攻血 30%），自己回复最大血量 20%', [X('summon', null, { sp: 'spiderling', atk: 0.3, mx: 0.3, at: 'behind', count: 2 }), X('heal', 'self', { mx: 0.2 })],
-    '敌方最近的那只落网 1 次', [X('st', 'foe.front', { k: 'web', n: 1 })], '再召一只', [X('summon', null, { sp: 'spiderling', atk: 0.3, mx: 0.3, at: 'behind' })]),
-  qant: A('蚁潮', 120, 'summon', '后排召三只兵蚁（各本蛊攻血 25%）', [X('summon', null, { sp: 'antling', atk: 0.25, mx: 0.25, at: 'back', count: 3 })],
+  queen: A('万蜂朝王', 120, 'summon', '后排召两只工蜂（各本蛊攻血 25%），全体友蛊攻 +5%', [X('summon', null, { sp: 'bee', atk: 0.25, mx: 0.25, at: 'back', count: 2 }), X('buff', 'ally.all', { atk: 0.05 })],
+    '全体友蛊得到本蛊最大血量 5% 的护体', [X('shield', 'ally.all', { mx: 0.05 })], '再召一只', [X('summon', null, { sp: 'bee', atk: 0.25, mx: 0.25, at: 'back' })]),
+  spider: A('万蛛归巢', 110, 'summon', '身后召两只小蛛（各本蛊攻血 20%），自己回复最大血量 20%', [X('summon', null, { sp: 'spiderling', atk: 0.2, mx: 0.2, at: 'behind', count: 2 }), X('heal', 'self', { mx: 0.2 })],
+    '敌方最近的那只落网 1 次', [X('st', 'foe.front', { k: 'web', n: 1 })], '再召一只', [X('summon', null, { sp: 'spiderling', atk: 0.2, mx: 0.2, at: 'behind' })]),
+  qant: A('蚁潮', 120, 'summon', '后排召三只兵蚁（各本蛊攻血 18%）', [X('summon', null, { sp: 'antling', atk: 0.18, mx: 0.18, at: 'back', count: 3 })],
     '全体友蛊攻 +6%', [X('buff', 'ally.all', { atk: 0.06 })], '全体友蛊得到本蛊最大血量 6% 的护体', [X('shield', 'ally.all', { mx: 0.06 })]),
   // 宇道
   gecko: A('断尾护主', 80, 'shield', '最前的友蛊得到本蛊最大血量 30% 的护体，清掉减益', [X('shield', 'ally.front', { mx: 0.3 }), X('cleanse', 'same')],
@@ -761,17 +761,33 @@ const RENAME64 = {
   guangyin: { n: '春秋蝉', ab: '春', canon: true, lore: '春去秋来只叫一声。它叫一声，日影就往回走一寸——覆灭的阵前，所有人回到开战那一刻，只是都老了一半；叫完这一声，它自己只剩一口气。' },
 };
 
+// ======================= 仙蛊上阵规则 =======================
+// 一队最多 1 只仙蛊；仙蛊占额度 8（比它的转数 6 多扣 2）。平衡倍率按「8 点额度换一只仙蛊」调（对照：同一底队 + 五转 + 三转）。
+// 接法：core.quotaOf 里仙蛊记 IMMORTAL.cost 点；上阵、换阵、开茧放进空窍时，队里已有 IMMORTAL.max 只仙蛊就拦下并提示「一队只能有一只仙蛊」。
+export const IMMORTAL = { max: 1, cost: 8 };
+
 // ======================= 每转攻血表 =======================
-// 与 core.js 的 RANK_GROW 同一条曲线：一转 ×1、二转 ×1.8、三转 ×3、四转 ×4.6、五转 ×6.8、仙蛊 ×9.6；基础转数每高一转多 6%（买得更贵）
-export const ST_GROW = [0, 1, 1.8, 3, 4.6, 6.8, 9.6];
-const table = (a, h, r0) => {
-  const t = a + h, k = t < 5 ? 5 / t : 1, prem = 1 + 0.06 * (Math.min(6, r0) - 1), st = Array(7).fill(null);
-  for (let r = r0; r <= (r0 >= 6 ? 6 : 5); r++) st[r] = [Math.max(1, Math.round(a * k * ST_GROW[r] * prem)), Math.max(1, Math.round(h * k * ST_GROW[r] * prem))];
+// 每转倍率：一转 ×1.15、二转 ×2.1、三转 ×2.7、四转 ×3.4、五转 ×3.7、仙蛊 ×6.4；基础转数每高一转多 6%（买得更贵）。
+// 每点额度给的攻血随转数递减：高转另有三转、五转觉醒，主动技、被动技随转数涨（引擎 TUNE.actUp 0.06 / upMul 0.5），杀招威力看核心转数；攻血再按额度给足，就只剩「养几只高转」一种打法。
+// 这条曲线按「同额度不同分法循环赛」拟合（7 点 3 种、10 点 4 种、15 点 5 种、22 点 5 种分法两两对打，各 150 局×2）：每种分法都在 45%–56%。
+// 五转比四转攻血多 9%，升五转的提升主要在五转觉醒。仙蛊 ×6.4 = 五转 + 三转（仙蛊占 8 点额度）。引擎改了技能随转数的涨幅就要重拟（tune/hm2.mjs）。
+// core.js 的 RANK_GROW 只在物种没有攻血表时兜底，120 种都有表；要同步就照抄这一行。
+export const ST_GROW = [0, 1.15, 2.1, 2.7, 3.4, 3.7, 6.4];
+// 平衡倍率（按「同额度下每种蛊每点额度的胜率 42%–58%」迭代出来，design 2.7）：攻血表整体乘它。
+// 测法和 tools/sim.mjs 一样：同一支底队（秘境 foeByBudget，4/9/15/22 点），只换第一只转数够的：A 放这种蛊、B 放同转数、同基础转数的另一种，两边各站一次；仙蛊按 8 点额度，对照是同一底队 + 五转 + 三转。
+// 在主线 17e0b21 的引擎上（主动技每转 +6%、被动技涨幅减半、速 SPD_K 0.10）每种 400 局×两边各站一次：120 种都在 43%–58%。
+// 技能强的蛊攻血低一些（赤魃 0.26、九霄 0.31），技能弱的辅助蛊攻血高一些（玉皮 2.2、石蚕 1.71）；改技能数值后要重跑。表里的数是放大前的，core.statFor 再乘 STAT_SCALE（血再乘 HP_SCALE）。
+export const BAL = { amber: 1.26, ant: 1.01, antlion: 1.1, aphid: 1.31, asahi: 1.59, baiyu: 0.98, bat: 0.83, bfly: 0.6, blink: 0.98, bloodant: 1.54, boar: 0.97, bomb: 1.19, bone: 1.19, boneflute: 0.47, bury: 1.13, cent: 1.19, char: 0.9, chiba: 0.26, cicada: 1.25, click: 0.97, cloud: 0.91, coldcicada: 1.17, cordy: 0.9, cricket: 0.97, dfly: 0.87, dingxian: 0.5, diting: 1.58, drum: 1.87, dung: 1.71, earthworm: 1.42, eclipse: 0.95, fate: 0.61, fire: 1.16, fireant: 1.57, firefly: 1.21, flea: 1.02, flint: 0.78, fly: 1.14, frost: 1.01, fusang: 0.38, gecko: 1.27, glacier: 0.66, glut: 0.83, gold: 1.53, guangyin: 0.53, hail: 0.61, hairworm: 0.85, hairy: 1.4, hex: 1.37, hive: 0.75, hourglass: 1.19, icesnail: 1.84, inch: 1.38, ink: 0.95, instant: 0.9, iron: 0.86, jinchan: 0.74, jingzhe: 1.31, jiuchong: 1.84, jiuxiao: 0.34, leech: 1.45, lockarm: 1.21, locust: 1.1, lure: 1.29, magma: 0.64, magstorm: 1.03, mantis: 1.11, mayfly: 0.57, mirror: 1.25, mole: 1.12, mosq: 0.95, moth: 1.29, moveshan: 0.6, nirvana: 0.36, orchid: 1.25, puppet: 0.82, pyre: 0.93, qant: 0.56, qingfu: 1.3, qingtian: 0.4, queen: 0.62, rhino: 1.07, ring: 0.91, saw: 0.72, scorp: 0.98, sheli: 1.38, shengji: 1.33, shine: 1.04, silk: 1.67, sleep: 1.78, snowflea: 1.7, snowsilk: 1.73, solar: 0.52, spider: 0.65, stag: 0.89, static: 1.56, stick: 1.94, stonecase: 1.53, strider: 1.4, styx: 0.6, taisui: 1.1, thorn: 1.28, thunder: 0.62, tick: 1.56, tiger: 1.24, toad: 0.91, tortoise: 0.61, twin: 1.23, urn: 1.25, vine: 1.07, wasp: 0.93, webspider: 0.99, widow: 0.77, will: 1.29, xiongli: 0.61, xueyue: 0.56, yue: 1.05, yueguang: 1.33, yupi: 2.09, zhihui: 0.63 };
+// 保留一位小数：core.statFor 乘 STAT_SCALE（10）后再取整，倍率的细微差别不会在小数值上被抹掉
+const r1 = x => Math.max(0.1, Math.round(x * 10) / 10);
+const table = (a, h, r0, id) => {
+  const t = a + h, k = (t < 5 ? 5 / t : 1) * (BAL[id] || 1), prem = 1 + 0.06 * (Math.min(6, r0) - 1), st = Array(7).fill(null);
+  for (let r = r0; r <= (r0 >= 6 ? 6 : 5); r++) st[r] = [r1(a * k * ST_GROW[r] * prem), r1(h * k * ST_GROW[r] * prem)];
   return st;
 };
 export const ST120 = {};
-P64.split(/[|\n]/).forEach(x => { const [id, a, h] = x.trim().split(' '); ST120[id] = table(+a, +h, RANK64[id]); });
-SPECIES2.forEach(s => { ST120[s.id] = table(s.atk, s.hp, s.rank); s.st = ST120[s.id]; s.act = ACTS[s.id] || null; });
+P64.split(/[|\n]/).forEach(x => { const [id, a, h] = x.trim().split(' '); ST120[id] = table(+a, +h, RANK64[id], id); });
+SPECIES2.forEach(s => { ST120[s.id] = table(s.atk, s.hp, s.rank, s.id); s.st = ST120[s.id]; s.act = ACTS[s.id] || null; });
 
 export const PATCH64 = {};
 DAO64.split(/[|\n]/).forEach(x => { const [d, ...ids] = x.trim().split(' '); ids.forEach(id => { PATCH64[id] = { dao: d }; }); });

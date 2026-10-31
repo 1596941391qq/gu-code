@@ -103,6 +103,16 @@ try {
   const base = L.filter(c => !c.from).length;
   say(`杀招 ${base} 个 + 进阶 ${L.length - base} 个，跨道 ${cross}/${L.length}`);
   if (cross * 2 < L.length) errs.push(`跨道杀招 ${cross}/${L.length}，不到一半`);
+  // 低转杀招：low 里的蛊要在配方里，最高转数 1–2，且不高于基础转数就上不去的不算
+  const lows = L.filter(c => c.low);
+  lows.forEach(c => Object.entries(c.low).forEach(([sp, r]) => { if (!c.need.includes(sp)) errs.push(`低转杀招 ${c.id}: ${sp} 不在配方里`); if (!(r >= 1 && r <= 2)) errs.push(`低转杀招 ${c.id}: ${sp} 最高转数 ${r} 不在 1–2`); if (B2.RANK64 && (B2.RANK64[sp] || 1) > r) errs.push(`低转杀招 ${c.id}: ${sp} 基础转数已超过 ${r}`); }));
+  // 打法克制：每个杀招都有 style / counters / counteredBy，标签都在 STRATS 里；STRATS 的 counters 和 counteredBy 互为反向
+  const ST = K.STRATS || [], SID = new Set(ST.map(x => x.id));
+  if (!ST.length) errs.push('combos2.js 没有 STRATS');
+  ST.forEach(x => { [...x.counters, ...x.counteredBy].forEach(t => { if (!SID.has(t)) errs.push(`打法 ${x.id}: 未知标签 ${t}`); }); x.counters.forEach(t => { const y = ST.find(z => z.id === t); if (y && !y.counteredBy.includes(x.id)) errs.push(`打法 ${x.id} 克 ${t}，但 ${t} 的 counteredBy 没写 ${x.id}`); }); x.counteredBy.forEach(t => { const y = ST.find(z => z.id === t); if (y && !y.counters.includes(x.id)) errs.push(`打法 ${x.id} 怕 ${t}，但 ${t} 的 counters 没写 ${x.id}`); }); });
+  L.forEach(c => { if (!c.style || !c.counters || !c.counteredBy) errs.push(`杀招 ${c.id}: 缺 style / counters / counteredBy`); else [...c.style, ...c.counters, ...c.counteredBy].forEach(t => { if (!SID.has(t)) errs.push(`杀招 ${c.id}: 未知打法 ${t}`); }); });
+  say(`低转杀招 ${lows.length} 个；打法 ${ST.length} 种，${L.filter(c => c.counters).length}/${L.length} 个杀招标了克制`);
+  if (!B2.IMMORTAL || !(B2.IMMORTAL.max >= 1) || !(B2.IMMORTAL.cost > 6)) errs.push('bestiary2.js 缺 IMMORTAL（一队限几只、占几点额度）');
 } catch (e) { warn.push('combos2.js: ' + e.message); }
 try {
   const F = await import('../src/foods.js'), L = F.FOOD_ITEMS || F.FOODS;
