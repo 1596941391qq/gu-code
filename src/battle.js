@@ -1,30 +1,27 @@
 // 蛊码 GuCode · 斗蛊引擎（纯函数，种子随机，可复现）。输出事件流 + 每步快照，渲染层只负责回放。
-import { makeRng, SP, SUMMON_NAMES, comboOf, BATTLE, SLOTS, natOf, awOf, guRank, subOk } from './core.js';
+import { makeRng, SP, SUMMON_NAMES, teamCombos, BATTLE, SLOTS, natOf, awOf, guRank } from './core.js';
 import { BX } from './bestiary.js';   // 蛊典扩充的词条/杀招：8 处通用派发（标注 [BX]），细节见 bestiary.js 文件头
 
 const MAXTURN = 60, MAXOPS = 6000, CAP = SLOTS;   // CAP：场上同时存活的上限（与空窍格数一致）
 
-export function toUnit(g, side) {
-  const w = g.wound || 0, q = g.q || [];
-  let atk = Math.max(1, g.atk - w), hp = Math.max(1, g.hp - w);
-  if (q.includes('blood')) atk += 2;
-  if (q.includes('berserk')) { atk = Math.ceil(atk * 1.5); hp = Math.max(1, Math.floor(hp * 0.7)); }
-  if (q.includes('echo')) hp = Math.max(1, hp - 2);
-  if (q.includes('martyr')) hp = Math.max(1, hp - 2);
-  const tr = {}; (g.tr || []).forEach(([id, v]) => { if (subOk(g, id)) tr[id] = v; });
-  const c = comboOf(g);
-  // 本命技由物种推出（不进码），只属于本体；附蛊只教副词条。g.noNat 只给模拟做对照用
+// 战斗只认：攻、血、本命技、挂着的食物、蛊性、杀招、道共鸣、站位（docs/design.md 第 8 节）
+// combo = 这只蛊身上成形的杀招（队伍级，由 teamCombos 算出）
+export function toUnit(g, side, combo) {
+  const atk = Math.max(1, g.atk | 0), hp = Math.max(1, g.hp | 0), q = [], tr = {};
+  // 本命技由物种推出（不进码）。g.noNat 只给模拟做对照用
   if (!g.noNat) { const k = natOf(g.sp); if (k) tr[k] = 1; }
-  return { side, sp: g.sp, name: (g.boss ? '劫·' : '') + (SP[g.sp] ? SP[g.sp].n : SUMMON_NAMES[g.sp]), atk, hp, mx: hp, sh: 0, tr, q, combo: c ? c.id : null, cname: c ? c.n : null, att: g.att || [], boss: !!g.boss, rank: guRank(g), aw: awOf(g), f: {} };
+  return { side, sp: g.sp, name: (g.boss ? '劫·' : '') + (SP[g.sp] ? SP[g.sp].n : SUMMON_NAMES[g.sp]), atk, hp, mx: hp, sh: 0, tr, q, combo: combo ? combo.id : null, cname: combo ? combo.n : null, att: [], boss: !!g.boss, rank: guRank(g), aw: awOf(g), food: g.food || null, xing: g.xing || null, f: {} };
 }
 
-export function battle(ta, tb, seed, ma = [], mb = []) {
+// oa / ob：双方的附加参数（秘境用，例如带进来的血量）；旧的道痕参数已删除
+export function battle(ta, tb, seed, oa = {}, ob = {}) {
   const rng = makeRng(seed); let ops = 0, uidc = 0;
-  const MK = [new Set(ma || []), new Set(mb || [])], has = (side, k) => MK[side].has(k), sideF = [{}, {}];
+  const MK = [new Set(), new Set()], has = (side, k) => MK[side].has(k), sideF = [{}, {}];
   const roster = {}, log = [], S = [[], []];
   const reg = u => { u.uid = (u.side ? 'b' : 'a') + (uidc++); roster[u.uid] = { sp: u.sp, name: u.name, side: u.side, combo: u.cname, tr: { ...u.tr }, q: u.q, att: u.att, boss: u.boss }; return u; };
-  ta.slice(0, CAP).forEach(g => S[0].push(reg(toUnit(g, 0))));
-  tb.slice(0, CAP).forEach(g => S[1].push(reg(toUnit(g, 1))));
+  const tA = ta.slice(0, CAP), tB = tb.slice(0, CAP), cA = teamCombos(tA), cB = teamCombos(tB);
+  tA.forEach((g, i) => S[0].push(reg(toUnit(g, 0, cA[i]))));
+  tB.forEach((g, i) => S[1].push(reg(toUnit(g, 1, cB[i]))));
   const snap = () => S.map(a => a.map(u => [u.uid, u.atk, Math.max(0, u.hp), u.sh]));
   const ev = (t, o = {}) => { o.t = t; if (ctx.nat) o.nat = 1; o.s = snap(); log.push(o); };
   const P = (n, p) => p > 0 ? Math.max(1, Math.round(n * p)) : 0;   // 百分比数值（至少 1）
