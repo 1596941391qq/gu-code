@@ -2,7 +2,7 @@
 import { makeRng, newGu, SPECIES, COMBOS, ECON } from '../src/core.js';
 import * as MT from '../src/meta.js';
 import fs from 'node:fs'; import path from 'node:path'; import { fileURLToPath } from 'node:url';
-const { META_TUNE, RARITY, ACHIEVEMENTS, LEVEL_REWARDS, CHESTS, DAILY_TASKS, UNLOCKS, TITLES, metaInit, metaMigrate, metaEmit, rollRarity, pityLeft, applyRarity, levelInfo, levelNeed, feedGu, feedTeam, rollChest, openChest, openCocoon, isUnlocked, rigShop, shopFlags, streakMul, dailyView, achList, xpTotalTo } = MT;
+const { SIGN_REWARDS, META_TUNE, RARITY, ACHIEVEMENTS, LEVEL_REWARDS, CHESTS, DAILY_TASKS, UNLOCKS, TITLES, metaInit, metaMigrate, metaEmit, rollRarity, pityLeft, applyRarity, levelInfo, levelNeed, feedGu, feedTeam, rollChest, openChest, openCocoon, isUnlocked, rigShop, shopFlags, streakMul, dailyView, achList, xpTotalTo } = MT;
 
 let fails = 0;
 const ok = (c, m) => { if (!c) { fails++; console.log('  FAIL ' + m); } };
@@ -60,12 +60,13 @@ sec('3 灵气、宝箱、连胜、每日、离开');
   const w2 = metaEmit(M, 'battle_end', { kind: 'mid', win: true, hpLeftRatio: 0.5, crits: 0, maxHit: 9, skills: 0, turns: 8 }, makeRng(3)); ok(!w2.streak.firstWin, '首胜只算一次');
   for (let i = 0; i < 12; i++) metaEmit(M, 'battle_end', { kind: 'easy', win: true, hpLeftRatio: 1, crits: 0, maxHit: 5, skills: 0, turns: 5 }, makeRng(10 + i));
   ok(M.streak.n === 14 && streakMul(14) === META_TUNE.streak.cap, '连胜倍率封顶');
-  // 断连：不扣已有东西，护心符保住
-  const before = { xp: M.xp, level: M.level, chests: M.chests.length, ap: M.ap }; M.streak.charms = 1;
-  const l1 = metaEmit(M, 'battle_end', { kind: 'easy', win: false, streakSafe: true }, makeRng(50)); ok(M.streak.n === 14 && M.streak.charms === 0 && l1.streak.saved, '护心符保连胜');
+  // 断连：不扣已有东西（护心符已去掉，货币只剩元石、蛊茧、经验）
+  const before = { xp: M.xp, level: M.level, chests: M.chests.length, ap: M.ap };
   const l2 = metaEmit(M, 'battle_end', { kind: 'easy', win: false }, makeRng(51)); ok(M.streak.n === 0 && l2.streak.lost === 14, '断连只清零倍率');
   ok(M.level >= before.level && M.chests.length >= before.chests && M.ap >= before.ap && !l2.rewards.some(x => x.n < 0), '断连不扣任何已有东西');
-  ok(l2.xp > 0 && l2.notes.some(x => x.includes('败也有得')) && M.shards > 0, '败局至少推进 经验/魂片/天机');
+  ok(l2.xp > 0 && l2.notes.some(x => x.includes('败也有得')), '败局至少推进 经验/天机');
+  { const Mx = metaInit(); let got = 0; for (let i = 0; i < 40; i++) { const o = metaEmit(Mx, 'battle_end', { kind: 'hard', win: true }, makeRng(900 + i)); if (o.rewards.some(r => r.k === 'cocoon' && /残躯/.test(r.why))) got++; } ok(got === 40, '胜难幽灵必得残躯化茧'); }
+  { const all = [...Object.values(LEVEL_REWARDS).flat(), ...SIGN_REWARDS.flat()]; ok(!all.some(r => r.k === 'charm'), '奖励里不再有护心符'); }
   // 里程碑固定箱
   const Mm = metaInit(); let got = 0; for (let i = 1; i <= 10; i++) { const o = metaEmit(Mm, 'battle_end', { kind: 'easy', win: true, hpLeftRatio: 1 }, makeRng(i)); if (i % 5 === 0) ok(o.chests.includes('silver'), `第 ${i} 胜必得银箱`); got += o.chests.length; }
   // 离开回来

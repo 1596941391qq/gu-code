@@ -496,6 +496,17 @@ button.mg{font:inherit;font-size:11px;border:0;cursor:pointer;position:relative;
 .consol b{font:400 14px var(--kai);color:var(--qing)}
 .consol span{color:var(--tx)}
 .consol em{flex-basis:100%;text-align:center;font:13px var(--kai);color:var(--zhu2)}
+.spoils{list-style:none;margin:8px auto 0;padding:0;max-width:440px;font-size:13px;line-height:1.5;text-align:left}
+.spoils li{padding:3px 0;border-bottom:1px dashed var(--faint2)}
+.spoils .sh{font:14px var(--kai);color:var(--qing);border:0}
+/* 开打前的奖惩 */
+.stakes{font-size:12.5px;line-height:1.55;margin:6px 0;color:var(--tx)}
+.stakes b{font:400 13px var(--kai);margin-right:4px}
+.stakes .sw{color:var(--qing)}.stakes .sl{color:var(--zhu2)}
+.gbtn .stk{display:block;font:11.5px/1.4 var(--sans);font-style:normal;color:var(--mu);margin-top:3px}
+.lvup ul{list-style:none;margin:6px 0 0;padding:0;text-align:left;font-size:13px;line-height:1.5;max-width:320px}
+.lvup li{padding:2px 0}
+.tip ul{margin:4px 0 0;padding-left:16px}
 .heal{white-space:nowrap}
 .hbar{display:inline-block;width:42px;height:5px;margin-left:4px;vertical-align:middle;background:var(--faint);border-radius:3px;overflow:hidden}
 .hbar i{display:block;height:100%;background:var(--qing);transition:width .3s}
