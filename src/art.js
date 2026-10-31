@@ -1,6 +1,7 @@
 import { ZHENYUAN } from './core.js';
 // 蛊码 GuCode · 程序水墨蛊虫。头朝右，viewBox 0 0 100 100。墨色主体 + 一抹淡彩，毛笔边靠 #ink/#wash 滤镜。
 import { ART2 } from './art2.js';
+import { ART3, BOX3, HEAD3 } from './art3.js';
 const INK = '#1c1915', PAPER = '#efe7d4';
 const aE = (cx, cy, rx, ry, f = INK, r = 0, ex = '') => `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="${f}"${r ? ` transform="rotate(${r} ${cx} ${cy})"` : ''}${ex}/>`;
 const aC = (cx, cy, r, f = INK, ex = '') => `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${f}"${ex}/>`;
@@ -107,6 +108,8 @@ A.shade = () => { const t = A.twin(); return { w: '', b: `<g opacity=".5">${t.b}
 A.lunar = () => { const t = A.moth(); return { w: t.w, b: `<g opacity=".55">${t.b}</g>` }; };
 // 蛊典扩充：52 只新蛊与 6 种召唤物的画（src/art2.js），同名不覆盖
 Object.entries(ART2).forEach(([k, v]) => { if (!A[k]) A[k] = () => v; });
+// 蛊典第二卷新 56 种与 6 种召唤物的画（src/art3.js），同名不覆盖；外框和头的位置在下面并进 RANK_BOX / RANK_HEAD
+Object.entries(ART3).forEach(([k, v]) => { if (!A[k]) A[k] = () => v; });
 
 // ---------- 升转外貌：在任何物种的原画上叠程序化图层，不改原画 ----------
 // 一转原样；二转飞白墨纹、体型略大；三转身后一圈真元色晕染；四转金线勾边、晕染更浓、脚下一方小印；
@@ -115,6 +118,8 @@ Object.entries(ART2).forEach(([k, v]) => { if (!A[k]) A[k] = () => v; });
 const GU_BOX = [12, 28, 78, 52];   // 没登记的物种（含以后新加的）用这个外框 [x, y, w, h]
 export const RANK_BOX = { boar: [16, 33, 74, 49], fire: [12, 39, 83, 35], twin: [4, 13, 80, 65], iron: [20, 28, 72, 52], thorn: [10, 43, 85, 33], mantis: [12, 12, 79, 67], bone: [16, 48, 66, 29], queen: [7, 20, 84, 57], cicada: [12, 47, 79, 31], drum: [26, 21, 67, 63], scorp: [17, 25, 75, 56], moth: [14, 20, 68, 76], pupa: [26, 47, 60, 26], shade: [4, 13, 80, 65], lunar: [14, 20, 68, 76] };
 const RANK_HEAD = { boar: [74, 53], fire: [82, 57], twin: [69, 50], iron: [86, 60], thorn: [87, 56], mantis: [73, 31], bone: [71, 56], queen: [76, 49], cicada: [79, 54], drum: [76, 59], scorp: [64, 62], moth: [67, 48], pupa: [74, 58], shade: [69, 50], lunar: [67, 48] };
+Object.entries(BOX3).forEach(([k, v]) => { if (!RANK_BOX[k]) RANK_BOX[k] = v; });
+Object.entries(HEAD3).forEach(([k, v]) => { if (!RANK_HEAD[k]) RANK_HEAD[k] = v; });
 export const RANK_CN = ['', '一', '二', '三', '四', '五', '仙'];
 export const rankColor = r => (r >= 6 ? '#d9a441' : ZHENYUAN.colors[Math.max(1, Math.min(5, r | 0))]);
 export const rarityFrame = r => `rf rf${Math.max(0, Math.min(4, r | 0))}`;
