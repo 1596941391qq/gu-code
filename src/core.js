@@ -140,11 +140,12 @@ export function daoCount(team) {
 }
 
 // ---------- 蛊市 ----------
-// 货架：蛊位 n 个、食物位 2 个；主道（罗盘定）的蛊和食物大约占六成。opts.species / opts.foods = 已解锁可上架的
-export const SHOP = { guSlots: [3, 3, 4, 4, 5, 5], foodSlots: 2, daoP: 0.6 };
+// 货架：蛊位 n 个、食物位 2 个。罗盘选中的道只让它出现的概率 +daoP（每个货位先以 daoP 的几率从这一道里挑，否则从全部里挑），
+// 蛊市照样什么道都会刷，不锁阵容。foeDaoP：程序生成的对手偏向某一道的几率（秘境房间的主题）
+export const SHOP = { guSlots: [3, 3, 4, 4, 5, 5], foodSlots: 2, daoP: 0.05, foeDaoP: 0.6 };
 export function shopSpecies(realm, unlocked) { return poolFor(realm).filter(sp => SP[sp] && !SP[sp].immortal && (!unlocked || unlocked(sp, 'species'))); }
 export function shopFoods(unlocked) { return FOODS.filter(f => !unlocked || unlocked(f.id, 'food')).map(f => f.id); }
-function pickDao(rng, list, dao, of) { const main = dao ? list.filter(x => of(x) === dao) : []; return main.length && rng() < SHOP.daoP ? rng.pick(main) : rng.pick(list); }
+function pickDao(rng, list, dao, of, p = SHOP.daoP) { const main = dao ? list.filter(x => of(x) === dao) : []; return main.length && rng() < p ? rng.pick(main) : rng.pick(list); }
 export function rollShop(rng, realm, dao, old = [], unlocked) {
   const sps = shopSpecies(realm, unlocked), fds = shopFoods(unlocked), keep = w => w && w.frozen && !w.sold;
   const gu = Array.from({ length: SHOP.guSlots[Math.min(5, realm | 0)] }, (_, i) => { const o = old.filter(w => w.kind === 'gu')[i]; return keep(o) ? o : { kind: 'gu', sp: pickDao(rng, sps, dao, daoOf), frozen: false, sold: false }; });
@@ -215,7 +216,7 @@ export function feedStat(food, targets) {
 // realm 境界（决定蛊池与转数），n 只数，up 每只额外升转的几率，dao 偏向的道（可无）
 export function genTeam(rng, o = {}) {
   const realm = Math.max(0, Math.min(5, o.realm | 0)), n = Math.max(1, Math.min(SLOTS, o.n || slotCap(realm))), pool = poolFor(realm).filter(sp => SP[sp] && !SP[sp].immortal);
-  const team = Array.from({ length: n }, () => { const sp = pickDao(rng, pool, o.dao, daoOf), r = Math.min(RANK.max, baseRank(sp) + (rng() < (o.up || 0) ? 1 : 0) + (rng() < (o.up || 0) / 3 ? 1 : 0)); return newGu(sp, r); });
+  const team = Array.from({ length: n }, () => { const sp = pickDao(rng, pool, o.dao, daoOf, SHOP.foeDaoP), r = Math.min(RANK.max, baseRank(sp) + (rng() < (o.up || 0) ? 1 : 0) + (rng() < (o.up || 0) / 3 ? 1 : 0)); return newGu(sp, r); });
   return autoPlace(arrangeTeam(team));
 }
 

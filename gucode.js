@@ -1029,11 +1029,12 @@ function daoCount(team) {
 }
 
 // ---------- 蛊市 ----------
-// 货架：蛊位 n 个、食物位 2 个；主道（罗盘定）的蛊和食物大约占六成。opts.species / opts.foods = 已解锁可上架的
-const SHOP = { guSlots: [3, 3, 4, 4, 5, 5], foodSlots: 2, daoP: 0.6 };
+// 货架：蛊位 n 个、食物位 2 个。罗盘选中的道只让它出现的概率 +daoP（每个货位先以 daoP 的几率从这一道里挑，否则从全部里挑），
+// 蛊市照样什么道都会刷，不锁阵容。foeDaoP：程序生成的对手偏向某一道的几率（秘境房间的主题）
+const SHOP = { guSlots: [3, 3, 4, 4, 5, 5], foodSlots: 2, daoP: 0.05, foeDaoP: 0.6 };
 function shopSpecies(realm, unlocked) { return poolFor(realm).filter(sp => SP[sp] && !SP[sp].immortal && (!unlocked || unlocked(sp, 'species'))); }
 function shopFoods(unlocked) { return FOODS.filter(f => !unlocked || unlocked(f.id, 'food')).map(f => f.id); }
-function pickDao(rng, list, dao, of) { const main = dao ? list.filter(x => of(x) === dao) : []; return main.length && rng() < SHOP.daoP ? rng.pick(main) : rng.pick(list); }
+function pickDao(rng, list, dao, of, p = SHOP.daoP) { const main = dao ? list.filter(x => of(x) === dao) : []; return main.length && rng() < p ? rng.pick(main) : rng.pick(list); }
 function rollShop(rng, realm, dao, old = [], unlocked) {
   const sps = shopSpecies(realm, unlocked), fds = shopFoods(unlocked), keep = w => w && w.frozen && !w.sold;
   const gu = Array.from({ length: SHOP.guSlots[Math.min(5, realm | 0)] }, (_, i) => { const o = old.filter(w => w.kind === 'gu')[i]; return keep(o) ? o : { kind: 'gu', sp: pickDao(rng, sps, dao, daoOf), frozen: false, sold: false }; });
@@ -1104,7 +1105,7 @@ function feedStat(food, targets) {
 // realm 境界（决定蛊池与转数），n 只数，up 每只额外升转的几率，dao 偏向的道（可无）
 function genTeam(rng, o = {}) {
   const realm = Math.max(0, Math.min(5, o.realm | 0)), n = Math.max(1, Math.min(SLOTS, o.n || slotCap(realm))), pool = poolFor(realm).filter(sp => SP[sp] && !SP[sp].immortal);
-  const team = Array.from({ length: n }, () => { const sp = pickDao(rng, pool, o.dao, daoOf), r = Math.min(RANK.max, baseRank(sp) + (rng() < (o.up || 0) ? 1 : 0) + (rng() < (o.up || 0) / 3 ? 1 : 0)); return newGu(sp, r); });
+  const team = Array.from({ length: n }, () => { const sp = pickDao(rng, pool, o.dao, daoOf, SHOP.foeDaoP), r = Math.min(RANK.max, baseRank(sp) + (rng() < (o.up || 0) ? 1 : 0) + (rng() < (o.up || 0) / 3 ? 1 : 0)); return newGu(sp, r); });
   return autoPlace(arrangeTeam(team));
 }
 
@@ -3727,14 +3728,14 @@ const TXT = {
   bagSub: '场下 · 凑合成用 · 不出征，绝对安全',
   bagTip: () => `蛊囊 ${S.bag.length}/${BC()}：场下的蛊放这里，不上场、不出征，所以绝对安全。主要用来凑合成：空窍和蛊囊里同种同转的蛊凑够三只，自动合成高一转。拖进空窍就上场。`,
   shopHead: '蛊市',
-  shopTip: '花元石买蛊和食物。主道的蛊和食物大约占六成。转市换一批，冻结的货下次还在。',
+  shopTip: '花元气买蛊和食物。什么道的蛊都会刷，罗盘选中的道出现得稍多一点（+5%）。转市换一批，冻结的货下次还在。',
   refresh: c => `转市 · ${c}`,
   freeze: on => on ? '解冻' : '冻结',
   daoNone: '还没定主道',
   daoLine: d => `本轮主道：${DAO[d] ? DAO[d].n : d}`,
-  daoTip: '每次回到洞府转一次罗盘，三选一定下本轮蛊市的主道：货架上大约六成的蛊和食物出自这一道。罗盘不加属性。',
+  daoTip: '每次回到洞府转一次罗盘，三选一：选中的道在本轮蛊市出现的概率 +5%。只是轻轻偏一下，蛊市照样什么道都会刷。罗盘不加属性。',
   compassHead: '罗盘 · 三选一主道',
-  compassSub: '选一道，本轮蛊市大约六成的蛊和食物出自这一道。',
+  compassSub: '选一道，它在本轮蛊市出现的概率 +5%。只是轻轻偏一下，什么道都还会刷。',
   resoNone: '道共鸣：同一道的蛊在空窍里有 2 只、4 只时触发',
   go: '出征',
   goSub: n => `空窍里的 ${n} 只蛊全部出征`,
