@@ -14,14 +14,14 @@ const CSS = `
 .gbv-ctl{display:flex;gap:4px;flex:0 0 auto}
 .gbv-ctl button{min-width:34px;height:26px;padding:0 8px;border:1px solid var(--line2,rgba(233,224,204,.32));border-radius:3px;font:12px/24px var(--sans,system-ui);color:var(--tx,#ddd3bf);background:transparent;cursor:pointer}
 .gbv-ctl button.on{background:var(--tx,#ddd3bf);color:var(--bg,#15130f);border-color:transparent}
-.gbv-ord{position:relative;height:40px;margin:0 0 4px;overflow:hidden;border-bottom:1px solid var(--line,rgba(233,224,204,.14))}
+.gbv-ord{position:relative;height:54px;margin:0 0 4px;overflow:hidden;border-bottom:1px solid var(--line,rgba(233,224,204,.14))}
 .gbv-ord .gbv-lab{position:absolute;left:0;top:2px;font:10px/1 var(--sans,system-ui);color:var(--mu,#8f8775)}
-.gbv-chip{position:absolute;top:10px;width:26px;height:26px;border-radius:50%;background:var(--pp);border:2px solid var(--a);overflow:hidden;transition:transform .32s cubic-bezier(.3,.7,.3,1),opacity .25s}
+.gbv-chip{position:absolute;top:18px;width:26px;height:26px;border-radius:50%;background:var(--pp);border:2px solid var(--a);overflow:hidden;transition:transform .32s cubic-bezier(.3,.7,.3,1),opacity .25s}
 .gbv-chip.gbv-sb{border-color:var(--b)}
 .gbv-chip svg{width:100%;height:100%;filter:brightness(0);opacity:.82}
 .gbv-chip.gbv-sb svg{transform:scaleX(-1)}
-.gbv-chip.now{width:32px;height:32px;top:6px;box-shadow:0 0 0 2px var(--bg,#15130f),0 0 0 4px var(--tx,#ddd3bf)}
-.gbv-rd{position:absolute;top:14px;font:11px/1 var(--kai,serif);color:var(--mu,#8f8775);border-left:1px solid var(--line2,rgba(233,224,204,.32));padding-left:3px;height:18px;line-height:18px;transition:transform .32s cubic-bezier(.3,.7,.3,1)}
+.gbv-chip.now{width:32px;height:32px;top:15px;box-shadow:0 0 0 2px var(--bg,#15130f),0 0 0 4px var(--tx,#ddd3bf)}
+.gbv-rd{position:absolute;top:22px;font:11px/1 var(--kai,serif);color:var(--mu,#8f8775);border-left:1px solid var(--line2,rgba(233,224,204,.32));padding-left:3px;height:18px;line-height:18px;transition:transform .32s cubic-bezier(.3,.7,.3,1)}
 .gbv-syn{min-height:16px;font:11px/16px var(--sans,system-ui);color:var(--mu,#8f8775);display:flex;justify-content:space-between;gap:8px;margin-bottom:2px}
 .gbv-syn span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .gbv-st{position:relative;overflow:hidden;touch-action:manipulation}
@@ -139,7 +139,7 @@ async function run(el, res, opts, resolve) {
   let G = {};
   const layout = () => {
     const W = Math.max(300, Math.min(760, root.clientWidth || el.clientWidth || 360));
-    const cw = Math.min(96, Math.floor((W - 6) / 6.2)), rh = Math.round(cw * 0.66), top = Math.round(cw * 1.02), gap = Math.round(cw * 0.2);
+    const cw = Math.min(96, Math.floor((W - 8) / 6.6)), rh = Math.round(cw * 0.66), top = Math.max(60, Math.round(cw * 1.02)), gap = Math.round(cw * 0.2);
     const sc = r => 0.86 + 0.07 * r, H = top + rh * 3 + Math.round(cw * 0.32);
     G = { W, cw, rh, top, gap, sc, H, narrow: cw < 62 };
     root.classList.toggle('narrow', G.narrow);
@@ -175,12 +175,12 @@ async function run(el, res, opts, resolve) {
     U[uid] = u; return u;
   }
   function place(u) {
-    const s = G.sc(u.r), sz = Math.round(G.cw * 0.86 * s), p = cellXY(u.ro.side, u.r, u.c);
+    const s = G.sc(u.r), sz = Math.round(Math.min(G.cw * 0.7, G.rh * 1.15) * s), p = cellXY(u.ro.side, u.r, u.c);
     u.el.style.left = p.x + 'px'; u.el.style.top = (p.y + G.rh * 0.36) + 'px'; u.el.style.zIndex = 10 + u.r;
-    u.tok.style.width = sz + 'px'; u.tok.style.height = Math.round(sz * (G.narrow ? 1 : 0.92)) + 'px';
+    u.tok.style.width = sz + 'px'; u.tok.style.height = Math.round(sz * (G.narrow ? 1 : 0.94)) + 'px';
     u.bar.style.width = Math.round(sz * 0.92) + 'px'; if (u.gpB) u.gpB.style.width = Math.round(sz * 0.92) + 'px';
   }
-  const center = u => { const p = cellXY(u.ro.side, u.r, u.c), s = G.sc(u.r); return { x: p.x, y: p.y + G.rh * 0.36 - G.cw * 0.45 * s }; };
+  const center = u => { const p = cellXY(u.ro.side, u.r, u.c), s = G.sc(u.r); return { x: p.x, y: p.y + G.rh * 0.36 - Math.min(G.cw * 0.7, G.rh * 1.15) * 0.52 * s }; };
   function setBars(u) {
     const tot = Math.max(u.mx, u.hp + u.sh), hw = 100 * Math.max(0, u.hp) / tot, sw = 100 * u.sh / tot;
     u.hpI.style.width = hw + '%'; u.shI.style.left = hw + '%'; u.shI.style.width = sw + '%'; u.bar.classList.toggle('lo', u.hp < u.mx * 0.35);
@@ -290,7 +290,7 @@ async function run(el, res, opts, resolve) {
   };
   const say = t => { logEl.textContent = t; };
   const nm = uid => (R[uid] || {}).name || '?';
-  const trigName = e => e.xg ? (XING[e.xg] || {}).n : e.food ? (FOOD[e.food] || {}).n : e.dao ? (DAO[e.dao] || {}).n : e.id ? (TRAITS[e.id] || {}).n : e.mk || '';
+  const trigName = e => e.fx ? e.n || '' : e.xg ? (XING[e.xg] || {}).n : e.food ? (FOOD[e.food] || {}).n : e.dao ? (DAO[e.dao] || {}).n : e.id ? (TRAITS[e.id] || {}).n : e.mk || '';
 
   // ----- 重放 -----
   layout();
@@ -319,7 +319,7 @@ async function run(el, res, opts, resolve) {
           big.add(e.uid); say(`杀招 · ${e.n}`);
           const tg = (e.tg || []).map(x => U[x]).filter(Boolean);
           const sd = u ? u.ro.side : 0, live = Object.values(U).filter(x => x.alive), fo = live.filter(x => x.ro.side !== sd).map(center);
-          if (!skip) await playCombo(stage, { id: e.id, name: e.n, side: sd, hud: outer, from: u ? center(u) : { x: G.W / 2, y: G.H / 2 }, targets: tg.length ? tg.map(center) : fo, allies: live.filter(x => x.ro.side === sd).map(center), foes: fo, w: G.W, h: G.H, ground: G.top + 3 * G.rh, reduce: calm, speed, isSkip: () => skip });
+          if (!skip) await playCombo(stage, { id: e.id, name: e.n, side: sd, hud: outer, nameY: Math.max(26, G.top * 0.42), u: G.cw, from: u ? center(u) : { x: G.W / 2, y: G.H / 2 }, targets: tg.length ? tg.map(center) : fo, allies: live.filter(x => x.ro.side === sd).map(center), foes: fo, w: G.W, h: G.H, ground: G.top + 3 * G.rh, reduce: calm, speed, isSkip: () => skip });
         } else if (u) float(u, '「' + (e.n || '')[0] + '」', 'tag', -10);
         castMode = 1; break;
       }

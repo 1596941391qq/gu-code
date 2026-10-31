@@ -759,7 +759,7 @@ export function playCombo(stage, o = {}) {
       let T = (now - t0) * sp; if (o.isSkip && o.isSkip()) T = TL.total; const end = T >= TL.total;
       fx.g.setTransform(dpr, 0, 0, dpr, 0, 0); fx.g.clearRect(0, 0, S.w, S.h); S.mono = 0; if (!end) drawFx(fx.g, R, T, S);
       stage.style.transformOrigin = '0 0'; stage.style.transform = end ? '' : camCss(camAt(R, T, S)); grey.forEach(u => { u.style.filter = S.mono ? 'grayscale(1)' : ''; });
-      hud.g.setTransform(dpr, 0, 0, dpr, 0, 0); hud.g.clearRect(0, 0, S.w, S.h); if (NM && !end) drawName(hud.g, NM, S.w / 2, S.h * 0.17, T, TL, R);
+      hud.g.setTransform(dpr, 0, 0, dpr, 0, 0); hud.g.clearRect(0, 0, S.w, S.h); if (NM && !end) drawName(hud.g, NM, S.w / 2, o.nameY || S.h * 0.17, T, TL, R);
       if (end) { fx.c.remove(); hud.c.remove(); stage.style.transform = ''; stage.style.transformOrigin = oldO; grey.forEach(u => { u.style.filter = ''; }); return done(); }
       requestAnimationFrame(tick);
     };

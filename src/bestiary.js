@@ -687,7 +687,6 @@ function dmgMod(ctx, src, tg, amt, kind) {
   const nm = (u, id) => NEW_TRAITS[id].nat ? natMul(u) : 1;
   if (src && src.tr) for (const id in src.tr) { const m = NEW_TRAITS[id] && NEW_TRAITS[id].hooks.dealMod; if (m && src.tr[id]) amt = withNM(nm(src, id), () => m(ctx, src, src.tr[id], amt, tg, kind)); }
   for (const id in tg.tr) { const m = NEW_TRAITS[id] && NEW_TRAITS[id].hooks.takeMod; if (m && tg.tr[id]) amt = withNM(nm(tg, id), () => m(ctx, tg, tg.tr[id], amt, src, kind)); }
-  for (const h of ctx.S[tg.side]) { if (!ctx.alive(h) || !h.tr.aegis) continue; amt = withNM(natMul(h), () => NEW_TRAITS.aegis.hooks.auraTake(ctx, h, h.tr.aegis, tg, amt, src, kind)); }
   if (tg.f.drowsy && tg.f.stun > 0 && amt > 0) amt = pc(amt, 1.3);   // 眠虫五转觉醒：睡着的敌蛊多吃三成
   return amt;
 }
