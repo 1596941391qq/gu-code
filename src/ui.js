@@ -452,7 +452,7 @@ function tripPlayBattle(foeTeam, opts = {}) {
   const sota = { A: sotaOn(), B: false };
   const res = battle(placed(team), placed(foeTeam), 'r:' + seed, { ...(opts.oa || {}), sota });
   const A = { team, name: S.name || '无名蛊师', realm: S.realm, trial: S.trial }, B = { team: foeTeam, name: opts.foeName || '秘境', realm: S.realm };
-  return new Promise(resolve => playBattle({ kind: 'trip', title: opts.title || '秘境 · 斗蛊', res, A, B, sota, done: () => resolve({ res, A, B }) }));
+  return new Promise(resolve => showBattle({ kind: 'trip', title: opts.title || '秘境 · 斗蛊', res, A, B, sota, done: () => resolve({ res, A, B }) }));
 }
 TRIP.api = { S: () => S, save, get el() { return $('#trip'); }, playBattle: tripPlayBattle, onTripEnd, big, note, float: (uid, t, k) => fxFloat(uid, t, k || 'buff'), renderHome };
 function meters() {
@@ -604,7 +604,7 @@ async function animEv(e, ros, seen) {
   }
 }
 
-async function playBattle(B) {
+async function showBattle(B) {
   inBattle = true; skip = false;
   const ov = el(`<div class="battle" id="battle"><div class="bbar"><span class="btitle">${esc(B.title)}${trialTag((B.A && B.A.trial) || (B.B && B.B.trial))}</span><span class="bturn" id="bturn">开战</span><button class="ib" data-act="speed" id="bspd">${S.speed}×</button><button class="ib" data-act="skip">跳过</button></div>
   <div class="arena" id="arena"><div class="side sb" id="sideB"></div><div class="mid"><i></i><span>斗</span><i></i></div><div class="side sa" id="sideA"></div></div><div class="blog" id="blog"></div></div>`);
@@ -636,7 +636,7 @@ function spar(kind, foe) {
   const seed = kind === 'duel' ? (hashStr(ca + '|' + cb) >>> 0).toString(36) : ((S.seed ^ Math.imul(++S.step, 2654435761)) >>> 0).toString(36);
   const A = decodeTeam(ca), Bt = decodeTeam(cb), sota = { A: sotaOn(), B: false };
   const res = allCombos(() => battle(placed(A.team), placed(Bt.team), 'r:' + seed, { sota }));
-  save(); playBattle({ kind, title: (kind === 'duel' ? '战帖 · ' : '幽灵 · ') + (foe.name || '无名'), res, A, B: Bt, sota, replay: [ca, cb, seed, kind[0], 's' + sotaFlag(sota)].join('.') });
+  save(); showBattle({ kind, title: (kind === 'duel' ? '战帖 · ' : '幽灵 · ') + (foe.name || '无名'), res, A, B: Bt, sota, replay: [ca, cb, seed, kind[0], 's' + sotaFlag(sota)].join('.') });
 }
 // 斗幽灵：先挑几点场，再从三个幽灵里挑一个。幽灵阵容用秘境一侧的按额度出敌（满额度，和玩家同口径）
 const ghostFoe = (seed, q, dao) => (TRIP.foeFor ? TRIP.foeFor(seed, q, { kind: 'ghost', dao }) : quotaTeam(makeRng('ghost:' + seed), q, { dao }));
@@ -905,7 +905,7 @@ const ACT = {
   duelInput() { openDuelInput(); },
   duelGo() { if (!openLinkText($('#duelIn').value)) $('#duelErr').textContent = '坐标码或复盘链接不对，或者被截断了。'; },
   duelFight() { const f = window.__guFoe, q = f && arenaOf(f.team); if (!f || !q || quotaOf(myArenaTeam()) > q) return; closeSheet(); spar('duel', f); },
-  replayGo() { const rp = window.__guRp; closeSheet(); playBattle({ kind: 'replay', title: `复盘 · ${rp.B.name || '无名'} 对 ${rp.A.name || '无名'}`, res: allCombos(() => battle(placed(rp.A.team), placed(rp.B.team), 'r:' + rp.seed, { sota: rp.sota })), A: rp.A, B: rp.B, sota: rp.sota, replay: rp.replay }); },
+  replayGo() { const rp = window.__guRp; closeSheet(); showBattle({ kind: 'replay', title: `复盘 · ${rp.B.name || '无名'} 对 ${rp.A.name || '无名'}`, res: allCombos(() => battle(placed(rp.A.team), placed(rp.B.team), 'r:' + rp.seed, { sota: rp.sota })), A: rp.A, B: rp.B, sota: rp.sota, replay: rp.replay }); },
   copyReplay(a) { const B = window.__guB; if (!B) return; const w = B.res.winner, an = B.A.name || '无名', bn = B.B.name || '无名', wt = w === 'draw' ? '打成平手' : (w === 'A' ? an : bn) + ' 胜'; copy(`${(B.A.trial || B.B.trial) ? TXT.trialText : ''}《蛊码》复盘：${an} 对 ${bn}，${wt}。点开看整场：\n${replayURL(B.replay)}`, a); },
   closeBattle() { closeBattle(); },
   skip() { skip = true; },

@@ -346,6 +346,33 @@ const res = battle(teamA, teamB, seed, opts);
 | `faint` | `uid` `eaten?` | 倒下 |
 | `end` | `w` | |
 
-## 10. 现有本命技的折算
+## 10. 本命技与主动技的来源（第三版）
 
-现有 64 种本命技按旧的「炉口对撞、一回合打一下」调的数。新引擎里每只蛊都出手、挨打次数多得多，battle.js 的 `NAT_K` 按本命技逐个折算它们钩子里的加攻血、护体、伤害、召唤、毒（由模拟按「同档同转数换进一只」的胜率自动校到 44%–56% 附近）。内容专家把某个本命技改写成声明式（第 5.3 节写法 1）后，删掉表里对应的那一项即可。
+- 120 种蛊的被动技能全部是声明式（`bestiary2.js` 的 `NATS`，集成时换进 `NEW_TRAITS`），数值按每条效果的 `up` 随转数涨（4.1 节公式），引擎不再乘 `natMulOf`，旧的钩子折算表 `NAT_K` 作废（导出一个空表兼容旧代码）。只有春秋蝉 `rewind` 保留原钩子。
+- 主动技只认物种上的 `act`（`PATCH64` / `SPECIES2` 带上），没写就是没有主动技，引擎不再补占位主动技。
+- 免死（`lethal` 时机的 `endure`）成功后，同一块里 `lethal` 时机的其它效果（加攻、召唤、退到末位、挂护……）接着跑一遍。
+
+## 11. 秘境挂件 `g.fx` 与开关 `flag`（第三版）
+
+单位输入可以多一个 `fx: [{ id, n, kind: 'sky' | 'boss' | 'bless', eff: [...] }]`，`eff` 写法同蛊性；触发时发 `trig { uid, fx: id, n }`，画面显示 `n`。召唤物不跟着挂。
+
+通用效果 `{ when, op: 'flag', tg, k, v }`：把目标的开关 `fl[k]` 设成 `v`（不写 `v` 就是 1）。引擎读这几个：
+
+| `k` | 作用 |
+|---|---|
+| `gpMul` | 攒蛊力乘这个数（灵潮） |
+| `psnMul` | 这只蛊给别人挂毒时层数乘这个数 |
+| `bumpMul` | 这只蛊击退造成的撞伤乘这个数 |
+| `noSummon` | 这只蛊放不出召唤 |
+| `noRevive` | 这只蛊的免死不生效，亡语召唤也不出，春秋蝉倒转光阴也不触发 |
+| `immune` | 状态名数组，例如 `['psn']`，挂不上这些状态（寒 / 冻住都算 `chill`） |
+
+另有 `{ when: 'prep', op: 'copyNat', tg: 'foe.front' }`：照抄目标的被动技能（含已觉醒的部分，按施放者转数算），本场有效，一场只抄一次。
+
+## 12. 画面接口（battle-view.js / combo-fx.js）
+
+- `playBattle(el, result, opts) → Promise<{ closed, skipped }>`：结算页点「继续」才 resolve。`opts = { title, mode: 'trip' | 'spar', names: [我方, 对方], mySide: 0 | 1, speed: 1 | 2, reduceMotion, sota }`。
+  - `mode: 'trip'`（秘境）：赢了，倒下的蛊在画面上从倒地起身，结算写「救回 N 只（剩 1 血）」；没赢，结算页「全队告别」逐只列出永久离开的蛊，停住等点击。
+  - `mode: 'spar'`（斗幽灵、战帖、复盘）：结算不提死亡，只写「切磋：不死蛊」。没写 `mode` 时按旧参数猜（`perm` 或 `kind: 'trip'` 当秘境）。
+  - 跳过：直接到结算页。`reduceMotion` 关掉震屏、把闪白压到很淡、镜头推拉减半（对应设置「减弱震屏和闪光」）。
+- `playCombo(stage, o) → Promise`：杀招动画（每个杀招一份配方，进阶杀招名字条带金边）；`comboSheet(el)` 画全部杀招的关键帧总览；`drawComboFrame(ctx, id, ms, w, h)` 画单帧。没写配方的新杀招按 id 稳定地拼一份，进阶杀招（`xxx2`）在原版上加金光收尾。
