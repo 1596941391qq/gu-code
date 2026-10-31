@@ -347,6 +347,11 @@ body:has(#tut-layer) .sheet-bg{z-index:1001}   /* 引导进行中打开的面板
 /* ---------- 斗场 ---------- */
 .battle{position:fixed;inset:0;z-index:30;background:inherit;background-color:var(--bg);display:flex;flex-direction:column;overflow:hidden}
 .bbar{display:flex;align-items:center;gap:8px;padding:10px 16px;border-bottom:1px solid var(--line)}
+/* 新战斗画面（battle-view.js）：整层可滚动，画面居中 */
+.battle.bv2{overflow:auto;padding:10px 16px 18px}
+.bv2 .bvbox{width:100%;max-width:760px;margin:0 auto}
+.bv2 .bvx{max-width:760px;margin:8px auto 0;text-align:center}
+.bv2 .bvx button{font-size:13px;color:var(--mu)}
 .btitle{font:18px var(--kai);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bturn{font:13px var(--kai);color:var(--mu)}
 .arena{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:6px 16px;min-height:0}
