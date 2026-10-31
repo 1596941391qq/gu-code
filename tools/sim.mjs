@@ -1,5 +1,5 @@
 // node tools/sim.mjs [场数]  —— 随机阵容对战压测：死循环、回合数、物种/杀招胜率、可复现性、坐标码往返
-import { makeRng, genTeam, comboOf, SP, applyNode, newGu, encodeTeam, decodeTeam, QUIRKS, COMBOS, addTrait } from '../src/core.js';
+import { makeRng, genTeam, comboOf, SP, applyNode, newGu, encodeTeam, decodeTeam, QUIRKS, COMBOS, addTrait, MARK_KEYS } from '../src/core.js';
 import { battle } from '../src/battle.js';
 
 const N = +process.argv[2] || 1000;
@@ -8,10 +8,13 @@ const tally = (m, k, w) => { (m[k] ||= { n: 0, w: 0 }); m[k].n++; m[k].w += w; }
 for (let i = 0; i < N; i++) {
   const rng = makeRng('sim' + i), p = rng.int(15);
   const ta = genTeam(rng, p), tb = genTeam(rng, Math.max(0, p + rng.int(3) - 1));
-  const r = battle(ta, tb, 'seed' + i), r2 = battle(ta, tb, 'seed' + i);
+  const ma = MARK_KEYS.filter(() => rng() < 0.15), mb = MARK_KEYS.filter(() => rng() < 0.15);
+  if (rng() < 0.3) ta[0].star = 2 + rng.int(2);
+  const r = battle(ta, tb, 'seed' + i, ma, mb), r2 = battle(ta, tb, 'seed' + i, ma, mb);
   if (r.winner !== r2.winner || r.log.length !== r2.log.length) nondet++;
-  const dec = decodeTeam(encodeTeam(ta, { name: '测试', realm: 2 }));
-  if (!dec || dec.team.length !== ta.length || dec.team.some((g, j) => g.atk !== Math.min(255, ta[j].atk) || g.tr.length !== ta[j].tr.length || g.att.join() !== ta[j].att.join())) codeFail++;
+  const dec = decodeTeam(encodeTeam(ta, { name: '测试', realm: 2, marks: ma }));
+  if (!dec || dec.marks.join() !== ma.join() || dec.team.length !== ta.length || dec.team.some((g, j) => g.atk !== Math.min(255, ta[j].atk) || g.hp !== Math.min(255, ta[j].hp) || (g.star || 1) !== (ta[j].star || 1) || JSON.stringify(g.tr) !== JSON.stringify(ta[j].tr) || g.att.join() !== ta[j].att.join() || g.q.join() !== ta[j].q.join())) codeFail++;
+  else { const rd = battle(dec.team, decodeTeam(encodeTeam(tb, { marks: mb })).team, 'seed' + i, dec.marks, mb); if (rd.winner !== r.winner && ta.every(g => g.atk < 256 && g.hp < 256)) codeFail++; }
   turns.push(r.turns); if (r.winner === 'draw') draws++; if (r.capped) capped++; maxEv = Math.max(maxEv, r.log.length);
   [[ta, 'A'], [tb, 'B']].forEach(([t, side]) => {
     const w = r.winner === side ? 1 : r.winner === 'draw' ? 0.5 : 0;
@@ -54,3 +57,11 @@ for (const c of COMBOS) {
   forced.push(`${c.n} ${(100 * w / M).toFixed(1)}%`);
 }
 console.log('杀招强制胜率（同阶，300 场/招）:', forced.join('  '));
+
+// CI 闸门：死循环 / 编解码不一致 / 同种子不复现 任何一项出现就失败退出
+const fails = [];
+if (turns[turns.length - 1] >= 40 || capped > 0) fails.push(`回合或触发上限被触发（最大回合 ${turns[turns.length - 1]}，触发上限 ${capped}）`);
+if (codeFail) fails.push(`坐标码往返失败 ${codeFail}`);
+if (nondet) fails.push(`同种子不复现 ${nondet}`);
+if (fails.length) { console.error('FAIL: ' + fails.join('；')); process.exit(1); }
+console.log('PASS');

@@ -252,6 +252,41 @@ textarea{font-family:var(--mono);resize:vertical}
 .mg .tr{font:11px var(--kai)}
 .vsline{text-align:center;font:14px var(--kai);color:var(--mu);margin:4px 0}
 
+/* ---------- 元石、蛊市、选择题、对手三选一 ---------- */
+.stone{color:var(--qing);font-weight:600;font-family:var(--mono)}
+.marks{font:13px var(--kai);color:var(--zhu2);margin:8px 0 0;cursor:pointer}
+.marks:empty{display:none}
+.slot .empty.lock{flex-direction:column;gap:2px;font-size:15px;border-style:solid;opacity:.75}
+.slot .empty.lock small{font:11px var(--sans)}
+.star{position:absolute;left:3px;bottom:24%;font:600 11px/1 var(--sans);color:#8a6a1c;background:#f1e2b0;padding:2px 3px;border-radius:2px}
+.shop{margin-top:16px}
+.mini-b{font-size:13px;padding:4px 9px}
+.wares{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.ware{display:flex;flex-direction:column;gap:4px}
+.wbuy{background:var(--paper);color:var(--ink);border-radius:3px;padding:4px 4px 6px;display:flex;flex-direction:column;align-items:center;gap:1px;box-shadow:0 1px 0 var(--shadow)}
+.wbuy .art{width:62%;aspect-ratio:1}
+.wbuy b{font:400 15px var(--kai)}
+.wbuy .st{display:flex;gap:8px;font-size:12px}
+.wbuy .wt{font:12px var(--kai);color:#4a4239}
+.price{margin-top:2px;font:600 12px var(--sans);color:#2c6e5e}
+.ware.merge .wbuy{outline:1.5px solid var(--zhu2);outline-offset:2px}
+.ware.merge .price{color:var(--zhu)}
+.ware.frozen .wbuy{outline:1.5px dashed var(--qing);outline-offset:2px}
+.ware.sold .wbuy{opacity:.4}
+.wbuy:disabled{cursor:default}
+.wbuy:disabled:not(.sold){filter:saturate(.6)}
+.frz{font:12px var(--kai);color:var(--mu);border:1px solid var(--line);border-radius:3px;padding:3px 0}
+.ware.frozen .frz{color:var(--qing);border-color:var(--qing)}
+.opt{grid-template-columns:44px 1fr}
+.oart{width:44px;height:44px;background:var(--paper);border-radius:3px;display:block}
+.foeopt{border:1px solid var(--line);border-radius:3px;padding:10px;margin-top:10px;background:var(--bg)}
+.foeopt .fh{display:flex;align-items:center;gap:10px}
+.foeopt .fn{font:16px var(--kai);flex:1}
+.foeopt .rw{font:12px var(--mono);color:var(--qing)}
+.foeopt > button{width:100%;padding:8px;border-radius:3px;font:15px var(--kai)}
+.tier{font:400 15px/1 var(--kai);padding:5px 6px;border-radius:2px;color:var(--on-zhu)}
+.t-easy{background:#4f6b5c}.t-mid{background:#7a5a2a}.t-hard{background:var(--zhu)}
+
 /* ---------- 宽屏：横向对撞 ---------- */
 @media (min-width:900px){
   #app{padding-top:22px}

@@ -1,58 +1,53 @@
-// node tools/shots.mjs —— 用 Playwright 自查：手机 390 / 桌面 1440 截图 + 抓页面报错
+// PW=<playwright 路径> node tools/shots.mjs —— 自查截图（手机 390 / 桌面 1440 / 插件侧栏 320）并抓页面报错
 import { createRequire } from 'node:module';
 import path from 'node:path'; import { fileURLToPath } from 'node:url';
-const req = createRequire(import.meta.url);
-const PW = process.env.PW || 'playwright';
-const { chromium } = req(PW);
+const { chromium } = createRequire(import.meta.url)(process.env.PW || 'playwright');
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const out = n => path.join(root, 'shots', n);
-const url = 'file://' + path.join(root, 'index.html') + (process.argv[2] ? '#c=' + process.argv[2] : '');
+const out = n => path.join(root, 'shots', n), url = 'file://' + path.join(root, 'index.html');
+const errs = [];
 const browser = await chromium.launch();
-const page = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
-const errs = []; page.on('pageerror', e => errs.push('pageerror: ' + e.message)); page.on('console', m => { if (m.type() === 'error') errs.push('console: ' + m.text()); });
-const w = ms => page.waitForTimeout(ms);
-await page.goto(url); await w(600);
-await page.screenshot({ path: out('m0-start.png') });
-await page.click('.starter >> nth=0'); await w(300);
-await page.click('[data-act=demo][data-m=wuhuo]');
-for (let k = 0; k < 5; k++) { await page.click('.node:not([disabled]) >> nth=' + (k % 2)); await w(4600); }
-await page.screenshot({ path: out('m1-main.png') });
-await page.click('[data-act=demo][data-m=rest]'); await w(1800);
-await page.click('[data-act=ghost]'); await w(3200);
-await page.screenshot({ path: out('m2-battle.png') });
-await page.click('[data-act=skip]'); await w(900);
-await page.screenshot({ path: out('m3-result.png') });
-const lootBtn = await page.$('[data-act=loot]'); if (lootBtn) await lootBtn.click(); else await page.click('[data-act=closeBattle]');
-await w(400); await page.click('[data-act=share]'); await w(1800);
-await page.screenshot({ path: out('m4-share.png') });
-const code = await page.textContent('#codeTxt');
-await page.click('.x'); await page.setViewportSize({ width: 1440, height: 900 }); await w(400);
-await page.screenshot({ path: out('d1-main.png') });
-await page.click('[data-act=trib]'); await w(3500);
-await page.screenshot({ path: out('d2-battle.png') });
-console.log('code', code.length, code); console.log(errs.length ? errs.join('\n') : 'no page errors');
-await browser.close();
-
-// ---- 插件 Webview 路径：伪造 acquireVsCodeApi，侧栏宽度 320 ----
-{
-  const b2 = await chromium.launch();
-  const pg = await b2.newPage({ viewport: { width: 320, height: 760 }, deviceScaleFactor: 2 });
-  const er = []; pg.on('pageerror', e => er.push(e.message));
-  await pg.addInitScript(() => {
-    window.__posted = [];
-    window.acquireVsCodeApi = () => ({ postMessage: m => {
-      window.__posted.push(m.type);
-      if (m.type === 'ready') setTimeout(() => {
-        window.postMessage({ type: 'init', save: null, pending: { tokens: 0 } }, '*');
-        let k = 0; setInterval(() => { k++; window.postMessage({ type: 'tokens', delta: k < 12 ? 90000 : 0, hot: k % 3 === 0, rate: k < 12 ? 2400 : 0, idle: k >= 14 }, '*'); }, 1000);
-      }, 50);
-    } });
-  });
-  await pg.goto('file://' + path.join(root, 'index.html')); await pg.waitForTimeout(500);
-  await pg.click('.starter >> nth=1'); await pg.click('.node:not([disabled]) >> nth=0'); await pg.waitForTimeout(6500);
-  await pg.click('.node:not([disabled]) >> nth=1'); await pg.waitForTimeout(5000);
-  await pg.screenshot({ path: out('v1-vscode-sidebar.png') }); await pg.waitForTimeout(5000);
-  const ghostOk = await pg.$eval('[data-act=ghost]', b => !b.disabled);
-  console.log('vscode path: posted', [...new Set(await pg.evaluate(() => window.__posted))].join(','), '| fight unlocked after idle:', ghostOk, '| errors:', er.length ? er.join(';') : 'none');
-  await b2.close();
+async function newPage(o = {}) { const p = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, ...o }); p.on('pageerror', e => errs.push(e.message)); return p; }
+const w = (p, ms) => p.waitForTimeout(ms);
+// 推进养蛊：有选择题先选，没有就点第一条可走的路
+async function grow(p, n, ms = 4300) {
+  for (let k = 0; k < n; k++) {
+    const opt = await p.$('.opt'); if (opt) { await opt.click(); await w(p, 600); }
+    const node = await p.$('.node:not([disabled]):not(.opt)'); if (node) await node.click();
+    await w(p, ms);
+    const buy = await p.$('.wbuy:not([disabled])'); if (buy) { await buy.click(); await w(p, 300); }
+  }
+  const opt = await p.$('.opt'); if (opt) { await opt.click(); await w(p, 600); }
 }
+const shot = process.argv[2] || 'all';
+
+const p = await newPage({ colorScheme: 'dark' });
+await p.goto(url); await w(p, 500);
+await p.screenshot({ path: out('m0-start.png') });
+await p.click('.starter >> nth=0'); await p.click('[data-act=demo][data-m=wuhuo]');
+await grow(p, 4);
+await p.screenshot({ path: out('m1-main.png') });
+await p.evaluate(() => document.querySelector('#shop').scrollIntoView({ block: 'center' })); await w(p, 200);
+await p.screenshot({ path: out('m6-shop.png') });
+await p.click('[data-act=ghost]'); await w(p, 400);
+await p.screenshot({ path: out('m7-ghosts.png') });
+await p.click('[data-act=ghostGo] >> nth=1'); await w(p, 4200);
+await p.screenshot({ path: out('m2-battle.png') });
+await p.click('[data-act=skip]'); await w(p, 900);
+await p.screenshot({ path: out('m3-result.png') });
+const loot = await p.$('[data-act=loot]'); if (loot) await loot.click(); else await p.click('[data-act=closeBattle]');
+await w(p, 300); await p.click('[data-act=share]'); await p.waitForFunction(() => document.querySelector('#cardImg')?.src?.startsWith('data:'));
+await w(p, 300); await p.screenshot({ path: out('m4-share.png') });
+await p.click('.x');
+const path8 = await p.$('[data-act=path]'); if (path8) { await path8.click(); await w(p, 300); await p.screenshot({ path: out('m8-path.png') }); await p.click('.x'); }
+await p.setViewportSize({ width: 1440, height: 900 }); await w(p, 300);
+await p.screenshot({ path: out('d1-main.png') });
+await p.close();
+
+const q = await newPage({ colorScheme: 'light' });
+await q.goto(url); await w(q, 300); await q.click('.starter >> nth=1'); await q.click('[data-act=demo][data-m=wuhuo]');
+await grow(q, 3);
+await q.screenshot({ path: out('m5-light.png') });
+await q.close();
+
+console.log(errs.length ? 'page errors:\n' + errs.join('\n') : 'no page errors');
+await browser.close();

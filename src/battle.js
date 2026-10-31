@@ -15,8 +15,9 @@ export function toUnit(g, side) {
   return { side, sp: g.sp, name: (g.boss ? '劫·' : '') + (SP[g.sp] ? SP[g.sp].n : SUMMON_NAMES[g.sp]), atk, hp, mx: hp, sh: 0, tr, q, combo: c ? c.id : null, cname: c ? c.n : null, att: g.att || [], boss: !!g.boss, f: {} };
 }
 
-export function battle(ta, tb, seed) {
+export function battle(ta, tb, seed, ma = [], mb = []) {
   const rng = makeRng(seed); let ops = 0, uidc = 0;
+  const MK = [new Set(ma || []), new Set(mb || [])], has = (side, k) => MK[side].has(k), sideF = [{}, {}];
   const roster = {}, log = [], S = [[], []];
   const reg = u => { u.uid = (u.side ? 'b' : 'a') + (uidc++); roster[u.uid] = { sp: u.sp, name: u.name, side: u.side, combo: u.cname, tr: { ...u.tr }, q: u.q, att: u.att, boss: u.boss }; return u; };
   ta.slice(0, CAP).forEach(g => S[0].push(reg(toUnit(g, 0))));
@@ -42,7 +43,8 @@ export function battle(ta, tb, seed) {
   }
   function summon(side, idx, spec, by) {
     const arr = S[side]; if (arr.filter(alive).length >= CAP) return null;
-    const u = reg({ side, sp: spec.sp, name: SUMMON_NAMES[spec.sp], atk: spec.atk, hp: spec.hp, mx: spec.hp, sh: 0, tr: {}, q: [], combo: null, cname: null, att: [], f: {} });
+    const bonus = has(side, 'qunGu') ? 2 : 0;
+    const u = reg({ side, sp: spec.sp, name: SUMMON_NAMES[spec.sp], atk: spec.atk + bonus, hp: spec.hp + bonus, mx: spec.hp + bonus, sh: 0, tr: {}, q: [], combo: null, cname: null, att: [], f: {} });
     arr.splice(Math.max(0, Math.min(idx, arr.length)), 0, u);
     ev('summon', { uid: u.uid, by: by && by.uid });
     for (const o of arr.slice()) if (o !== u && alive(o)) hook(o, 'ally', { u });
@@ -61,7 +63,7 @@ export function battle(ta, tb, seed) {
     const tg = id => { fired = true; ev('trig', { uid: u.uid, id }); };
     if (h === 'start') {
       if (T.strike) {
-        tg('strike'); const d = 2 * T.strike;
+        tg('strike'); const d = 2 * T.strike + (has(u.side, 'xianSheng') ? 2 : 0);
         if (u.combo === 'liaoyuan') { comboEv(u); foes(u).forEach(f => deal(u, f, Math.ceil(d / 2), 'skill')); }
         else { const fs = foes(u); if (fs.length) deal(u, rng.pick(fs), d, 'skill'); }
       }
@@ -75,7 +77,7 @@ export function battle(ta, tb, seed) {
       if (u.q.includes('timid') && alive(u) && allies(u)[0] !== u) buff(u, 0, 1);
     } else if (h === 'hurt') {
       const s = c.src;
-      if (T.thorn && s && c.kind !== 'thorn' && alive(s) && s.side !== u.side) { tg('thorn'); let d = T.thorn + 1; if (u.combo === 'jinjia' && c.had) d *= 2; deal(u, s, d, 'thorn'); }
+      if (T.thorn && s && c.kind !== 'thorn' && alive(s) && s.side !== u.side) { tg('thorn'); let d = T.thorn + 1 + (has(u.side, 'fanShi') ? 1 : 0); if (u.combo === 'jinjia' && c.had) d *= 2; deal(u, s, d, 'thorn'); }
       if (alive(u)) {
         if (T.frenzy) { tg('frenzy'); buff(u, T.frenzy, 0); }
         if (T.split && !u.f.split) { u.f.split = 1; tg('split'); summon(u.side, S[u.side].indexOf(u) + 1, { sp: 'shade', atk: T.split + 1, hp: T.split + 1 }, u); }
@@ -84,12 +86,14 @@ export function battle(ta, tb, seed) {
     } else if (h === 'kill') {
       if (T.devour) { tg('devour'); buff(u, 2 * T.devour, 2 * T.devour); }
       if (u.q.includes('greedy')) buff(u, 2, 2);
+      if (has(u.side, 'shiHun')) buff(u, 1, 1);
       if (u.combo === 'duopo' && !u.f.duopo) { const f = foes(u)[0]; if (f) { u.f.duopo = 1; fired = true; comboEv(u); deal(u, f, u.atk, 'skill'); } }
       if (u.combo === 'fenshen') { comboEv(u); fired = true; foes(u).forEach(f => deal(u, f, 3, 'skill')); }
     } else if (h === 'faint') {
       const arr = S[u.side];
-      if (T.legacy) { const b = arr[c.idx]; if (alive(b)) { tg('legacy'); buff(b, 2 * T.legacy, 2 * T.legacy); } }
-      if (T.spawn) { tg('spawn'); summon(u.side, c.idx, { sp: 'pupa', atk: 2 * T.spawn, hp: 2 * T.spawn }, u); }
+      const yz = has(u.side, 'yiZe') ? 1 : 0;
+      if (T.legacy) { const b = arr[c.idx], lv = T.legacy + yz; if (alive(b)) { tg('legacy'); buff(b, 2 * lv, 2 * lv); } }
+      if (T.spawn) { tg('spawn'); const sv = T.spawn + yz; summon(u.side, c.idx, { sp: 'pupa', atk: 2 * sv, hp: 2 * sv }, u); }
       if (u.combo === 'shishan') { comboEv(u); fired = true; summon(u.side, c.idx, { sp: 'lunar', atk: Math.max(1, Math.ceil(u.atk / 2)), hp: 3 }, u); }
     } else if (h === 'ally') {
       if (T.rally) { tg('rally'); buff(u, T.rally, T.rally); }
@@ -107,6 +111,7 @@ export function battle(ta, tb, seed) {
           u.f.tuoke = 1; u.atk = Math.max(1, Math.ceil(u.atk / 2)); u.mx = Math.max(1, Math.ceil(u.mx / 2)); u.hp = u.mx; u.killer = null;
           comboEv(u); continue;
         }
+        if (has(u.side, 'buMie') && !sideF[u.side].buMie) { sideF[u.side].buMie = 1; u.hp = 1; u.killer = null; ev('trig', { uid: u.uid, mk: 'buMie' }); continue; }
         const arr = S[u.side], idx = arr.indexOf(u);
         if (idx >= 0) arr.splice(idx, 1);
         u.dead = true; ev('faint', { uid: u.uid });
@@ -117,6 +122,11 @@ export function battle(ta, tb, seed) {
   }
 
   ev('begin');
+  for (const side of [0, 1]) {
+    if (has(side, 'luKou') && S[side][0]) { ev('trig', { uid: S[side][0].uid, mk: 'luKou' }); buff(S[side][0], 2, 0); }
+    if (has(side, 'tieBi')) S[side].forEach(u => shield(u, 2));
+    if (has(side, 'shaZhao')) S[side].forEach(u => { if (u.combo) buff(u, 3, 3); });
+  }
   const order = () => [...S[0], ...S[1]].filter(alive).sort((x, y) => y.atk - x.atk || x.side - y.side);
   for (const u of order()) if (alive(u)) hook(u, 'start', {});
   reap();

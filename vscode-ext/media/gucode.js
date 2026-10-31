@@ -14,6 +14,12 @@ function makeRng(seed) {
 
 const MAXV = 3, MAXTR = 4, MAXQ = 2, MAXATT = 2, SLOTS = 5;
 const REALMS = ['凡人', '一转', '二转', '三转', '四转', '五转'];
+const SLOT_BY_REALM = [3, 4, 5, 5, 5, 5];
+const slotCap = r => SLOT_BY_REALM[Math.min(5, Math.max(0, r | 0))];
+const POOL_TIERS = [['boar', 'fire', 'twin', 'iron', 'thorn', 'bone'], ['mantis', 'queen', 'cicada'], ['drum', 'scorp', 'moth']];
+const poolFor = r => POOL_TIERS.slice(0, Math.min(3, (r | 0) + 1)).flat();
+const ECON = { node: 2, buy: 3, refresh: 1, tokPer: 25, lose: 1, win: { easy: 3, mid: 5, hard: 8, trib: 10, endless: 6, duel: 0 } };
+const trCap = g => MAXTR + Math.max(0, (g.star || 1) - 1);
 
 // 词条：v 为层数（1–3），同名合并即叠层
 const TRAITS = {
@@ -75,6 +81,24 @@ const COMBOS = [
 ];
 const COMBO = Object.fromEntries(COMBOS.map(c => [c.id, c]));
 
+// 道痕：整局被动，渡劫成功三选一。顺序固定（坐标码按位编码），只能往后加
+const MARKS = {
+  luKou:     { n: '炉口淬锋', d: '开战：炉口（最前）的蛊 +2 攻' },
+  tieBi:     { n: '铁壁',     d: '开战：全体友蛊 +2 护体' },
+  buMie:     { n: '不灭',     d: '每场第一只阵亡的友蛊以 1 血复生' },
+  shaZhao:   { n: '杀招开光', d: '身负杀招的蛊开战 +3/+3' },
+  qunGu:     { n: '群蛊',     d: '召唤出的蛊蛹、分影、月影 +2/+2' },
+  fanShi:    { n: '反噬加深', d: '反噬伤害 +1' },
+  shiHun:    { n: '噬魂入骨', d: '击杀时额外 +1/+1' },
+  xianSheng: { n: '先声夺人', d: '开锋伤害 +2' },
+  yiZe:      { n: '遗泽绵长', d: '遗泽与化生多算一层' },
+  heLian:    { n: '合炼得道', d: '合炼升星时额外觉醒一个词条' },
+  shengCai:  { n: '生财有道', d: '斗蛊所得元石 +50%' },
+  shiJing:   { n: '市井熟客', d: '蛊市买蛊只要 2 元石，刷新免费' },
+};
+const MARK_KEYS = Object.keys(MARKS);
+function rollMarks(rng, owned = []) { const pool = MARK_KEYS.filter(k => !owned.includes(k)), out = []; while (out.length < 3 && pool.length) out.push(pool.splice(rng.int(pool.length), 1)[0]); return out; }
+
 let UIDN = 1;
 function nuid() { return 'g' + (UIDN++).toString(36) + Math.floor(Math.random() * 1e6).toString(36); }
 function newGu(sp) { const s = SP[sp]; return { uid: nuid(), sp, atk: s.atk, hp: s.hp, tr: [[s.t, s.v]], q: [], att: [], wound: 0, fed: 0, mut: 0 }; }
@@ -83,7 +107,7 @@ function starterTeam() { return ['boar', 'fire', 'twin'].map(newGu); }
 function addTrait(g, id, v, bonus) {
   const e = g.tr.find(x => x[0] === id);
   if (e) { e[1] = Math.min(MAXV, e[1] + v + (bonus ? 1 : 0)); return true; }
-  if (g.tr.length >= MAXTR) return false;
+  if (g.tr.length >= trCap(g)) return false;
   g.tr.push([id, Math.min(MAXV, v)]); return true;
 }
 function comboOf(g) {
@@ -104,7 +128,7 @@ function skillOf(g) {
 }
 function mutateGu(g, rng) {
   const fresh = TRAIT_KEYS.filter(k => !g.tr.some(t => t[0] === k));
-  if (g.tr.length < MAXTR && fresh.length) { const t = rng.pick(fresh); g.tr.push([t, 1]); return t; }
+  if (g.tr.length < trCap(g) && fresh.length) { const t = rng.pick(fresh); g.tr.push([t, 1]); return t; }
   const up = g.tr.filter(t => t[1] < MAXV);
   if (up.length) { const t = rng.pick(up); t[1]++; return t[0]; }
   g.atk++; g.hp++; return g.tr[0][0];
@@ -122,19 +146,19 @@ function cloneGu(g) {
 const NODES = {
   feed:   { n: '喂食', ch: '食', cost: 40, d: '灵食自左向右流过空窍：依次 +3/+2/+1 血，最左者另 +1 攻' },
   temper: { n: '淬体', ch: '淬', cost: 45, d: '最左蛊 +2 攻 +2 血' },
-  mutate: { n: '突变', ch: '变', cost: 55, d: '最左蛊觉醒一个随机词条（已满则某词条升层）' },
+  mutate: { n: '突变', ch: '变', cost: 55, d: '最左蛊觉醒一个词条（三选一）' },
   split:  { n: '分裂', ch: '裂', cost: 60, d: '最左蛊裂出六成之力的分身，紧贴其右，词条全带' },
-  devour: { n: '吞噬', ch: '吞', cost: 55, d: '最左蛊吞下右邻：得其六成攻血、全部词条与附蛊' },
-  summon: { n: '招蛊', ch: '招', cost: 40, d: '招来一只新蛊，入最右空窍' },
+  devour: { n: '吞噬', ch: '吞', cost: 55, d: '最左蛊吞下你挑的一只：得其六成攻血、全部词条与附蛊' },
+  summon: { n: '招蛊', ch: '招', cost: 40, d: '三选一：招来一只新蛊，入最右空窍' },
   refine: { n: '炼附', ch: '炼', cost: 60, d: '把最右蛊炼成最左蛊的附蛊：得其四成攻血，同名词条质变 +1，配方成杀招' },
 };
-function nodeOk(type, team) {
+function nodeOk(type, team, cap = SLOTS) {
   const n = team.length;
   switch (type) {
     case 'feed': case 'temper': case 'mutate': return n > 0;
-    case 'split': return n > 0 && n < SLOTS;
+    case 'split': return n > 0 && n < cap;
     case 'devour': return n >= 2;
-    case 'summon': return n < SLOTS;
+    case 'summon': return n < cap;
     case 'refine': return n >= 2 && team[0].att.length < MAXATT;
   }
   return false;
@@ -144,8 +168,8 @@ function mkNode(type, rng) {
   if (type === 'summon') n.sp = rng.pick(SPECIES).id;
   return n;
 }
-function rollCompass(rng, team, first) {
-  const pool = Object.keys(NODES).filter(t => nodeOk(t, team));
+function rollCompass(rng, team, first, cap = SLOTS) {
+  const pool = Object.keys(NODES).filter(t => nodeOk(t, team, cap));
   const out = [];
   if ((first || team.length < 2) && pool.includes('summon')) out.push(mkNode('summon', rng));
   while (out.length < 3 && pool.length) { const t = pool.splice(rng.int(pool.length), 1)[0]; if (!out.some(o => o.type === t)) out.push(mkNode(t, rng)); }
@@ -158,10 +182,11 @@ function applyNode(team, node, rng, opt = {}) {
   switch (node.type) {
     case 'feed': team.forEach((g, i) => { const h = [3, 2, 1, 1, 1][i]; g.hp += h; if (i === 0) g.atk += 1; fx.push({ uid: g.uid, txt: i === 0 ? `+1/+${h}` : `+${h}血` }); }); break;
     case 'temper': L.atk += 2; L.hp += 2; fx.push({ uid: L.uid, txt: '+2/+2' }); break;
-    case 'mutate': { const t = mutateGu(L, rng); L.mut++; muts++; fx.push({ uid: L.uid, txt: '觉醒·' + TRAITS[t].n, k: 'mut' }); break; }
+    case 'mutate': { const t = opt.pick && TRAITS[opt.pick] && addTrait(L, opt.pick, 1) ? opt.pick : mutateGu(L, rng); L.mut++; muts++; fx.push({ uid: L.uid, txt: '觉醒·' + TRAITS[t].n, k: 'mut' }); break; }
     case 'split': { const c = cloneGu(L); team.splice(1, 0, c); fx.push({ uid: c.uid, txt: '分身', k: 'new' }); break; }
     case 'devour': {
-      const v = team.splice(1, 1)[0]; gone.push(v.uid);
+      const vi = typeof opt.pick === 'number' && opt.pick > 0 && team[opt.pick] ? opt.pick : 1;
+      const v = team.splice(vi, 1)[0]; gone.push(v.uid);
       L.atk += Math.ceil(v.atk * 0.6); L.hp += Math.ceil(v.hp * 0.6);
       v.tr.forEach(([id, val]) => addTrait(L, id, val));
       v.q.forEach(q => { if (!L.q.includes(q) && L.q.length < MAXQ) L.q.push(q); });
@@ -171,7 +196,7 @@ function applyNode(team, node, rng, opt = {}) {
       const c = comboOf(L); if (c && c !== before) combo = { uid: L.uid, n: c.n };
       fx.push({ uid: L.uid, txt: '吞·' + SP[v.sp].ab, k: 'eat' }); break;
     }
-    case 'summon': { const g = newGu(node.sp); team.push(g); fx.push({ uid: g.uid, txt: '招来', k: 'new' }); break; }
+    case 'summon': { const g = newGu((opt.pick && SP[opt.pick]) ? opt.pick : node.sp || rng.pick(SPECIES).id); team.push(g); fx.push({ uid: g.uid, txt: '招来', k: 'new' }); break; }
     case 'refine': {
       const s = team.pop(); gone.push(s.uid); const before = comboOf(L);
       L.att.push(s.sp); L.atk += Math.ceil(s.atk * 0.4); L.hp += Math.ceil(s.hp * 0.4);
@@ -189,12 +214,43 @@ function applyNode(team, node, rng, opt = {}) {
   }
   return { fx, gone, combo, muts, quirk };
 }
+// 三选一：突变给 3 个词条，招蛊给 3 只蛊，吞噬给全部可吃的（下标）
+function nodeChoices(node, team, rng, realm = 5) {
+  const L = team[0], pick3 = arr => { const a = [...arr], o = []; while (o.length < 3 && a.length) o.push(a.splice(rng.int(a.length), 1)[0]); return o; };
+  if (node.type === 'mutate' && L) return pick3(TRAIT_KEYS.filter(k => { const e = L.tr.find(t => t[0] === k); return e ? e[1] < MAXV : L.tr.length < trCap(L); }));
+  if (node.type === 'summon') return pick3(poolFor(realm));
+  if (node.type === 'devour') return team.map((g, i) => i).slice(1);
+  return null;
+}
+// ---------- 蛊市与合炼 ----------
+function rollShop(rng, realm, old = []) { const pool = poolFor(realm); return [0, 1, 2].map(i => (old[i] && old[i].frozen && !old[i].sold) ? old[i] : { sp: rng.pick(pool), frozen: false }); }
+function canBuy(team, sp, cap) { return team.length < cap || team.filter(g => g.sp === sp && (g.star || 1) === 1).length >= 2; }
+function mergeAll(team, marks = [], rng) {
+  const done = [];
+  for (let guard = 0; guard < 6; guard++) {
+    let grp = null;
+    for (const g of team) { const st = g.star || 1, same = team.filter(x => x.sp === g.sp && (x.star || 1) === st); if (same.length >= 3 && st < 3) { grp = same.slice(0, 3); break; } }
+    if (!grp) break;
+    const [a, b, c] = grp, s0 = a.star || 1;
+    a.star = s0 + 1; a.atk = Math.max(a.atk, b.atk, c.atk) + 2 * s0 + 1; a.hp = Math.max(a.hp, b.hp, c.hp) + 3 * s0 + 1;
+    [b, c].forEach(x => {
+      x.tr.forEach(([id, v]) => addTrait(a, id, v)); x.q.forEach(q => { if (!a.q.includes(q) && a.q.length < MAXQ) a.q.push(q); });
+      x.att.forEach(t => { if (a.att.length < MAXATT) a.att.push(t); }); a.fed = (a.fed || 0) + (x.fed || 0); a.mut = (a.mut || 0) + (x.mut || 0);
+      a.wound = Math.min(a.wound || 0, x.wound || 0); team.splice(team.indexOf(x), 1);
+    });
+    if (marks.includes('heLian') && rng) { mutateGu(a, rng); a.mut++; }
+    done.push(a);
+  }
+  return done;
+}
+function buyGu(team, sp, cap, marks, rng) { if (!canBuy(team, sp, cap)) return null; const g = newGu(sp); team.push(g); return { gu: g, merged: mergeAll(team, marks, rng) }; }
+const sellValue = g => (g.star || 1) + (g.att ? g.att.length : 0);
 
 // 程序生成同阶阵容（幽灵 / 天劫），用同一套养成规则随机走路
-function genTeam(rng, power) {
+function genTeam(rng, power, cap = SLOTS) {
   const team = [newGu(rng.pick(SPECIES).id)];
   for (let i = 0; i < power; i++) {
-    const types = Object.keys(NODES).filter(t => nodeOk(t, team));
+    const types = Object.keys(NODES).filter(t => nodeOk(t, team, cap));
     const t = (team.length < 3 && types.includes('summon') && rng() < 0.6) ? 'summon' : rng.pick(types);
     const node = mkNode(t, rng);
     applyNode(team, node, rng, { wuhuo: rng() < 0.15 });
@@ -207,9 +263,13 @@ function genTeam(rng, power) {
 const TRIB_NAMES = ['心魔劫', '雷劫', '火劫', '风劫', '天人劫'];
 function tribTeam(realm) {
   const r = Math.min(realm, 4), rng = makeRng('tribulation:' + r);
-  const team = genTeam(rng, 3 + r * 4);
+  const team = genTeam(rng, 3 + r * 4, Math.min(5, slotCap(r) + 1));
   const b = team[0]; b.atk += r + 1; b.hp += 2 * r + 2; b.boss = 1;
   return team;
+}
+function ghostTrio(rng, power, realm) {
+  const names = [...GHOST_NAMES];
+  return [['easy', '易', -3, 0], ['mid', '中', 0, 0], ['hard', '难', 3, 1]].map(([tier, label, d, extra]) => ({ tier, label, name: names.splice(rng.int(names.length), 1)[0], team: genTeam(rng, Math.max(0, power + d), slotCap(realm + extra)) }));
 }
 const GHOST_NAMES = ['夜码人', '零点蛊师', '断点散人', '递归僧', '缓存道人', '并发狂徒', '栈溢出', '空指针', '热重载', '回滚真人', '合并冲突', '无限循环'];
 
@@ -224,13 +284,14 @@ function encodeTeam(team, meta = {}) {
   const bits = [];
   const put = (v, n) => { v = Math.max(0, Math.min(Math.floor(v) || 0, 2 ** n - 1)); for (let i = n - 1; i >= 0; i--) bits.push(Math.floor(v / 2 ** i) % 2); };
   let nm = utf8(String(meta.name || '').slice(0, 8)); if (nm.length > 24) nm = nm.slice(0, 24);
-  put(1, 3); put(meta.realm || 0, 3); put(team.length, 3); put(nm.length, 5); nm.forEach(b => put(b, 8));
+  put(2, 3); put(meta.realm || 0, 3); put(team.length, 3); put(nm.length, 5); nm.forEach(b => put(b, 8));
+  let mb = 0; (meta.marks || []).forEach(k => { const i = MARK_KEYS.indexOf(k); if (i >= 0) mb += 2 ** i; }); put(mb, 12);
   for (const g of team.slice(0, SLOTS)) {
     put(SPI[g.sp], 4); put(g.atk, 8); put(g.hp, 8); put(g.wound || 0, 2);
     put(g.tr.length, 3); g.tr.forEach(([id, v]) => { put(TRI[id], 4); put(v, 2); });
     put(g.q.length, 2); g.q.forEach(q => put(QUI[q], 3));
     put(g.att.length, 2); g.att.forEach(a => put(SPI[a], 4));
-    put(Math.round((g.fed || 0) / 10000), 18); put(g.mut || 0, 7); put(g.boss ? 1 : 0, 1);
+    put(Math.round((g.fed || 0) / 10000), 18); put(g.mut || 0, 7); put(g.boss ? 1 : 0, 1); put((g.star || 1) - 1, 2);
   }
   let chk = 0; bits.forEach((b, i) => { if (b) chk = (chk + i * 7 + 3) % 64; }); put(chk, 6);
   while (bits.length % 6) bits.push(0);
@@ -243,8 +304,9 @@ function decodeTeam(code) {
     if (!/^[A-Za-z0-9_-]{8,}$/.test(code)) return null;
     const bits = []; for (const ch of code) { const v = B64.indexOf(ch); for (let j = 5; j >= 0; j--) bits.push((v >> j) & 1); }
     let p = 0; const get = n => { let v = 0; for (let i = 0; i < n; i++) { if (p >= bits.length) throw 0; v = v * 2 + bits[p++]; } return v; };
-    if (get(3) !== 1) return null;
+    const ver = get(3); if (ver !== 1 && ver !== 2) return null;
     const realm = get(3), n = get(3), nl = get(5), nm = []; for (let i = 0; i < nl; i++) nm.push(get(8));
+    const marks = []; if (ver >= 2) { const mb = get(12); MARK_KEYS.forEach((k, i) => { if (Math.floor(mb / 2 ** i) % 2) marks.push(k); }); }
     if (n < 1 || n > SLOTS) return null;
     const team = [];
     for (let i = 0; i < n; i++) {
@@ -254,11 +316,12 @@ function decodeTeam(code) {
       const nq = get(2); for (let j = 0; j < nq; j++) { const k = QUIRK_KEYS[get(3)]; if (k) g.q.push(k); }
       const na = get(2); for (let j = 0; j < na; j++) { const a = SPECIES[get(4)]; if (a && j < MAXATT) g.att.push(a.id); }
       g.fed = get(18) * 10000; g.mut = get(7); if (get(1)) g.boss = 1;
+      if (ver >= 2) { const st = get(2) + 1; if (st > 1) g.star = Math.min(3, st); }
       team.push(g);
     }
     const end = p; let chk = 0; for (let i = 0; i < end; i++) if (bits[i]) chk = (chk + i * 7 + 3) % 64;
     if (get(6) !== chk) return null;
-    return { team, realm, name: unutf8(nm) };
+    return { team, realm, name: unutf8(nm), marks };
   } catch (e) { return null; }
 }
 function fmtTok(n) { n = n || 0; return n >= 1e9 ? (n / 1e9).toFixed(2) + 'B' : n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(Math.round(n)); }
@@ -281,8 +344,9 @@ function toUnit(g, side) {
   return { side, sp: g.sp, name: (g.boss ? '劫·' : '') + (SP[g.sp] ? SP[g.sp].n : SUMMON_NAMES[g.sp]), atk, hp, mx: hp, sh: 0, tr, q, combo: c ? c.id : null, cname: c ? c.n : null, att: g.att || [], boss: !!g.boss, f: {} };
 }
 
-function battle(ta, tb, seed) {
+function battle(ta, tb, seed, ma = [], mb = []) {
   const rng = makeRng(seed); let ops = 0, uidc = 0;
+  const MK = [new Set(ma || []), new Set(mb || [])], has = (side, k) => MK[side].has(k), sideF = [{}, {}];
   const roster = {}, log = [], S = [[], []];
   const reg = u => { u.uid = (u.side ? 'b' : 'a') + (uidc++); roster[u.uid] = { sp: u.sp, name: u.name, side: u.side, combo: u.cname, tr: { ...u.tr }, q: u.q, att: u.att, boss: u.boss }; return u; };
   ta.slice(0, CAP).forEach(g => S[0].push(reg(toUnit(g, 0))));
@@ -308,7 +372,8 @@ function battle(ta, tb, seed) {
   }
   function summon(side, idx, spec, by) {
     const arr = S[side]; if (arr.filter(alive).length >= CAP) return null;
-    const u = reg({ side, sp: spec.sp, name: SUMMON_NAMES[spec.sp], atk: spec.atk, hp: spec.hp, mx: spec.hp, sh: 0, tr: {}, q: [], combo: null, cname: null, att: [], f: {} });
+    const bonus = has(side, 'qunGu') ? 2 : 0;
+    const u = reg({ side, sp: spec.sp, name: SUMMON_NAMES[spec.sp], atk: spec.atk + bonus, hp: spec.hp + bonus, mx: spec.hp + bonus, sh: 0, tr: {}, q: [], combo: null, cname: null, att: [], f: {} });
     arr.splice(Math.max(0, Math.min(idx, arr.length)), 0, u);
     ev('summon', { uid: u.uid, by: by && by.uid });
     for (const o of arr.slice()) if (o !== u && alive(o)) hook(o, 'ally', { u });
@@ -327,7 +392,7 @@ function battle(ta, tb, seed) {
     const tg = id => { fired = true; ev('trig', { uid: u.uid, id }); };
     if (h === 'start') {
       if (T.strike) {
-        tg('strike'); const d = 2 * T.strike;
+        tg('strike'); const d = 2 * T.strike + (has(u.side, 'xianSheng') ? 2 : 0);
         if (u.combo === 'liaoyuan') { comboEv(u); foes(u).forEach(f => deal(u, f, Math.ceil(d / 2), 'skill')); }
         else { const fs = foes(u); if (fs.length) deal(u, rng.pick(fs), d, 'skill'); }
       }
@@ -341,7 +406,7 @@ function battle(ta, tb, seed) {
       if (u.q.includes('timid') && alive(u) && allies(u)[0] !== u) buff(u, 0, 1);
     } else if (h === 'hurt') {
       const s = c.src;
-      if (T.thorn && s && c.kind !== 'thorn' && alive(s) && s.side !== u.side) { tg('thorn'); let d = T.thorn + 1; if (u.combo === 'jinjia' && c.had) d *= 2; deal(u, s, d, 'thorn'); }
+      if (T.thorn && s && c.kind !== 'thorn' && alive(s) && s.side !== u.side) { tg('thorn'); let d = T.thorn + 1 + (has(u.side, 'fanShi') ? 1 : 0); if (u.combo === 'jinjia' && c.had) d *= 2; deal(u, s, d, 'thorn'); }
       if (alive(u)) {
         if (T.frenzy) { tg('frenzy'); buff(u, T.frenzy, 0); }
         if (T.split && !u.f.split) { u.f.split = 1; tg('split'); summon(u.side, S[u.side].indexOf(u) + 1, { sp: 'shade', atk: T.split + 1, hp: T.split + 1 }, u); }
@@ -350,12 +415,14 @@ function battle(ta, tb, seed) {
     } else if (h === 'kill') {
       if (T.devour) { tg('devour'); buff(u, 2 * T.devour, 2 * T.devour); }
       if (u.q.includes('greedy')) buff(u, 2, 2);
+      if (has(u.side, 'shiHun')) buff(u, 1, 1);
       if (u.combo === 'duopo' && !u.f.duopo) { const f = foes(u)[0]; if (f) { u.f.duopo = 1; fired = true; comboEv(u); deal(u, f, u.atk, 'skill'); } }
       if (u.combo === 'fenshen') { comboEv(u); fired = true; foes(u).forEach(f => deal(u, f, 3, 'skill')); }
     } else if (h === 'faint') {
       const arr = S[u.side];
-      if (T.legacy) { const b = arr[c.idx]; if (alive(b)) { tg('legacy'); buff(b, 2 * T.legacy, 2 * T.legacy); } }
-      if (T.spawn) { tg('spawn'); summon(u.side, c.idx, { sp: 'pupa', atk: 2 * T.spawn, hp: 2 * T.spawn }, u); }
+      const yz = has(u.side, 'yiZe') ? 1 : 0;
+      if (T.legacy) { const b = arr[c.idx], lv = T.legacy + yz; if (alive(b)) { tg('legacy'); buff(b, 2 * lv, 2 * lv); } }
+      if (T.spawn) { tg('spawn'); const sv = T.spawn + yz; summon(u.side, c.idx, { sp: 'pupa', atk: 2 * sv, hp: 2 * sv }, u); }
       if (u.combo === 'shishan') { comboEv(u); fired = true; summon(u.side, c.idx, { sp: 'lunar', atk: Math.max(1, Math.ceil(u.atk / 2)), hp: 3 }, u); }
     } else if (h === 'ally') {
       if (T.rally) { tg('rally'); buff(u, T.rally, T.rally); }
@@ -373,6 +440,7 @@ function battle(ta, tb, seed) {
           u.f.tuoke = 1; u.atk = Math.max(1, Math.ceil(u.atk / 2)); u.mx = Math.max(1, Math.ceil(u.mx / 2)); u.hp = u.mx; u.killer = null;
           comboEv(u); continue;
         }
+        if (has(u.side, 'buMie') && !sideF[u.side].buMie) { sideF[u.side].buMie = 1; u.hp = 1; u.killer = null; ev('trig', { uid: u.uid, mk: 'buMie' }); continue; }
         const arr = S[u.side], idx = arr.indexOf(u);
         if (idx >= 0) arr.splice(idx, 1);
         u.dead = true; ev('faint', { uid: u.uid });
@@ -383,6 +451,11 @@ function battle(ta, tb, seed) {
   }
 
   ev('begin');
+  for (const side of [0, 1]) {
+    if (has(side, 'luKou') && S[side][0]) { ev('trig', { uid: S[side][0].uid, mk: 'luKou' }); buff(S[side][0], 2, 0); }
+    if (has(side, 'tieBi')) S[side].forEach(u => shield(u, 2));
+    if (has(side, 'shaZhao')) S[side].forEach(u => { if (u.combo) buff(u, 3, 3); });
+  }
   const order = () => [...S[0], ...S[1]].filter(alive).sort((x, y) => y.atk - x.atk || x.side - y.side);
   for (const u of order()) if (alive(u)) hook(u, 'start', {});
   reap();
@@ -710,7 +783,10 @@ const $ = (s, r = document) => r.querySelector(s);
 const el = html => { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstElementChild; };
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-const fresh = () => ({ v: 1, started: false, name: '', team: [], realm: 0, nodes: 0, compass: [], sel: null, prog: 0, wh: 0, bank: 0, repair: 0, will: 3, willT: 0, willK: 0, total: 0, muts: 0, wins: 0, losses: 0, seed: (Math.random() * 1e9) | 0, step: 0, sound: false, speed: 1, theme: 'auto' });
+const fresh = () => ({ v: 2, started: false, name: '', team: [], realm: 0, nodes: 0, compass: [], sel: null, prog: 0, wh: 0, bank: 0, repair: 0, will: 3, willT: 0, willK: 0, total: 0, muts: 0, wins: 0, losses: 0, seed: (Math.random() * 1e9) | 0, step: 0, sound: false, speed: 1, theme: 'auto', stone: 5, stoneK: 0, shop: [], pending: null, marks: [], ghosts: null });
+const curCap = () => Math.max(slotCap(S.realm), S.team.length);
+const buyCost = () => S.marks.includes('shiJing') ? 2 : ECON.buy, refCost = () => S.marks.includes('shiJing') ? 0 : ECON.refresh;
+function migrate(s) { if (!s || !s.v) return null; if (s.v === 1) { s.v = 2; s.stone = 5 + Math.min(20, s.nodes || 0); s.will = Math.max(s.will || 0, 3); } return s.v === 2 ? s : null; }
 
 let S = fresh(), phase = 'yang', rate = 0, hot = false, inBattle = false, booted = false, skip = false, resetArm = 0;
 const src = new TokenSource(onTick);
@@ -771,6 +847,7 @@ function regenWill(tok) {   // 意志 = 体力：随时间和 token 回复，与
 }
 function feed(d, hotAmt) {
   S.total += d; let rest = d, hr = hotAmt || 0;
+  S.stoneK += d; while (S.stoneK >= ECON.tokPer * src.unit) { S.stoneK -= ECON.tokPer * src.unit; S.stone++; renderMeta(); renderShop(); }
   if (S.team.some(g => g.wound > 0)) {
     const part = d * 0.5; rest -= part; hr *= 0.5; S.repair += part;
     while (S.repair >= REPAIR * src.unit) {
@@ -790,12 +867,25 @@ function feed(d, hotAmt) {
 function resolveNode() {
   const node = S.compass[S.sel]; if (!node) return;
   const cost = node.cost * src.unit, wu = S.wh >= cost * 0.5;
-  if (!nodeOk(node.type, S.team)) { S.sel = null; S.prog = 0; S.compass = rollCompass(R(), S.team); renderPhase(); return; }
-  const res = applyNode(S.team, node, R(), { wuhuo: wu });
+  S.sel = null; S.prog = 0; S.wh = 0;
+  if (!nodeOk(node.type, S.team, curCap())) { S.compass = rollCompass(R(), S.team, false, curCap()); renderPhase(); return; }
+  let opts = nodeChoices(node, S.team, R(), S.realm);
+  if (opts && opts.length > 1) {   // 选择题：不弹窗，挂在罗盘位上，等玩家有空再点
+    if (node.type === 'devour') opts = opts.map(i => S.team[i].uid);
+    S.pending = { node, opts, wu, cost }; renderPhase(); renderHint(); snd('pluck'); save(); return;
+  }
+  finishNode(node, opts ? opts[0] : undefined, wu, cost);
+}
+function finishNode(node, pick, wu, cost) {
+  if (node.type === 'devour' && typeof pick === 'string') pick = S.team.findIndex(g => g.uid === pick);
+  S.pending = null;
+  if (!nodeOk(node.type, S.team, curCap()) || (node.type === 'devour' && !(pick > 0))) { S.compass = rollCompass(R(), S.team, false, curCap()); renderPhase(); renderHint(); save(); return; }
+  const res = applyNode(S.team, node, R(), { wuhuo: wu, pick, cap: curCap() });
   const tg = node.type === 'summon' ? S.team[S.team.length - 1] : S.team[0]; if (tg) tg.fed += cost;
-  S.muts += res.muts; S.nodes++; S.will = Math.min(WILL_MAX, S.will + 1); S.sel = null; S.prog = 0; S.wh = 0;
-  S.compass = rollCompass(R(), S.team);
-  animResolve(res, wu); renderPhase(); renderHint(); snd('pluck'); save();
+  S.muts += res.muts; S.nodes++; S.will = Math.min(WILL_MAX, S.will + 1); S.stone += ECON.node;
+  S.compass = rollCompass(R(), S.team, false, curCap());
+  S.shop = rollShop(R(), S.realm, S.shop);
+  animResolve(res, wu); renderPhase(); renderHint(); renderShop(); snd('pluck'); save();
 }
 async function animResolve(res, wu) {
   res.gone.forEach(uid => { const e = $(`.gu[data-uid="${uid}"]`); if (e) e.classList.add('eaten'); });
@@ -813,10 +903,10 @@ async function animResolve(res, wu) {
 function renderAll() {
   const app = $('#app');
   app.innerHTML = S.started ? mainHTML() : startHTML();
-  if (S.started) { renderSlots(); renderPhase(); renderHint(); meters(); }
+  if (S.started) { renderSlots(); renderShop(); renderPhase(); renderHint(); meters(); }
 }
 function startHTML() {
-  const r = makeRng(S.seed + ':start'), pool = SPECIES.slice(0, 10).map(s => s.id), picks = [];
+  const r = makeRng(S.seed + ':start'), pool = poolFor(0).slice(), picks = [];
   while (picks.length < 3) { const s = pool.splice(r.int(pool.length), 1)[0]; picks.push(s); }
   return `<div class="start"><div class="hero"><h1 class="title">蛊码</h1><p class="tag">烧 Token，养蛊，斗道。</p>
   <p class="lead">万物皆可为蛊，蛊即是道。你写代码烧掉的每一个 token，都在喂这一窝蛊；停手的时候，它们替你去斗。</p></div>
@@ -828,34 +918,68 @@ function mainHTML() {
   <div class="tools"><span class="realm" id="realm">${REALMS[S.realm]}</span><button class="ib" data-act="theme" id="bTheme" title="主题：自动 / 日 / 夜">${{ auto: '自', light: '日', dark: '夜' }[S.theme || 'auto']}</button><button class="ib" data-act="sound" id="bSound">${S.sound ? '声' : '静'}</button><button class="ib zhu" data-act="share">战帖</button></div></header>
   <section class="vein"><canvas id="vein"></canvas><div class="vinfo"><button class="chip" data-act="src" id="srcTag"></button><span id="rateTxt"></span><span id="fireTag" class="fire"></span><span class="grow"></span><span id="totTxt"></span></div></section>
   <div class="seg" id="demo">${[['coding', '写代码中'], ['wuhuo', '武火并发'], ['rest', '停手休息']].map(([m, t]) => `<button data-act="demo" data-m="${m}">${t}</button>`).join('')}</div>
-  <section class="qiao" id="qiao"><div class="qhead"><span class="lbl">空窍 <small>左为炉口</small></span><span id="qmeta"></span></div><div class="slots" id="slots"></div><p class="hint" id="hint"></p></section>
-  <section id="phase" class="phase"></section>
+  <section class="qiao" id="qiao"><div class="qhead"><span class="lbl">空窍 <small>左为炉口</small></span><span id="qmeta"></span></div><div class="slots" id="slots"></div><p class="marks" id="marks" data-act="marksInfo"></p><p class="hint" id="hint"></p></section>
+  <section class="shop" id="shop"></section><section id="phase" class="phase"></section>
   <footer class="foot"><button data-act="duelInput">粘贴坐标码应战</button><button data-act="reset" id="bReset">重开一局</button></footer>`;
 }
 function guCard(g, i) {
   const sk = skillOf(g);
   return `<button class="gu${g.wound ? ' hurt' : ''}${i === 0 ? ' lead' : ''}" data-act="gu" data-i="${i}" data-uid="${g.uid}">
-  <span class="art">${guSVG(g.sp)}</span>${sk ? `<span class="mseal${sk.named ? '' : ' pale'}">${esc(sk.n[0])}</span>` : ''}${g.q.length ? `<span class="qk">${g.q.map(q => QUIRKS[q].n[0]).join('')}</span>` : ''}
+  <span class="art">${guSVG(g.sp)}</span>${(g.star || 1) > 1 ? `<span class="star">★${g.star}</span>` : ''}${sk ? `<span class="mseal${sk.named ? '' : ' pale'}">${esc(sk.n[0])}</span>` : ''}${g.q.length ? `<span class="qk">${g.q.map(q => QUIRKS[q].n[0]).join('')}</span>` : ''}
   <span class="nm">${SP[g.sp].n}</span><span class="st"><i class="a">${effA(g)}</i><i class="h">${effH(g)}</i></span>
   <span class="tr">${trChars(g.tr)}${g.att.map(a => `<i class="att">${SP[a].ab}</i>`).join('')}</span>${g.wound ? `<span class="wd">伤${g.wound}</span>` : ''}</button>`;
 }
 function renderSlots() {
   const box = $('#slots'); if (!box) return;
-  let h = ''; for (let i = 0; i < SLOTS; i++) h += `<div class="slot">${S.team[i] ? guCard(S.team[i], i) : '<span class="empty">空</span>'}</div>`;
-  box.innerHTML = h;
-  const yq = Math.max(0, 100 - 12 * S.team.reduce((a, g) => a + (g.wound || 0), 0));
-  const m = $('#qmeta'); if (m) m.innerHTML = `元气 ${yq}% · 意志 <b class="will">${'◆'.repeat(S.will)}${'◇'.repeat(Math.max(0, WILL_MAX - S.will))}</b>`;
+  const cap = curCap(); let h = '';
+  for (let i = 0; i < SLOTS; i++) {
+    if (S.team[i]) h += `<div class="slot">${guCard(S.team[i], i)}</div>`;
+    else if (i < cap) h += '<div class="slot"><span class="empty">空</span></div>';
+    else { const r = SLOT_BY_REALM.findIndex(c => c > i); h += `<div class="slot"><span class="empty lock">锁<small>${REALMS[r] || ''}开</small></span></div>`; }
+  }
+  box.innerHTML = h; renderMeta();
   const rl = $('#realm'); if (rl) rl.textContent = REALMS[S.realm];
+  const mk = $('#marks'); if (mk) mk.textContent = S.marks.length ? '道痕 · ' + S.marks.map(k => MARKS[k].n).join(' · ') : '';
+}
+function renderMeta() {
+  const m = $('#qmeta'); if (!m) return;
+  const wd = S.team.reduce((a, g) => a + (g.wound || 0), 0);
+  m.innerHTML = `<b class="stone">◈ ${S.stone}</b> 元石 · 意志 <b class="will">${'◆'.repeat(S.will)}${'◇'.repeat(Math.max(0, WILL_MAX - S.will))}</b>${wd ? ` · 元气 ${Math.max(0, 100 - 12 * wd)}%` : ''}`;
+}
+function renderShop() {
+  const box = $('#shop'); if (!box || !S.started) return;
+  if (!S.shop || S.shop.length !== 3) S.shop = rollShop(R(), S.realm, []);
+  const cost = buyCost(), rc = refCost(), cap = curCap();
+  box.innerHTML = `<div class="ch"><span class="lbl">蛊市 <small>${REALMS[S.realm]}档 · ${poolFor(S.realm).length} 种 · 三只同种合炼升星</small></span><button class="ib mini-b" data-act="refresh"${S.stone >= rc ? '' : ' disabled'}>刷新${rc ? ' ' + rc + '◈' : ''}</button></div>
+  <div class="wares">${S.shop.map((w, i) => {
+    const sp = SP[w.sp], merge = S.team.filter(g => g.sp === w.sp && (g.star || 1) === 1).length >= 2, ok = !w.sold && S.stone >= cost && canBuy(S.team, w.sp, cap);
+    const tag = w.sold ? '已购' : !canBuy(S.team, w.sp, cap) ? '空窍已满' : (merge ? '合炼 ' : '') + cost + '◈';
+    return `<div class="ware${w.frozen ? ' frozen' : ''}${w.sold ? ' sold' : ''}${merge && !w.sold ? ' merge' : ''}"><button class="wbuy" data-act="buy" data-i="${i}"${ok ? '' : ' disabled'}><span class="art">${guSVG(w.sp)}</span><b>${sp.n}</b><span class="st"><i class="a">${sp.atk}</i><i class="h">${sp.hp}</i></span><span class="wt">${TRAITS[sp.t].n}${sp.v > 1 ? sp.v : ''}</span><span class="price">${tag}</span></button>${w.sold ? '' : `<button class="frz" data-act="freeze" data-i="${i}">${w.frozen ? '已冻结' : '冻结'}</button>`}</div>`;
+  }).join('')}</div>`;
+}
+function miniRow(t, cls = '') {
+  return `<div class="mini ${cls}">${t.map(g => { const sk = skillOf(g); return `<div class="mg"><span class="art">${guSVG(g.sp)}</span><b>${SP[g.sp].n}${(g.star || 1) > 1 ? '★' + g.star : ''}</b><span class="st"><i class="a">${effA(g)}</i><i class="h">${effH(g)}</i></span>${sk && sk.named ? `<em class="cs">${esc(sk.n)}</em>` : `<span class="tr">${trChars(g.tr)}</span>`}</div>`; }).join('')}</div>`;
+}
+function choiceHTML(p) {
+  const L = S.team[0], t = p.node.type;
+  const head = { mutate: `突变 · ${L ? SP[L.sp].n : ''} 择一词条`, summon: '招蛊 · 三选一', devour: `吞噬 · ${L ? SP[L.sp].n : ''} 吞下哪一只` }[t];
+  const items = p.opts.map((o, i) => {
+    if (t === 'mutate') { const e = L && L.tr.find(x => x[0] === o), v = e ? e[1] + 1 : 1; return `<button class="node opt" data-act="choose" data-i="${i}"><span class="nseal">${TRAITS[o].ch}</span><span class="nbody"><b>${TRAITS[o].n}${e ? ` · 升至 ${v} 层` : ''}</b><small>${TRAITS[o].trig} · ${TRAITS[o].d(v)}</small></span></button>`; }
+    if (t === 'summon') { const sp = SP[o]; return `<button class="node opt" data-act="choose" data-i="${i}"><span class="oart">${guSVG(o)}</span><span class="nbody"><b>${sp.n} <i class="a">${sp.atk}</i> <i class="h">${sp.hp}</i></b><small>${TRAITS[sp.t].d(sp.v)} · ${sp.lore}</small></span></button>`; }
+    const g = S.team.find(x => x.uid === o); if (!g || g === L) return '';
+    return `<button class="node opt" data-act="choose" data-i="${i}"><span class="oart">${guSVG(g.sp)}</span><span class="nbody"><b>吞下 ${SP[g.sp].n} <i class="a">${effA(g)}</i> <i class="h">${effH(g)}</i></b><small>${g.tr.map(x => TRAITS[x[0]].n + (x[1] > 1 ? x[1] : '')).join(' · ')}${g.att.length ? ' · 附' + g.att.length : ''}</small></span></button>`;
+  }).join('');
+  return `<div class="compass"><div class="ch"><span class="lbl">${head}</span><span class="bank">灵气照常累积</span></div><div class="nodes">${items}</div></div>`;
 }
 function nodeDesc(n) {
   const L = S.team[0] ? SP[S.team[0].sp].n : '', R1 = S.team[1] ? SP[S.team[1].sp].n : '', Z = S.team.length ? SP[S.team[S.team.length - 1].sp].n : '';
   switch (n.type) {
     case 'feed': return `全体依次 +3/+2/+1 血，${L} 另 +1 攻`;
     case 'temper': return `${L} +2 攻 +2 血`;
-    case 'mutate': return `${L} 觉醒一个随机词条`;
+    case 'mutate': return `${L} 觉醒一个词条，三选一`;
     case 'split': return `${L} 裂出六成之力的分身，词条全带`;
-    case 'devour': return `${L} 吞下 ${R1}：六成攻血 + 全部词条`;
-    case 'summon': { const s = SP[n.sp]; return `${s.atk}/${s.hp} · ${TRAITS[s.t].d(s.v)}`; }
+    case 'devour': return `${L} 吞下你挑的一只：六成攻血 + 全部词条`;
+    case 'summon': return `${REALMS[S.realm]}档蛊池三选一，入最右空窍`;
     case 'refine': {
       const g = S.team[0], z = S.team[S.team.length - 1]; let tip = '';
       if (g && z) { const c = comboOf({ sp: g.sp, att: [...g.att, z.sp] }); if (c && c !== comboOf(g)) tip = ` → 成杀招【${c.n}】`; }
@@ -866,19 +990,20 @@ function nodeDesc(n) {
 }
 function renderPhase() {
   const box = $('#phase'); if (!box) return;
-  if (S.compass.length === 0 || S.compass.every(n => !nodeOk(n.type, S.team))) { S.compass = rollCompass(R(), S.team); S.sel = null; S.prog = 0; }
+  if (S.compass.length === 0 || S.compass.every(n => !nodeOk(n.type, S.team, curCap()))) { S.compass = rollCompass(R(), S.team, false, curCap()); S.sel = null; S.prog = 0; }
   const canFight = S.will > 0, nextWill = Math.max(0, Math.ceil(WILL_SEC - S.willT / 1000));
   const tribLabel = S.realm < 5 ? `渡${TRIB_NAMES[Math.min(S.realm, 4)]}` : '五转大成';
-  box.innerHTML = `<div class="compass"><div class="ch"><span class="lbl">罗盘 · 三岔</span><span id="bank" class="bank"></span></div>
-  <div class="nodes">${S.compass.map((n, i) => { const ok = nodeOk(n.type, S.team), on = S.sel === i; return `<button class="node${on ? ' on' : ''}" data-act="node" data-i="${i}"${ok ? '' : ' disabled'}><span class="nseal">${NODES[n.type].ch}</span><span class="nbody"><b>${NODES[n.type].n}${n.type === 'summon' ? ' · ' + SP[n.sp].n : ''}</b><small>${esc(nodeDesc(n))}</small></span><span class="ncost">${fmtTok(n.cost * src.unit)}</span><span class="nbar"><i></i></span></button>`; }).join('')}</div></div>
+  box.innerHTML = (S.pending ? choiceHTML(S.pending) : `<div class="compass"><div class="ch"><span class="lbl">罗盘 · 三岔</span><span id="bank" class="bank"></span></div>
+  <div class="nodes">${S.compass.map((n, i) => { const ok = nodeOk(n.type, S.team, curCap()), on = S.sel === i; return `<button class="node${on ? ' on' : ''}" data-act="node" data-i="${i}"${ok ? '' : ' disabled'}><span class="nseal">${NODES[n.type].ch}</span><span class="nbody"><b>${NODES[n.type].n}</b><small>${esc(nodeDesc(n))}</small></span><span class="ncost">${fmtTok(n.cost * src.unit)}</span><span class="nbar"><i></i></span></button>`; }).join('')}</div></div>`) + `
   <div class="gate${canFight ? ' open' : ''}"><div class="gh"><span class="lbl">斗蛊</span><span class="gsub">${canFight ? `每场耗 1 点意志 · 余 ${S.will}` : `意志已尽 · 约 ${Math.ceil(nextWill / 60)} 分钟回 1 点，养蛊也会回`}</span></div>
-  <div class="gbtns"><button class="gbtn" data-act="trib"${canFight && S.realm < 5 ? '' : ' disabled'}><b>${tribLabel}</b><small>${S.realm < 5 ? `${REALMS[S.realm + 1]}境 Boss · 胜则升阶` : '已登顶'}</small></button><button class="gbtn" data-act="ghost"${canFight ? '' : ' disabled'}><b>斗幽灵</b><small>同阶阵容 · 胜则夺蛊</small></button></div></div>`;
+  <div class="gbtns"><button class="gbtn" data-act="trib"${canFight && S.realm < 5 ? '' : ' disabled'}><b>${tribLabel}</b><small>${S.realm < 5 ? `${REALMS[S.realm + 1]}境 Boss · 胜则升阶` : '已登顶'}</small></button><button class="gbtn" data-act="ghost"${canFight ? '' : ' disabled'}><b>斗幽灵</b><small>易 · 中 · 难 任选 · 胜得元石夺蛊</small></button></div></div>`;
   meters();
 }
 function renderHint() {
   const h = $('#hint'); if (!h) return;
   let t;
   if (S.team.some(g => g.wound)) t = '元气受损：一半 token 先拿去温养伤口。';
+  else if (S.pending) t = '罗盘停在一道选择题上。选好了，下一条路才会开。';
   else if (S.sel == null) t = S.nodes === 0 ? '选一条路。Token 流过，蛊沿路生长。' : '罗盘转好了，挑下一条路。顺序即流派。';
   else if (S.nodes >= 1 && S.will > 0) t = `${NODES[S.compass[S.sel].type].n}中。想打随时可以斗蛊，耗一点意志。`;
   else t = `${NODES[S.compass[S.sel].type].n}中：你写代码，它在长。`;
@@ -952,16 +1077,16 @@ function startBattle(kind, foe) {
   if (inBattle) return;
   let enemy, title, ename, erealm = S.realm;
   if (kind === 'trib') { if (S.realm >= 5) return; enemy = tribTeam(S.realm); ename = `${REALMS[S.realm + 1]}·${TRIB_NAMES[Math.min(S.realm, 4)]}`; title = ename.replace('·', ' · '); erealm = S.realm + 1; }
-  else if (kind === 'ghost') { const r = R(), gn = r.pick(GHOST_NAMES); enemy = genTeam(r, Math.max(1, S.nodes) + S.realm); ename = '幽灵·' + gn; title = '幽灵 · ' + gn; }
+  else if (kind === 'ghost') { enemy = foe.team; ename = '幽灵·' + foe.name; title = `幽灵 · ${foe.name}（${foe.label || ''}）`; }
   else { enemy = foe.team; ename = foe.name || '无名蛊师'; erealm = foe.realm || 0; title = '战帖 · ' + ename; }
   if (kind !== 'duel' && S.will <= 0) return;
   const mine = (kind === 'duel' && (!S.started || !S.team.length)) ? starterTeam() : S.team;
-  const ca = encodeTeam(mine, { name: S.name || '无名蛊师', realm: S.realm }), cb = encodeTeam(enemy, { name: ename, realm: erealm });
+  const ca = encodeTeam(mine, { name: S.name || '无名蛊师', realm: S.realm, marks: kind === 'duel' && !S.started ? [] : S.marks }), cb = encodeTeam(enemy, { name: ename, realm: erealm, marks: (foe && foe.marks) || [] });
   const seed = kind === 'duel' ? hashStr(ca + '|' + cb).toString(36) : ((S.seed ^ Math.imul(++S.step, 2654435761)) >>> 0).toString(36);
   const A = decodeTeam(ca), Bt = decodeTeam(cb);
-  const res = battle(A.team, Bt.team, 'r:' + seed);
+  const res = battle(A.team, Bt.team, 'r:' + seed, A.marks, Bt.marks);
   if (kind !== 'duel') S.will--;
-  save(); playBattle({ kind, title, res, enemy, foe, A, B: Bt, replay: [ca, cb, seed, kind[0]].join('.') });
+  save(); playBattle({ kind, title, res, enemy, foe, tier: foe && foe.tier, A, B: Bt, replay: [ca, cb, seed, kind[0]].join('.') });
 }
 function parseReplay(text) {
   const m = String(text || '').match(/r=([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)\.([0-9a-z]+)(?:\.([tgd]))?/); if (!m) return null;
@@ -1018,7 +1143,7 @@ async function animEv(e, ros, seen) {
     case 'dmg': { fxFloat(e.uid, e.n > 0 ? '-' + e.n : '', 'dmg', e.blk); const n = bnode(e.uid); if (n) { n.classList.remove('hit'); void n.offsetWidth; n.classList.add('hit'); } return D(e.k === 'hit' ? 50 : 190); }
     case 'buff': fxFloat(e.uid, e.sh ? `护+${e.sh}` : `+${e.a}/+${e.h}`.replace('/+0', '').replace('+0/', ''), 'buff'); return D(100);
     case 'trig': {
-      const lab = e.id ? TRAITS[e.id].n : QUIRKS[e.q].n, ch = e.id ? TRAITS[e.id].ch : QUIRKS[e.q].n[0];
+      const lab = e.id ? TRAITS[e.id].n : e.mk ? '道痕·' + MARKS[e.mk].n : QUIRKS[e.q].n, ch = e.id ? TRAITS[e.id].ch : e.mk ? '道' : QUIRKS[e.q].n[0];
       const n = bnode(e.uid); if (n) { const g = el(`<span class="tg">${ch}</span>`); n.appendChild(g); setTimeout(() => g.remove(), 700); }
       blog(`${nm(e.uid)} · ${lab}`); return D(270);
     }
@@ -1053,14 +1178,18 @@ function showResult(B) {
   let txt = '', loot = [], btns = '';
   if (B.kind === 'replay') {}
   else if (B.kind === 'trib') {
-    if (win) { S.realm++; S.wins++; S.team.forEach(g => { g.atk++; g.hp++; }); txt = `渡劫成功，晋${REALMS[S.realm]}。全体蜕变 +1/+1。`; }
+    if (win) {
+      S.realm++; S.wins++; S.team.forEach(g => { g.atk++; g.hp++; }); S.ghosts = null; S.shop = rollShop(R(), S.realm, S.shop);
+      txt = `渡劫成功，晋${REALMS[S.realm]}。全体蜕变 +1/+1${slotCap(S.realm) > slotCap(S.realm - 1) ? '，空窍多开一格' : ''}。择一道痕，伴你整局：`;
+      loot = rollMarks(R(), S.marks).map(k => ({ k: 'mark', id: k, t: `道痕【${MARKS[k].n}】${MARKS[k].d}` }));
+    }
     else if (draw) txt = '劫云散去，未分胜负。';
     else { S.losses++; wound(); txt = '渡劫失败：元气受损，全体伤 1 层，主蛊降阶。写代码温养可愈。'; }
   } else if (B.kind === 'ghost') {
     if (win) {
       S.wins++; const r = R(), L = S.team[0];
       const atts = [...new Set(B.enemy.flatMap(g => g.att))], sps = [...new Set(B.enemy.map(g => g.sp))];
-      if (S.team.length < SLOTS) { const sp = atts.length ? r.pick(atts) : r.pick(sps); loot.push({ k: 'take', sp, t: `夺蛊：${SP[sp].n} 入空窍` }); }
+      if (S.team.length < curCap()) { const sp = atts.length ? r.pick(atts) : r.pick(sps); loot.push({ k: 'take', sp, t: `夺蛊：${SP[sp].n} 入空窍` }); }
       const trs = [...new Set(B.enemy.flatMap(g => g.tr.map(t => t[0])))].filter(id => { const e = L && L.tr.find(t => t[0] === id); return L && (e ? e[1] < MAXV : L.tr.length < MAXTR); });
       while (loot.length < 3 && trs.length) { const id = trs.splice(r.int(trs.length), 1)[0]; loot.push({ k: 'print', id, t: `拓印【${TRAITS[id].n}】→ ${SP[L.sp].n}` }); }
       if (!loot.length) loot.push({ k: 'boon', t: `${L ? SP[L.sp].n : '主蛊'} +2/+2` });
@@ -1076,6 +1205,11 @@ function showResult(B) {
     window.__guFoe = win || draw ? B.A : B.B;
     btns = `<button class="zhu" data-act="duelWinner">挑战胜者阵容</button>` + (S.started ? '' : `<button data-act="closeBattle">开始养自己的蛊</button>`);
   }
+  let gain = 0;
+  if (B.kind === 'trib' || B.kind === 'ghost') gain = win ? ECON.win[B.kind === 'trib' ? 'trib' : (B.tier || 'mid')] : ECON.lose;
+  if (gain && S.marks.includes('shengCai')) gain = Math.ceil(gain * 1.5);
+  if (gain) { S.stone += gain; txt += ` 元石 +${gain}。`; }
+  if (B.kind === 'ghost') S.ghosts = null;
   B.loot = loot; window.__guB = B;
   const panel = el(`<div class="result"><div class="rseal${win ? '' : ' lose'}">${win ? '胜' : draw ? '和' : '败'}</div><p class="rtxt">${txt}</p>
   ${loot.map((l, i) => `<button class="loot" data-act="loot" data-i="${i}">${esc(l.t)}</button>`).join('')}
@@ -1084,7 +1218,7 @@ function showResult(B) {
 }
 function closeBattle() {
   const b = $('#battle'); if (b) b.remove(); inBattle = false;
-  if (S.started) { if (S.compass.some(n => !nodeOk(n.type, S.team))) { S.compass = rollCompass(R(), S.team); S.sel = null; S.prog = 0; } renderAll(); }
+  if (S.started) { if (S.compass.some(n => !nodeOk(n.type, S.team, curCap()))) { S.compass = rollCompass(R(), S.team, false, curCap()); S.sel = null; S.prog = 0; } renderAll(); }
   else renderAll();
   save();
 }
@@ -1104,13 +1238,18 @@ function openGu(i) {
   ${sk ? `<h4>杀招</h4><div class="skill"><span class="seal${sk.named ? '' : ' pale'}">${esc(sk.n)}</span><p>${esc(sk.d)}<br><small>附蛊：${g.att.map(a => SP[a].n).join('、')}</small></p></div>` : ''}
   <h4>算力履历</h4><p class="hist">累计喂养 <b>${fmtTok(g.fed)}</b> token · 突变 <b>${g.mut || 0}</b> 次</p>
   <div class="row2"><button data-act="mv" data-i="${i}" data-d="-1"${i === 0 ? ' disabled' : ''}>← 左移</button><button data-act="mv" data-i="${i}" data-d="1"${i >= S.team.length - 1 ? ' disabled' : ''}>右移 →</button></div>
-  <p class="sm">左为炉口：多数罗盘节点作用在最左那只；炼附取最右那只。</p>
+  <div class="row2"><button data-act="sell" data-i="${i}"${S.team.length > 1 ? '' : ' disabled'}>出售 +${sellValue(g)}◈</button></div>
+  <p class="sm">左为炉口：多数罗盘节点作用在最左那只；炼附取最右那只。${(g.star || 1) > 1 ? ` ★${g.star}：词条位 ${trCap(g)} 个。` : ''}</p>
   <details class="book"><summary>杀招配方（${COMBOS.length}）</summary><ul>${COMBOS.map(c => `<li><b>${c.n}</b>${c.need.map(x => SP[x].n).join(' + ')}</li>`).join('')}</ul></details>`);
 }
 function shareText(code) { return `我在《蛊码》养了一窝蛊（${REALMS[S.realm]}），敢接战帖吗？\n界壁坐标码：${code}`; }
 const SHARE_BASE = 'https://1596941391qq.github.io/gu-code/';
 function shareURL(code) { return (/^https?:/.test(location.protocol) ? location.origin + location.pathname : SHARE_BASE) + '#c=' + code; }
-function myCode() { return encodeTeam(S.team.length ? S.team : starterTeam(), { name: S.name, realm: S.realm }); }
+function myCode() { return encodeTeam(S.team.length ? S.team : starterTeam(), { name: S.name, realm: S.realm, marks: S.marks }); }
+function openGhosts() {
+  if (!S.ghosts || S.ghosts.realm !== S.realm) { const r = R(); S.ghosts = { realm: S.realm, list: ghostTrio(r, Math.max(1, S.nodes) + S.realm, S.realm).map(o => ({ tier: o.tier, label: o.label, name: o.name, code: encodeTeam(o.team, { name: '幽灵·' + o.name, realm: S.realm }) })) }; save(); }
+  sheet(`<h3>斗幽灵 · 择一对手</h3><p class="sm">阵容摆在明面上，越难元石越多；胜了还能从残躯上夺一样。每场耗 1 点意志（余 ${S.will}）。</p>${S.ghosts.list.map((o, i) => { const d = decodeTeam(o.code); return `<div class="foeopt"><div class="fh"><b class="tier t-${o.tier}">${o.label}</b><span class="fn">${esc(o.name)}</span><span class="rw">胜 +${ECON.win[o.tier]}◈</span></div>${miniRow(d.team, 'foe')}<button class="zhu" data-act="ghostGo" data-i="${i}"${S.will > 0 ? '' : ' disabled'}>应战</button></div>`; }).join('')}`);
+}
 let cardURL = '';
 async function openShare() {
   const code = myCode(), url = shareURL(code);
@@ -1149,7 +1288,7 @@ function checkHash() {
 
 // ---------- 交互 ----------
 const ACT = {
-  pick(a) { S.team = [newGu(a.dataset.sp)]; S.started = true; S.compass = rollCompass(R(), S.team, true); save(); renderAll(); },
+  pick(a) { S.team = [newGu(a.dataset.sp)]; S.started = true; S.shop = rollShop(R(), 0, []); S.compass = rollCompass(R(), S.team, true, curCap()); save(); renderAll(); },
   node(a) {
     const i = +a.dataset.i; if (S.sel === i) return;
     if (S.sel != null) S.bank = Math.min(bankCap(), S.bank + S.prog);
@@ -1165,12 +1304,26 @@ const ACT = {
   theme() { S.theme = { auto: 'light', light: 'dark', dark: 'auto' }[S.theme || 'auto']; applyTheme(); save(); },
   sound() { S.sound = !S.sound; $('#bSound').textContent = S.sound ? '声' : '静'; save(); snd('pluck'); },
   share() { openShare(); },
-  trib() { startBattle('trib'); }, ghost() { startBattle('ghost'); },
+  trib() { startBattle('trib'); }, ghost() { openGhosts(); },
+  ghostGo(a) { const o = S.ghosts && S.ghosts.list[+a.dataset.i]; if (!o || S.will <= 0) return; const d = decodeTeam(o.code); closeSheet(); startBattle('ghost', { team: d.team, name: o.name, tier: o.tier, label: o.label }); },
+  choose(a) { const p = S.pending; if (!p) return; finishNode(p.node, p.opts[+a.dataset.i], p.wu, p.cost); },
+  buy(a) {
+    const w = S.shop[+a.dataset.i], cost = buyCost(); if (!w || w.sold || S.stone < cost) return;
+    const r = buyGu(S.team, w.sp, curCap(), S.marks, R()); if (!r) return;
+    S.stone -= cost; w.sold = true; w.frozen = false;
+    renderSlots(); renderShop(); renderPhase(); save(); snd('pluck');
+    setTimeout(() => { if (r.merged.length) { const g = r.merged[r.merged.length - 1]; fxFloat(g.uid, `合炼 ★${g.star}`, 'mut'); stampIn($('#qiao'), '合炼', false, 'side'); } else fxFloat(r.gu.uid, '入窍', 'new'); }, 60);
+  },
+  refresh() { const c = refCost(); if (S.stone < c) return; S.stone -= c; S.shop = rollShop(R(), S.realm, S.shop); renderMeta(); renderShop(); save(); },
+  freeze(a) { const w = S.shop[+a.dataset.i]; if (w) { w.frozen = !w.frozen; renderShop(); save(); } },
+  sell(a) { const i = +a.dataset.i, g = S.team[i]; if (!g || S.team.length <= 1) return; S.stone += sellValue(g); S.team.splice(i, 1); closeSheet(); renderSlots(); renderShop(); renderPhase(); save(); },
+  marksInfo() { if (S.marks.length) sheet(`<h3>道痕</h3><p class="sm">整局被动，渡劫成功时三选一。</p><ul>${S.marks.map(k => `<li><b>${MARKS[k].n}</b>${MARKS[k].d}</li>`).join('')}</ul>`); },
   speed() { S.speed = S.speed === 1 ? 2 : 1; $('#bspd').textContent = S.speed + '×'; save(); },
   skip() { skip = true; },
   loot(a) {
     const l = window.__guB.loot[+a.dataset.i], L = S.team[0];
-    if (l.k === 'take' && S.team.length < SLOTS) S.team.push(newGu(l.sp));
+    if (l.k === 'mark') { if (!S.marks.includes(l.id)) S.marks.push(l.id); }
+    else if (l.k === 'take' && S.team.length < curCap()) S.team.push(newGu(l.sp));
     else if (l.k === 'print' && L) addTrait(L, l.id, 1);
     else if (L) { L.atk += 2; L.hp += 2; }
     closeBattle();
@@ -1187,7 +1340,7 @@ const ACT = {
   },
   duelInput() { openDuelInput(); },
   duelGo() { if (!openLinkText($('#duelIn').value)) $('#duelErr').textContent = '坐标码或复盘链接不对，或者被截断了。'; },
-  replayGo() { const rp = window.__guRp; closeSheet(); playBattle({ kind: 'replay', title: `复盘 · ${rp.B.name || '无名'} 对 ${rp.A.name || '无名'}`, res: battle(rp.A.team, rp.B.team, 'r:' + rp.seed), A: rp.A, B: rp.B, enemy: rp.B.team, replay: rp.replay }); },
+  replayGo() { const rp = window.__guRp; closeSheet(); playBattle({ kind: 'replay', title: `复盘 · ${rp.B.name || '无名'} 对 ${rp.A.name || '无名'}`, res: battle(rp.A.team, rp.B.team, 'r:' + rp.seed, rp.A.marks, rp.B.marks), A: rp.A, B: rp.B, enemy: rp.B.team, replay: rp.replay }); },
   duelWinner() { closeBattle(); startBattle('duel', window.__guFoe); },
   copyReplay(a) {
     const B = window.__guB, w = B.res.winner, an = B.A.name || '无名', bn = B.B.name || '无名';
@@ -1207,7 +1360,7 @@ document.addEventListener('click', e => {
 
 // ---------- 启动 ----------
 function boot(saved, pending) {
-  if (saved && saved.v === 1) S = Object.assign(fresh(), saved);
+  const mg = migrate(saved); if (mg) S = Object.assign(fresh(), mg);
   if (!document.getElementById('gu-defs')) document.body.insertAdjacentHTML('afterbegin', `<svg id="gu-defs" width="0" height="0" style="position:absolute" aria-hidden="true"><defs>${ART_DEFS}</defs></svg>`);
   applyTheme(); if (VSC && window.MutationObserver) new MutationObserver(applyTheme).observe(document.body, { attributes: true, attributeFilter: ['class'] });
   booted = true; renderAll(); requestAnimationFrame(veinLoop);
