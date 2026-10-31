@@ -2631,7 +2631,8 @@ const ROWS = 3, COLS = 3;
 // RES_K：道共鸣数值整体折算（design.md 2.6：道共鸣只给轻量加成，配合比堆道重要）
 const RES_K = 0.5;
 // 状态与杀招的总体强度（模拟按道、杀招、单种蛊的胜率调）：灼烧每轮伤害、毒每轮伤害、寒每层减速、杀招效果
-const TUNE = { burn: 1, psn: 1, chill: 0.15, combo: 1 };
+// actUp：主动技每高一转效果涨多少（没写 up 的）；upMul：所有写了 up 的效果（被动技等）每转涨幅再乘这个数。压低这两个，转数集中的阵容就没那么占便宜
+const TUNE = { burn: 1, psn: 1, chill: 0.15, combo: 1, actUp: 0.06, upMul: 0.5 };
 const GP = { act: 34, charge: 60, hit: 15, cap: 100, start: 20 };
 const CRIT = { p: 0.1, mul: 1.5 };
 const MAXOPS = 20000, MAXACT = 900, CAP = SLOTS, INFLICT = new Set(['psn', 'para', 'burn', 'chill', 'stun', 'web', 'mark', 'seal', 'tie']);
@@ -2737,8 +2738,8 @@ const ivOf = spd => DIST * 100 / Math.max(20, 100 + (spd - 100) * SPD_K);
 // skillText(sp, rank, opts) → [{ kind: 'passive' | 'active' | 'aw3' | 'aw5', n, text, locked?, at?, lines? }]
 // text 是数据里的大白话说明（随转数变的数已换成这一转的值），后面括号补一句这一转的实际数字（按 statFor 的卡面攻血算）。
 // 觉醒没到的标 locked: true，数字按觉醒那一转（三转 / 五转）算，方便预告。opts.est === false 时不补括号。
-const ACT_UP = 0.12;
-const scaleAt = (e, r, isAct) => 1 + (e.up != null ? e.up : isAct ? ACT_UP : 0) * Math.max(0, r - 1);
+const scaleAt = (e, r, isAct) => 1 + (e.up != null ? e.up * TUNE.upMul : isAct ? TUNE.actUp : 0) * Math.max(0, r - 1);
+const natAt = r => 1 + (natK(r) - 1) * TUNE.upMul;   // 被动技〔〕里的数随转数涨，和引擎同一个口径
 const actPct = (t, k) => k === 1 ? t : t.replace(/(攻击|攻 ?\+|最大血量|血量的?) ?(\d+)%/g, (m, w, x) => `${w}${/\+$/.test(w) ? '' : ' '}${Math.round(+x * k)}%`.replace('  ', ' '));
 function effNote(list, r, isAct, st) {
   const parts = [];
@@ -2773,14 +2774,14 @@ function skillText(sp, rank, opts = {}) {
   const r0 = Math.max(baseRank(sp), Math.min(6, rank | 0 || baseRank(sp))), est = opts.est !== false;
   const stAt = r => { if (opts.st && r === r0) return opts.st; const x = statFor(sp, r); return { atk: x.atk, mx: x.hp }; };   // 血按卡面血写（蛊详情显示的是卡面攻血）
   const nk = natOf(sp), nt = nk && NEW_TRAITS[nk], act = prof(sp).act, out = [];
-  const natD = r => nt ? (nt.src ? nt.src.d.replace(/〔(\d+)〕/g, (_, x) => String(Math.round(+x * natK(r)))) : nt.d ? nt.d(1, 2) : '') : '';
-  const natAw = (i, r) => nt && nt.src && nt.src.aw && nt.src.aw[i] ? nt.src.aw[i].replace(/〔(\d+)〕/g, (_, x) => String(Math.round(+x * natK(r)))) : '';
+  const natD = r => nt ? (nt.src ? nt.src.d.replace(/〔(\d+)〕/g, (_, x) => String(Math.round(+x * natAt(r)))) : nt.d ? nt.d(1, 2) : '') : '';
+  const natAw = (i, r) => nt && nt.src && nt.src.aw && nt.src.aw[i] ? nt.src.aw[i].replace(/〔(\d+)〕/g, (_, x) => String(Math.round(+x * natAt(r)))) : '';
   if (nt) out.push({ kind: 'passive', n: nt.n, trig: nt.trig || '', text: natD(r0) + (est ? effNote(nt.eff, r0, false, stAt(r0)) : '') });
-  if (act) { const k = 1 + ACT_UP * (r0 - 1); out.push({ kind: 'active', n: act.n, cap: act.cap || GP.cap, text: actPct(act.d || '', k) + (est ? effNote(act.eff, r0, true, stAt(r0)) : '') }); }
+  if (act) { const k = 1 + TUNE.actUp * (r0 - 1); out.push({ kind: 'active', n: act.n, cap: act.cap || GP.cap, text: actPct(act.d || '', k) + (est ? effNote(act.eff, r0, true, stAt(r0)) : '') }); }
   [3, 5].forEach((at, i) => {
     const r = Math.max(r0, at), st = stAt(r), lines = [];
     const pt = natAw(i, r); if (pt) lines.push({ of: 'passive', n: nt.n, text: pt + (est ? effNote(nt.awEff && nt.awEff[i], r, false, st) : '') });
-    if (act && act.awd && act.awd[i]) lines.push({ of: 'active', n: act.n, text: actPct(act.awd[i], 1 + ACT_UP * (r - 1)) + (est ? effNote(act.aw && act.aw[i], r, true, st) : '') });
+    if (act && act.awd && act.awd[i]) lines.push({ of: 'active', n: act.n, text: actPct(act.awd[i], 1 + TUNE.actUp * (r - 1)) + (est ? effNote(act.aw && act.aw[i], r, true, st) : '') });
     if (!lines.length) return;
     out.push({ kind: i ? 'aw5' : 'aw3', n: i ? '五转觉醒' : '三转觉醒', at, locked: r0 < at, lines, text: lines.map(l => `${l.of === 'active' ? '主动技' : '被动技'}「${l.n}」：${l.text}`).join('；') });
   });
@@ -3028,7 +3029,7 @@ function battle(ta, tb, seed, opts = {}) {
     if ((m = x.match(/^kind=(\w+)$/))) return c.kind === m[1];
     return true;
   });
-  const scaleOf = (u, e, src) => src.mul || (1 + (e.up != null ? e.up : src.kind === 'act' ? 0.12 : 0) * Math.max(0, (u.rank || 1) - 1));
+  const scaleOf = (u, e, src) => src.mul || (1 + (e.up != null ? e.up * TUNE.upMul : src.kind === 'act' ? TUNE.actUp : 0) * Math.max(0, (u.rank || 1) - 1));
   const amount = (u, t, e, c, k) => {
     let v = 0;
     if (e.atk) v += u.atk * e.atk; if (e.a0) v += (u.a0 || u.atk) * e.a0; if (e.mx) v += u.mx * e.mx / (e.op === 'dmg' || e.op === 'st' ? OFF_MX : 1);   // 拿自己的最大血量打人（伤害、毒灼）按 1/OFF_MX 算；护体、回血照旧按血量的百分比
@@ -3229,7 +3230,7 @@ function battle(ta, tb, seed, opts = {}) {
     if (u.f.stun > 0) { u.f.stun--; ev('skip', { uid: u.uid, k: 'stun' }); return; }
     if (u.act && u.gp >= u.gpMax) {
       const L = u.actEff || u.act.eff, pre = L[0] && L[0].op !== 'summon' ? targetsOf(u, L[0], {}, null) : [];
-      const ka = 1 + ACT_UP * Math.max(0, (u.rank || 1) - 1), line = lite ? '' : [u.act.d, ...(u.act.awd || []).slice(0, u.aw)].filter(Boolean).map(t => liveLine(t, ka, u.atk, u.mx)).join('；');
+      const ka = 1 + TUNE.actUp * Math.max(0, (u.rank || 1) - 1), line = lite ? '' : [u.act.d, ...(u.act.awd || []).slice(0, u.aw)].filter(Boolean).map(t => liveLine(t, ka, u.atk, u.mx)).join('；');
       ev('cast', { uid: u.uid, n: u.act.n, fx: u.act.fx || 'pounce', tg: pre.map(x => x.uid), cells: cellsOf(pre), shape: L[0] && L[0].shape || 'one', line });
       u.gp = 0; u.casts++; u.st.casts = u.casts;
       const prev = cur; cur = u; runList(u, L, {}, { kind: 'act', key: 'act' }, pre.length ? pre : null); cur = prev;
