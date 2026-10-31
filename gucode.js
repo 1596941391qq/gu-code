@@ -2623,7 +2623,7 @@ const { HPK, DIST, SPD_K, MAXROUND, OFF_MX, RES_K, TUNE, GP, CRIT, NAT_K, battle
 // SPD_K：速对出手间隔的影响系数（速 120 的蛊出手频率 = 1 + 0.2 × SPD_K 倍），让速度有意义又不一边倒
 const HPK = 1;   // 卡面血就是战斗里的血（core.HP_SCALE 已把卡面血乘 4）
 const DIST = 100;
-const SPD_K = 0.18;
+const SPD_K = 0.10;
 const MAXROUND = 30;
 // OFF_MX：拿自己最大血量打人（伤害、毒灼）时血量按 1/OFF_MX 算。血量大约是攻的 8 倍，不折算的话「最大血量 16% 的伤害」会比「攻击 16%」强好几倍。和 HPK 无关，HPK 改成 1 以后照样生效
 const OFF_MX = 4;
