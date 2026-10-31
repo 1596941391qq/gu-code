@@ -97,6 +97,7 @@ function tuBag(t) {
 // ───────────── 整张地图（杀戮尖塔式）：从下往上 10 层，最顶上是首领；一层一行、三条路三列 ─────────────
 // 当前位置描朱，能走的下一格高亮可点，走过的路变暗；正在走的那段路，朱线从起点往目标长（进度条）
 const TU_H = 40, tuX = lane => [50, 150, 250][lane], tuPct = lane => ['16.667%', '50%', '83.333%'][lane];
+const tuTip = (t, k) => (k === 'camp' ? `篝火：歇脚的地方，全队回满血的 ${Math.round(campOf(t) * 100)}%（不是炎道）` : ROOMS[k].tip);   // 地图格子和图例的悬停说明
 function tuWalkPc(t) { const need = needTok(t, tuUnit()); return need ? Math.min(1, t.prog / need) : 0; }
 function tuMapView(t, S) {
   const map = tripMapOf(t), N = map.length, H = TU_H, Ht = (N + 1) * H, reach = tripReach(t), walking = t.pick != null && !t.room, path = t.path || [];
@@ -117,7 +118,7 @@ function tuMapView(t, S) {
     const R = ROOMS[r.type], cost = r.cost * tuUnit() * (d === t.d ? t.short || 1 : 1) * roadOf(t);
     const past = d < t.d && path[d] === r.lane, skip = d < t.d && !past, cur = d === t.d && t.pick === r.lane, can = !walking && d === t.d && reach.includes(r.lane);
     const cls = `tu-cell t-${r.type}${past ? ' past' : ''}${skip ? ' skip' : ''}${cur ? ' cur' : ''}${can ? ' reach' : ''}${!past && !cur && !can && d <= t.d ? ' off' : ''}`;
-    const tip = `第 ${d + 1} 层 · ${R.n}：${R.d}${d >= t.d ? `\n路程 ${fmtTok(cost)} 元气` : ''}`;
+    const tip = `第 ${d + 1} 层 · ${tuTip(t, r.type)}${d >= t.d ? `\n路程 ${fmtTok(cost)} 元气` : ''}`;
     const pop = r.type === 'boss' && m.boss ? `<span class="tu-pop"><b>${tuEsc(m.boss.n)}</b>${m.mechs.map(x => `<small>机制「${tuEsc(x.n)}」：${tuEsc(x.d)}</small>`).join('')}<span class="tu-pop-team">${m.boss.team.map(g => `<i title="${tuEsc(tuGuN(g))}">${guSVG(g.sp, { rank: g.rank })}<em>${RANK.ch[g.rank]}</em></i>`).join('')}</span></span>` : '';
     const tag = can ? 'button' : 'span', at = `style="left:${tuPct(r.lane)};top:${y(d)}px"`;
     cells.push(`<${tag} class="${cls}" ${at}${can ? ` data-trip="pick" data-lane="${r.lane}"` : ''} title="${tuEsc(pop ? '' : tip)}"><b class="tu-seal">${R.ch}</b>${can ? `<small>${fmtTok(cost)}</small>` : ''}${pop}</${tag}>`);
@@ -126,7 +127,8 @@ function tuMapView(t, S) {
   const r = curRoom(t), need = needTok(t, tuUnit());
   const cap = walking ? `<p class="tu-cap tu-walkcap"><span>走向第 ${t.d + 1} 层的${ROOMS[r.type].n}</span><small id="tuProg">${fmtTok(t.prog)} / ${fmtTok(need)} 元气</small></p><p class="tu-hint">写代码的 token 推着蛊往前走（朱线就是进度）。</p>`
     : `<p class="tu-cap tu-walkcap"><span>点亮的格子可以走</span><small>格子下的数字是路程</small></p><p class="tu-hint">路程先花洞府攒着的元气（现在 ${fmtTok(S.bank)}），不够就等你写代码。</p>`;
-  return `<div class="tu-mapwrap"><div class="tu-mapcol"><div class="tu-scroll"><div class="tu-tower" style="height:${Ht}px"><svg class="tu-lines" viewBox="0 0 300 ${Ht}" preserveAspectRatio="none" aria-hidden="true">${lines.join('')}</svg>${cells.join('')}</div></div></div>${tuSide(t)}</div>${cap}`;
+  const legend = `<p class="tu-legend">${['fight', 'elite', 'event', 'camp', 'market', 'bless', 'boss'].map(k => `<span title="${tuEsc(tuTip(t, k))}"><b class="tu-seal t-${k}">${ROOMS[k].ch}</b>${ROOMS[k].n}<small>${ROOMS[k].k}</small></span>`).join('')}</p>`;
+  return `<div class="tu-mapwrap"><div class="tu-mapcol"><div class="tu-scroll"><div class="tu-tower" style="height:${Ht}px"><svg class="tu-lines" viewBox="0 0 300 ${Ht}" preserveAspectRatio="none" aria-hidden="true">${lines.join('')}</svg>${cells.join('')}</div></div></div>${tuSide(t)}</div>${legend}${cap}`;
 }
 // 地图旁边常驻：天象、首领（机制 + 阵容）、劫数、手里的祝福和出征食物
 function tuSide(t) {
@@ -190,6 +192,8 @@ function tuAsk(t) {
   return `<div class="tu-panel"><h3>退出秘境？</h3><p>${items.length ? `战利品袋里的全部带回：${tuEsc(items.join('、'))}。` : '战利品袋是空的。'}活着的蛊回洞府就养好伤。这一趟不算渡劫。</p>
     <div class="tu-main"><button class="zhu big" data-trip="fleeYes">退出秘境</button><button class="tu-sec" data-trip="fleeNo">继续走</button></div></div>`;
 }
+// 结算页一句：这一趟的天象、劫数、拿过的祝福
+const tuTripSum = t => { const m = tripMods(t), bl = (t.bless || []).map(x => BLESS[x.id] && BLESS[x.id].n).filter(Boolean); return [m.sky ? `天象「${m.sky.n}」` : '', m.kalpa ? m.kalpaName : '', bl.length ? `祝福：${bl.join('、')}` : ''].filter(Boolean).map(tuEsc).join(' · ') + (m.sky || m.kalpa || bl.length ? '。' : ''); };
 function tuEnd(t, by, S) {
   const e = t.end, head = { clear: ['渡劫成功', '闯到了最深处，赢了首领'], wipe: ['渡劫失败', '打输了一场，全队永久死亡'], retreat: ['退出秘境', '带着战利品回洞府'] }[e.why] || ['回洞府', ''];
   const first = e.cleared ? landReward(t.land, { realm: S.realm, best: tuBest(S, t.land), kalpa: t.kalpa }).first : [];   // 第一次渡过：晋境界、开放劫一（打到新的劫：开放下一劫）
@@ -200,7 +204,7 @@ function tuEnd(t, by, S) {
   const got = [...e.loot.gu.map(g => `<li><span class="tu-art">${guSVG(g.sp, { rank: g.rank })}</span><span>${tuEsc(tuGuN(g))}${tag('gu', g)}</span><small>放进蛊囊</small></li>`), ...e.loot.foods.map(id => `<li><b class="tu-seal">食</b><span>${tuEsc(tuFood(id))}${tag('food', id)}</span><small>放进食物架</small></li>`)];
   const lost = e.lost && !lootEmpty(e.lost) ? `<p class="tu-hint">丢在秘境里的：${tuEsc([...e.lost.gu.map(tuGuN), ...e.lost.foods.map(tuFood)].join('、'))}</p>` : '';
   const back = e.survivors.map(u => by[u]).filter(Boolean).map(g => tuEsc(SP[g.sp].n)), saved = (e.saved || []).map(u => by[u]).filter(Boolean).map(g => tuEsc(SP[g.sp].n));
-  return `<div class="tu-panel tu-end w-${e.why}"><p class="tu-eyebrow">${head[0]}</p><h3>${head[1]}</h3><p>这一趟走了 ${t.rooms} 个房间，最深到第 ${deep} 层。${back.length ? `回来的：${back.join('、')}，回洞府就养好伤。` : ''}</p>${e.wiped ? '' : `<p class="tu-saved">${saved.length ? `救回 ${saved.length} 只：${saved.join('、')}（倒下过，但那一场打赢了）` : '这一趟没有蛊倒下过。'}</p>`}${first.length ? `<ul class="tu-first">${first.map(x => `<li>${tuEsc(x)}</li>`).join('')}</ul>` : ''}
+  return `<div class="tu-panel tu-end w-${e.why}"><p class="tu-eyebrow">${head[0]}</p><h3>${head[1]}</h3><p>这一趟走了 ${t.rooms} 个房间，最深到第 ${deep} 层。${tuTripSum(t)}${back.length ? `回来的：${back.join('、')}，回洞府就养好伤。` : ''}</p>${e.wiped ? '' : `<p class="tu-saved">${saved.length ? `救回 ${saved.length} 只：${saved.join('、')}（倒下过，但那一场打赢了）` : '这一趟没有蛊倒下过。'}</p>`}${first.length ? `<ul class="tu-first">${first.map(x => `<li>${tuEsc(x)}</li>`).join('')}</ul>` : ''}
     <p class="tu-cap">带回洞府</p>${got.length ? `<ul class="tu-got">${got.join('')}</ul>` : '<p class="tu-hint">什么也没带回。</p>'}${lost}
     ${e.fallen.length ? `<p class="tu-cap">全队永久死亡</p><ul class="tu-gone">${e.fallen.map(f => `<li><span class="tu-art gone">${guSVG(f.sp, { rank: f.rank })}</span><span><b>${tuEsc(tuGuN(f))}</b><small>${tuEsc(epitaph(f))}</small></span></li>`).join('')}</ul>` : ''}
     <div class="tu-main"><button class="zhu big" data-trip="home">回洞府</button></div></div>`;
