@@ -121,7 +121,7 @@ export function layoutOf(team) {
 const ivOf = spd => DIST * 100 / Math.max(20, 100 + (spd - 100) * SPD_K);
 // ----- 技能说明（蛊详情一转到五转对比、合成前预览用） -----
 // skillText(sp, rank, opts) → [{ kind: 'passive' | 'active' | 'aw3' | 'aw5', n, text, locked?, at?, lines? }]
-// text 是数据里的大白话说明（随转数变的数已换成这一转的值），后面括号补一句这一转的实际数字（按 statFor 的攻血；血按战斗里的血 = 卡面血 × HPK）。
+// text 是数据里的大白话说明（随转数变的数已换成这一转的值），后面括号补一句这一转的实际数字（按 statFor 的卡面攻血算）。
 // 觉醒没到的标 locked: true，数字按觉醒那一转（三转 / 五转）算，方便预告。opts.est === false 时不补括号。
 const ACT_UP = 0.12;
 const scaleAt = (e, r, isAct) => 1 + (e.up != null ? e.up : isAct ? ACT_UP : 0) * Math.max(0, r - 1);
@@ -131,7 +131,7 @@ function effNote(list, r, isAct, st) {
   for (const e of list || []) {
     if (parts.length >= 2) break;
     const k = scaleAt(e, r, isAct), num = (x, base) => Math.round(base * x * k);
-    const v = Math.round(((e.atk || 0) * st.atk + (e.a0 || 0) * st.atk + (e.mx || 0) * st.mx + (e.n || 0) * st.atk + (e.tatk || 0) * st.atk + (e.tmx || 0) * st.mx) * k + (e.flat || 0));
+    const v = Math.round(((e.atk || 0) * st.atk + (e.a0 || 0) * st.atk + (e.mx || 0) * st.mx + (e.op === 'st' ? 0 : e.n || 0) * st.atk + (e.tatk || 0) * st.atk + (e.tmx || 0) * st.mx) * k + (e.flat || 0));
     const each = e.shape && e.shape !== 'one' ? '每只' : '';
     if (e.op === 'dmg' && v > 0) parts.push(`${each}约 ${v} 伤害${(e.times || 1) > 1 ? ` × ${e.times}` : ''}`);
     else if (e.op === 'heal' && v > 0) parts.push(`${each}约回 ${v} 血`);
@@ -145,10 +145,17 @@ function effNote(list, r, isAct, st) {
   }
   return parts.length ? `（这一转${parts.join('，')}）` : '';
 }
+// 主动技说明换成这一下的实际数字（亮牌用）：「攻击 140%」→「28 伤害」、「最大血量 20%」→「24 点」、「攻 +15%」→「攻 +3」，去掉括号里的补充说明
+export function liveLine(text, k, atk, mx) {
+  const v = (b, x) => Math.max(1, Math.round(b * x / 100 * k));
+  return String(text || '').replace(/（[^）]*）/g, '').replace(/攻击 ?(\d+)%/g, (_, x) => ` ${v(atk, x)} 伤害`)
+    .replace(/最大血量 ?(\d+)% ?的?/g, (_, x) => ` ${v(mx, x)} 点`).replace(/攻 ?\+ ?(\d+)%/g, (_, x) => `攻 +${v(atk, x)}`)
+    .replace(/ {2,}/g, ' ').replace(/([，；：、。]) /g, '$1').trim();
+}
 export function skillText(sp, rank, opts = {}) {
   const s = SP[sp]; if (!s) return [];
   const r0 = Math.max(baseRank(sp), Math.min(6, rank | 0 || baseRank(sp))), est = opts.est !== false;
-  const stAt = r => { const x = statFor(sp, r); return { atk: x.atk, mx: x.hp * HPK }; };
+  const stAt = r => { if (opts.st && r === r0) return opts.st; const x = statFor(sp, r); return { atk: x.atk, mx: x.hp }; };   // 血按卡面血写（蛊详情显示的是卡面攻血）
   const nk = natOf(sp), nt = nk && NEW_TRAITS[nk], act = prof(sp).act, out = [];
   const natD = r => nt ? (nt.src ? nt.src.d.replace(/〔(\d+)〕/g, (_, x) => String(Math.round(+x * natK(r)))) : nt.d ? nt.d(1, 2) : '') : '';
   const natAw = (i, r) => nt && nt.src && nt.src.aw && nt.src.aw[i] ? nt.src.aw[i].replace(/〔(\d+)〕/g, (_, x) => String(Math.round(+x * natK(r)))) : '';
@@ -186,7 +193,9 @@ export function battle(ta, tb, seed, opts = {}) {
   const alive = u => u && u.hp > 0 && !u.dead;
   const allies = u => S[u.side].filter(alive), foes = u => S[1 - u.side].filter(alive);
   const iv = u => ivOf(u.spd);
-  const snap = () => S.map(a => a.map(u => [u.uid, u.atk, Math.max(0, u.hp), u.sh, u.gp | 0, Math.round(u.spd), u.r, u.c]));
+  // 快照第 9 项：身上的状态 { 毒每轮伤害 psn, 灼 burn: [每轮伤害, 剩几轮], 寒层 chill, 眩 stun, 网 web, 护 grd, 印 mark, 封 seal, 嘲 taunt, 寄 para, by: { 状态: 谁挂的 uid } }，没有就是 0
+  const stOf = u => { const f = u.f, o = {}; let any = 0; for (const k of ['psn', 'para', 'chill', 'stun', 'web', 'grd', 'mark', 'seal', 'taunt']) if (f[k] > 0) { o[k] = f[k]; any = 1; } if (f.burn && f.burn.n > 0) { o.burn = [f.burn.v, f.burn.n]; any = 1; } if (any && f.by) o.by = f.by; return any ? o : 0; };
+  const snap = () => S.map(a => a.map(u => [u.uid, u.atk, Math.max(0, u.hp), u.sh, u.gp | 0, Math.round(u.spd), u.r, u.c, stOf(u)]));
   const ev = (t, o = {}) => {
     o.t = t; if (ctx.nat) o.nat = 1;
     if (t === 'combo') { const u = byId[o.uid]; if (u) { o.id = u.combo; if (!told.has(o.uid)) { told.add(o.uid); o.quiet = 0; o.big = 1; } } }
@@ -406,7 +415,7 @@ export function battle(ta, tb, seed, opts = {}) {
   const scaleOf = (u, e, src) => src.mul || (1 + (e.up != null ? e.up : src.kind === 'act' ? 0.12 : 0) * Math.max(0, (u.rank || 1) - 1));
   const amount = (u, t, e, c, k) => {
     let v = 0;
-    if (e.atk) v += u.atk * e.atk; if (e.a0) v += (u.a0 || u.atk) * e.a0; if (e.mx) v += u.mx * e.mx;
+    if (e.atk) v += u.atk * e.atk; if (e.a0) v += (u.a0 || u.atk) * e.a0; if (e.mx) v += u.mx * e.mx / (e.op === 'dmg' || e.op === 'st' ? HPK : 1);   // 拿自己的最大血量打人（伤害、毒灼）按卡面血算，和攻击口径一致；护体、回血仍按战斗里的血量
     if (e.tatk && t) v += t.atk * e.tatk; if (e.tmx && t) v += t.mx * e.tmx; if (e.n) v += (c.n || 0) * e.n; if (e.flat) v += e.flat;
     return v > 0 ? Math.max(1, Math.round(v * k)) : 0;
   };
@@ -417,7 +426,8 @@ export function battle(ta, tb, seed, opts = {}) {
       if ((e.when || blk.src.when) !== when || e.op !== 'mul') return;
       const key = blk.src.key + i, used = cntKey(u, key); if (e.max && used >= e.max) return;
       if (e.if && !cond(u, e.if, c, when === 'deal' ? c.tg : c.src, used)) return;
-      u.f.cnt[key] = used + 1; m *= e.v != null ? e.v : 1;   // v: 0 = 这一下全免（伤害最少仍记 1）
+      u.f.cnt[key] = used + 1; m *= e.v != null ? e.v : 1;
+      if (!lite) linkEv(u, when, e.if, c, when === 'deal' ? c.tg : c.src);   // v: 0 = 这一下全免（伤害最少仍记 1）
       if (e.v !== 1 && blk.src.kind !== 'food') ev('trig', { uid: u.uid, ...blk.src.tag });
     });
     return m;
@@ -429,6 +439,13 @@ export function battle(ta, tb, seed, opts = {}) {
     }
   }
   // 跑一串效果：src = { kind, key, mul?, tag?, combo? }；pre = 第一条效果预先选好的目标（放主动技时先画出手方向）
+  // 联动：效果因为目标身上的状态才触发（if: 'tg.psn' 等），或接友蛊挂上的状态（allyInflict），发 link 给画面画连线
+  const LINK_K = /tg\.(psn|burn|chill|stun|mark|guard|summon|web|seal)/;
+  function linkEv(u, when, cnd, c, t) {
+    if (lite || !t || !t.uid || t === u) return;
+    const m = cnd && LINK_K.exec(cnd), k = m ? m[1] : when === 'allyInflict' ? c.k : null;
+    if (k) ev('link', { uid: u.uid, to: t.uid, k });
+  }
   function runList(u, L, c, src, pre, full) {
     let last = null, told = false;
     L.forEach((e, j) => {
@@ -440,6 +457,7 @@ export function battle(ta, tb, seed, opts = {}) {
       if (e.chance && rng() >= e.chance) return;
       if (!tgs.length && e.op !== 'summon') return;
       u.f.cnt[key] = used + 1;
+      linkEv(u, e.when || src.when, e.if, c, tgs[0] || c.tg);
       if (!told && src.kind !== 'act') { told = true; if (src.combo) ev('combo', { uid: u.uid, n: u.cname, tg: tgs.map(x => x.uid) }); else ev('trig', { uid: u.uid, ...src.tag }); }
       const k = scaleOf(u, e, src);
       applyEff(u, e, tgs, c, k);
@@ -467,7 +485,7 @@ export function battle(ta, tb, seed, opts = {}) {
         if (e.dur) t.tmp.push({ a: a2, h: h2, s, left: e.dur });
         ev('buff', { uid: t.uid, a: a2, h: h2, spd: s || undefined });
       }); break;
-      case 'st': tgs.forEach(t => addSt(t, e.k, e.n, amount(u, t, e, c, k), u)); break;
+      case 'st': { const ea = e.n != null ? { ...e, n: 0 } : e; tgs.forEach(t => addSt(t, e.k, e.n, amount(u, t, ea, c, k), u)); break; }   // st 的 n 是层数 / 轮数，不是「按这一下伤害」的系数
       case 'flag': tgs.forEach(t => { t.fl[e.k] = e.v === undefined ? 1 : e.v; }); break;
       case 'copyNat': { const t = tgs[0], key = t && natOf(t.sp), nt = key && NEW_TRAITS[key]; if (!nt || !nt.eff || u.f.copied) break; u.f.copied = key; u.dx.push({ src: { kind: 'nat', key: 'cp', tag: { id: key } }, list: [...nt.eff, ...(nt.awEff || []).slice(0, u.aw).flat()] }); ev('trig', { uid: u.uid, id: key }); break; }   // 拟态：照抄目标的被动技能，本场有效，按施放者转数算
       case 'summon': if (u.fl.noSummon || (u.fl.noRevive && (e.when || src.when) === 'death')) break; for (let r = 0; r < (e.count || 1); r++) {
@@ -526,6 +544,7 @@ export function battle(ta, tb, seed, opts = {}) {
     }
     else if (k === 'guard') t.f.grd = (t.f.grd || 0) + (n || 1);
     else if (k === 'taunt' || k === 'mark' || k === 'seal') t.f[k] = Math.max(t.f[k] || 0, n || 2);
+    if (by) (t.f.by || (t.f.by = {}))[k === 'guard' ? 'grd' : k] = by.uid;
     ev('status', { uid: t.uid, k, n: n || 1, by: by ? by.uid : null });
   }
   const revert = (t, b) => { t.atk = Math.max(1, t.atk - b.a); if (b.h) { t.mx = Math.max(1, t.mx - b.h); t.hp = Math.min(t.hp, t.mx); } if (b.s) setSpd(t, t.spd - b.s); };
@@ -594,7 +613,8 @@ export function battle(ta, tb, seed, opts = {}) {
     if (u.f.stun > 0) { u.f.stun--; ev('skip', { uid: u.uid, k: 'stun' }); return; }
     if (u.act && u.gp >= u.gpMax) {
       const L = u.actEff || u.act.eff, pre = L[0] && L[0].op !== 'summon' ? targetsOf(u, L[0], {}, null) : [];
-      ev('cast', { uid: u.uid, n: u.act.n, fx: u.act.fx || 'pounce', tg: pre.map(x => x.uid), cells: cellsOf(pre), shape: L[0] && L[0].shape || 'one' });
+      const ka = 1 + ACT_UP * Math.max(0, (u.rank || 1) - 1), line = lite ? '' : [u.act.d, ...(u.act.awd || []).slice(0, u.aw)].filter(Boolean).map(t => liveLine(t, ka, u.atk, u.mx)).join('；');
+      ev('cast', { uid: u.uid, n: u.act.n, fx: u.act.fx || 'pounce', tg: pre.map(x => x.uid), cells: cellsOf(pre), shape: L[0] && L[0].shape || 'one', line });
       u.gp = 0; u.casts++; u.st.casts = u.casts;
       const prev = cur; cur = u; runList(u, L, {}, { kind: 'act', key: 'act' }, pre.length ? pre : null); cur = prev;
       if (u.dx.length && alive(u)) runDecl(u, 'cast', {});

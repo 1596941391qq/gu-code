@@ -323,7 +323,7 @@ const res = battle(teamA, teamB, seed, opts);
 
 ## 9. 事件（log）
 
-每个事件 `{ t, …, s? }`；`s` = 这一步之后的快照 `[[buid, 攻, 血, 护体, 蛊力, 速, 行, 列] …]`（A、B 两方各一组），`lite` 时省略。
+每个事件 `{ t, …, s? }`；`s` = 这一步之后的快照 `[[buid, 攻, 血, 护体, 蛊力, 速, 行, 列, 状态] …]`（A、B 两方各一组），`lite` 时省略。状态 = `0` 或 `{ psn: 每轮伤害, burn: [每轮伤害, 剩几轮], chill: 层, stun, web, grd: 护的次数, mark, seal, taunt, para, by: { 状态: 谁挂的 buid } }`，画面的状态图标和层数都读它。
 
 | t | 字段 | 说明 |
 |---|---|---|
@@ -333,17 +333,18 @@ const res = battle(teamA, teamB, seed, opts);
 | `act` | `uid` `q` | 轮到它出手；`q` 接下来约 8 次出手（含 `'#n'` 轮次分隔） |
 | `skip` | `uid` `k` | 眩晕/后排蓄势跳过（`k: 'stun' \| 'charge'`） |
 | `atk` | `uid` `tg` `fx` `reach` `crit` `cells` | 普攻（随后跟 `dmg`）；`cells = [[方, 行, 列]]` 是出手预告要标的格子 |
-| `cast` | `uid` `n` `fx` `tg: [buid]` `cells` `shape` | 放主动技 |
+| `cast` | `uid` `n` `fx` `tg: [buid]` `cells` `shape` `line` | 放主动技；`line` = 这一下的说明换成实际数字（「咬最近的敌蛊，28 伤害，中毒」），亮牌用 |
 | `combo` | `uid` `id` `n` `quiet` `tg` | 杀招 |
 | `dmg` | `uid` `src` `n` `blk` `k` `crit` | `k`：`hit` 普攻 / `skill` / `psn` / `burn` / `bump` 撞击 / `thorn` / `mirror` / `self` / `doom` |
 | `heal` | `uid` `n` | |
 | `buff` | `uid` `a` `h` `sh` `spd` | 增减益、护体 |
-| `status` | `uid` `k` `n` | 挂上状态 |
+| `status` | `uid` `k` `n` `by` | 挂上状态（`by` = 谁挂的） |
+| `link` | `uid` `to` `k` | 联动：效果因为目标身上的状态才触发（`if: 'tg.psn'` 等），或接友蛊挂上的状态（`allyInflict`）；画面在两只之间画一道线 |
 | `trig` | `uid` `id` / `xg` / `food` / `dao` | 被动触发了（本命、蛊性、食物、共鸣），画面小字 |
 | `summon` | `uid` `by` | |
-| `move` | `uid` `r` `c` `k` `into?` | 站位变了：`k` = `knock` 击退 / `draw` 拉近 / `swap` 换位 / `bump` 撞上（没挪动，`into` = 撞上的那只）/ `wall` 撞墙 |
+| `move` | `uid` `r` `c` `k` `into?` | 站位变了：`k` = `knock` 击退 / `draw` 拉近 / `swap` 换位 / `bump` 撞上（没挪动，`into` = 撞上的那只）/ `wall` 撞墙 / `hold` 镇住没动 |
 | `order` | `q` | 开战结算完后的出手顺序 |
-| `faint` | `uid` `eaten?` | 倒下 |
+| `faint` | `uid` `eaten?` `by?` | 倒下（被吞时 `by` = 吞它的那只） |
 | `end` | `w` | |
 
 ## 10. 本命技与主动技的来源（第三版）
@@ -386,8 +387,14 @@ const res = battle(teamA, teamB, seed, opts);
 ## 12. 画面接口（battle-view.js / combo-fx.js）
 
 - `playBattle(el, result, opts) → Promise<{ closed, skipped }>`：结算页点「继续」才 resolve。`opts = { title, mode: 'trip' | 'spar', names: [我方, 对方], mySide: 0 | 1, speed: 1 | 2, reduceMotion, sota }`。
-  - `mode: 'trip'`（秘境）：赢了，倒下的蛊在画面上从倒地起身，结算写「救回 N 只（剩 1 血）」；没赢，结算页「全队告别」逐只列出永久离开的蛊，停住等点击。
+  - `mode: 'trip'`（秘境）：赢了，倒下的蛊在画面上从倒地起身，结算写「救回 N 只」（剩多少血由秘境定，这里不写）；没赢，结算页「全队告别」逐只列出永久离开的蛊，停住等点击。
   - `mode: 'spar'`（斗幽灵、战帖、复盘）：结算不提死亡，只写「切磋：不死蛊」。没写 `mode` 时按旧参数猜（`perm` 或 `kind: 'trip'` 当秘境）。
   - 跳过：直接到结算页。`reduceMotion` 关掉震屏、把闪白压到很淡、镜头推拉减半（对应设置「减弱震屏和闪光」）。
-- `skillText(sp, rank, opts) → [{ kind, n, text, locked?, at?, lines? }]`（battle.js）：蛊详情和合成预览用。`kind` = `passive` 被动技、`active` 主动技、`aw3` / `aw5` 三转 / 五转觉醒（`lines` 分被动、主动两条）；没到的觉醒 `locked: true`，数字按觉醒那一转算。`text` = 数据里的说明（随转数变的数已换成这一转的值）+ 括号里这一转的实际数字，例如「（这一转约 41 伤害，撞上约 12）」。血按战斗里的血算（卡面血 × HPK）。`opts.est === false` 不补括号。
+- `skillText(sp, rank, opts) → [{ kind, n, text, locked?, at?, lines? }]`（battle.js）：蛊详情和合成预览用。`kind` = `passive` 被动技、`active` 主动技、`aw3` / `aw5` 三转 / 五转觉醒（`lines` 分被动、主动两条）；没到的觉醒 `locked: true`，数字按觉醒那一转算。`text` = 数据里的说明（随转数变的数已换成这一转的值）+ 括号里这一转的实际数字，例如「（这一转约 41 伤害，撞上约 12）」。攻血按卡面数（statFor）算。`opts.est === false` 不补括号。
+- 画面怎么读事件（hacking 两条反馈后定）：
+  - 主动技三步：蓄势（施放者放大描边，目标格按形状亮起，头顶上方的空白里冒出实色技能牌：敌方朱红、我方青绿，写「敌 · 蜈蚣蛊」「百足噬」和 `cast.line`）→ 亮牌（牌子描金）→ 结算（伤害、状态逐个跳出，牌子留到下一次出手）。1× 蓄势约 0.4 秒，2× 减半，跳过才省掉。
+  - 出手顺序条：蛊力满的蛊下一次出手会放主动技，头像加「技」角标和金色光圈，悬停看技能名和效果。
+  - 战斗记录：阵盘下方 4～6 行可滚动，一次出手一行，「[敌] 蜈蚣蛊 放「百足噬」→ 分身蛊 -28，中毒（每轮 8）」，敌方朱红、我方青绿；杀招、每轮结算、联动、召唤、倒下都写进去。
+  - 状态：挂上那一下有动画（灼火苗、毒气泡、寒结霜、冻住冰块、护光罩、印靶、眩金星、网、封印），挂着时头顶有图标带层数（灼 = 剩几轮，毒 = 每轮伤害，其余 = 层数 / 次数），身上带持续效果（余火、绿晕、霜色、光罩、靶印、晕圈）；每轮结算的跳字灼橙红带火苗、毒绿字带气泡；`link` 画一道弧线。点按或悬停任何一只蛊：主动技、被动技（`skillText`，按它这场的攻血算）和身上每个状态（谁挂的、剩多少、每轮效果）。
+  - `reduceMotion`：挂状态的动画改成淡入淡出，图标和层数照常。
 - `playCombo(stage, o) → Promise`：杀招动画（每个杀招一份配方，进阶杀招名字条带金边）；`comboSheet(el)` 画全部杀招的关键帧总览；`drawComboFrame(ctx, id, ms, w, h)` 画单帧。没写配方的新杀招按 id 稳定地拼一份，进阶杀招（`xxx2`）在原版上加金光收尾。

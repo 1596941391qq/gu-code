@@ -65,14 +65,14 @@ for (let k = 0; k < 16; k++) {
 console.log(`站位：最佳−最差胜率差 中位 ${pc(med(spread))} 个百分点（${spread.map(pc).join(' ')}）`);
 if (med(spread) < 0.15) fails.push('站位差中位不足 15 个百分点');
 
-// 3. 单种蛊：在能上它的额度里，A 队把一只同转数的蛊换成它、B 队同位置换成同基础转数的随机一种；没有哪种超过 60%
+// 3. 单种蛊：在能上它的额度里，两边同一支队伍（镜像），A 队把一只同转数的蛊换成它、B 队同位置换成同基础转数的随机一种；没有哪种超过 60%
 const ALL = NORMAL_SPECIES.map(s => s.id), wr = {};
 ALL.forEach(sp => {
   let w = 0, N = 0; const br = baseRank(sp), peers = ALL.filter(x => baseRank(x) === br && x !== sp), buds = BUD.filter(b => rankCapOf(b) >= br);
-  for (let i = 0; i < Math.round(60 * Q) && buds.length; i++) {
-    const r = makeRng('sp' + sp + i), b = buds[i % buds.length], A = team(r, b), B = team(r, b), k = A.findIndex(g => g.rank >= br); if (k < 0 || !B[k] || !peers.length) continue;
+  for (let i = 0; i < Math.round(100 * Q) && buds.length; i++) {   // 配对对打 100 局 × 两边各站一次
+    const r = makeRng('sp' + sp + i), b = buds[i % buds.length], A = team(r, b), B = clone(A), k = A.findIndex(g => g.rank >= br); if (k < 0 || !peers.length) continue;
     const rk = A[k].rank; Object.assign(A[k], newGu(sp, rk), { pos: A[k].pos }); Object.assign(B[k], newGu(r.pick(peers), rk), { pos: B[k].pos });
-    w += sc(A, B, 'q' + i); N++;
+    w += (sc(A, B, 'q' + i) + 1 - sc(B, A, 'q' + i + 'r')) / 2; N++;   // 两边各站一次，抵掉先后手
   }
   if (N) wr[sp] = w / N;
 });
@@ -83,8 +83,8 @@ const over = top.filter(([, p]) => p > 0.6); if (over.length) fails.push('单种
 // 4. 杀招：15 点额度的队伍里把前几只换成杀招配方（转数不低于基础转数），对另一个杀招同样做法，不超过 60%；道：4 只同道对 4 只别道
 // 换进指定的蛊（转数不低于基础转数），再把其余的蛊升降转，让整队转数总和回到额度 b（两边同口径，不白占额度）
 const restat = g => { const st = statFor(g.sp, g.rank); g.atk = st.atk; g.hp = st.hp; };
-const withSp = (r, sps, b) => {
-  const T = team(r, b); sps.forEach((sp, i) => { if (T[i]) Object.assign(T[i], newGu(sp, Math.max(baseRank(sp), T[i].rank)), { pos: T[i].pos }); });
+const withSp = (r, sps, b, base) => {
+  const T = base ? clone(base) : team(r, b); sps.forEach((sp, i) => { if (T[i]) Object.assign(T[i], newGu(sp, Math.max(baseRank(sp), T[i].rank)), { pos: T[i].pos }); });
   const free = T.slice(sps.length), cap = rankCapOf(b);
   for (let guard = 0; guard < 60 && quota(T) !== b; guard++) {
     const down = quota(T) > b, c = free.filter(g => down ? g.rank > baseRank(g.sp) : g.rank < cap); if (!c.length) break;
@@ -96,9 +96,11 @@ const usable = COMBOS.filter(c => c.need.every(sp => SP[sp] && !SP[sp].immortal)
 const cwr = usable.map(c => {
   let w = 0; const N = Math.round(80 * Q);
   for (let i = 0; i < N; i++) {
-    const r = makeRng('cb' + c.id + i), o = usable[(usable.indexOf(c) + 1 + r.int(usable.length - 1)) % usable.length], ob = o.need.slice(0, c.need.length), b = i % 2 ? 22 : 15;
+    const okB = [15, 22].filter(x => c.need.every(sp => baseRank(sp) <= rankCapOf(x))), b = okB.length ? okB[i % okB.length] : 22;   // 成员按额度的转数上限，上不了场的额度不测
+    const r = makeRng('cb' + c.id + i), oL = usable.filter(x => x !== c && x.need.every(sp => baseRank(sp) <= rankCapOf(b))), o = oL.length ? oL[r.int(oL.length)] : c, ob = o.need.slice(0, c.need.length);
     while (ob.length < c.need.length) ob.push(r.pick(POOL));
-    w += sc(withSp(r, c.need, b), withSp(r, ob, b), 'c' + i);
+    const T = team(r, b), A = withSp(r, c.need, b, T), B = withSp(r, ob, b, T);   // 同一支底队，只换杀招配方那几只（配对比较，噪声小）
+    w += (sc(A, B, 'c' + i) + 1 - sc(B, A, 'c' + i + 'r')) / 2;
   }
   return [c.n, w / N];
 }).sort((p, q) => q[1] - p[1]);
@@ -107,7 +109,7 @@ const cover = cwr.filter(([, p]) => p > 0.6); if (cover.length) fails.push('杀�
 const daoIds = DAOS.map(d => d.id).filter(d => POOL.filter(sp => daoOf(sp) === d).length >= 2);
 const dwr = daoIds.map(d => {
   let w = 0; const N = Math.round(60 * Q), mine = POOL.filter(sp => daoOf(sp) === d);
-  for (let i = 0; i < N; i++) { const r = makeRng('dao' + d + i), od = daoIds[(daoIds.indexOf(d) + 1 + r.int(daoIds.length - 1)) % daoIds.length], th = POOL.filter(sp => daoOf(sp) === od), b = i % 2 ? 22 : 15; w += sc(withSp(r, [0, 1, 2, 3].map(() => r.pick(mine)), b), withSp(r, [0, 1, 2, 3].map(() => r.pick(th)), b), 'd' + i); }
+  for (let i = 0; i < N; i++) { const r = makeRng('dao' + d + i), od = daoIds[(daoIds.indexOf(d) + 1 + r.int(daoIds.length - 1)) % daoIds.length], th = POOL.filter(sp => daoOf(sp) === od), b = i % 2 ? 22 : 15, T = team(r, b), A = withSp(r, [0, 1, 2, 3].map(() => r.pick(mine)), b, T), B = withSp(r, [0, 1, 2, 3].map(() => r.pick(th)), b, T); w += (sc(A, B, 'd' + i) + 1 - sc(B, A, 'd' + i + 'r')) / 2; }
   return [(DAOS.find(x => x.id === d) || {}).n || d, w / N];
 }).sort((p, q) => q[1] - p[1]);
 console.log('道（4 只同道）胜率：' + dwr.map(([n, p]) => `${n} ${pc(p)}%`).join('  '));
@@ -176,6 +178,21 @@ const dover = dwr.filter(([, p]) => p > 0.6); if (dover.length) fails.push('道�
   }
   console.log('同额度两种思路（高转带低转 对 全中转）：' + out.map(([b, P, p]) => `${b} 点 [${P[0].join(',')}] 对 [${P[1].join(',')}] 高转方 ${pc(p)}%`).join('；'));
   const bad = out.filter(([, , p]) => p > 0.6 || p < 0.4); if (bad.length) fails.push('同额度两种思路有一边超过 60%：' + bad.map(([b, , p]) => `${b} 点 高转方 ${pc(p)}%`).join('、'));
+}
+// 9b. 同额度多种分配的循环赛：每种分配对其余各种的平均胜率，任何一种不超过 65%（转数越集中越占便宜的问题在这里看）
+{
+  const RR = { 9: [[2, 2, 2, 2, 1], [2, 2, 2, 1, 1, 1], [2, 2, 1, 1, 1, 1, 1]], 15: [[4, 4, 4, 3], [4, 3, 3, 3, 2], [3, 3, 3, 3, 3], [4, 2, 2, 2, 2, 2, 1], [3, 2, 2, 2, 2, 2, 2]], 22: [[5, 5, 5, 5, 2], [5, 5, 4, 4, 4], [4, 4, 4, 4, 4, 2], [5, 3, 3, 3, 3, 3, 2], [4, 3, 3, 3, 3, 3, 3]] };
+  const lines = [], hot = [];
+  for (const [b, L] of Object.entries(RR)) {
+    const w = L.map(() => 0), n = L.map(() => 0);
+    for (let x = 0; x < L.length; x++) for (let y = x + 1; y < L.length; y++) for (let i = 0; i < Math.round(60 * Q); i++) {
+      const r = makeRng(`rr${b}:${x}:${y}:${i}`), X = byRanks(r, L[x]), Y = byRanks(r, L[y]), p = (sc(X, Y, 'r' + i) + 1 - sc(Y, X, 'r' + i + 'b')) / 2;
+      w[x] += p; w[y] += 1 - p; n[x]++; n[y]++;
+    }
+    const res = L.map((a, k) => [a, w[k] / n[k]]); lines.push(`${b} 点 ` + res.map(([a, p]) => `[${a.join('')}] ${pc(p)}%`).join(' '));
+    res.filter(([, p]) => p > 0.65).forEach(([a, p]) => hot.push(`${b} 点 [${a.join(',')}] ${pc(p)}%`));
+  }
+  console.log('同额度分配循环赛：' + lines.join('；')); if (hot.length) fails.push('有分配在循环赛里超过 65%：' + hot.join('、'));
 }
 
 // 10. 合成、蛊市、羁绊
