@@ -1,5 +1,6 @@
 // 蛊码 GuCode · 斗蛊引擎（纯函数，种子随机，可复现）。输出事件流 + 每步快照，渲染层只负责回放。
 import { makeRng, SP, SUMMON_NAMES, comboOf, BATTLE } from './core.js';
+import { BX } from './bestiary.js';   // 蛊典扩充的词条/杀招：8 处通用派发（标注 [BX]），细节见 bestiary.js 文件头
 
 const MAXTURN = 40, MAXOPS = 4000, CAP = 5;
 
@@ -29,6 +30,7 @@ export function battle(ta, tb, seed, ma = [], mb = []) {
   const buff = (u, a, h) => { if (!alive(u)) return; u.atk = Math.min(999, u.atk + a); u.hp = Math.min(999, u.hp + h); u.mx += h; ev('buff', { uid: u.uid, a, h }); };
   const shield = (u, n) => { if (!alive(u)) return; u.sh = Math.min(99, u.sh + n); ev('buff', { uid: u.uid, sh: n }); };
   const comboEv = u => ev('combo', { uid: u.uid, n: u.cname });
+  const ctx = { S, CAP, rng, roster, sideF, turn: 0, alive, allies, foes, buff, shield, deal, summon, hook, ev, has, reg, comboEv };   // [BX]
 
   function deal(src, tg, amt, kind, crit) {
     if (!alive(tg) || amt <= 0) return;
@@ -37,13 +39,14 @@ export function battle(ta, tb, seed, ma = [], mb = []) {
       if (gd) { tg.f.guarded = 1; ev('trig', { uid: gd.uid, id: 'guard' }); tg = gd; }
     }
     if (tg.q.includes('greedy')) amt += 1;
+    amt = BX.dmgMod(ctx, src, tg, amt, kind); if (amt <= 0) return;   // [BX]
     const had = tg.sh > 0; let a = amt;
     if (tg.sh > 0) { const s = Math.min(tg.sh, a); tg.sh -= s; a -= s; }
     tg.hp -= a;
     if (tg.hp <= 0 && tg.q.includes('lastgasp') && !tg.f.gasp) { tg.hp = 1; tg.f.gasp = 1; ev('trig', { uid: tg.uid, q: 'lastgasp' }); }
     if (tg.hp <= 0 && src) tg.killer = src;
     ev('dmg', { uid: tg.uid, n: a, blk: amt - a, k: kind, src: src ? src.side : -1, crit: crit ? 1 : 0 });
-    hook(tg, 'hurt', { src, kind, had });
+    hook(tg, 'hurt', { src, kind, had, n: amt });
   }
   function summon(side, idx, spec, by) {
     const arr = S[side]; if (arr.filter(alive).length >= CAP) return null;
@@ -109,12 +112,13 @@ export function battle(ta, tb, seed, ma = [], mb = []) {
       if (T.rally) { tg('rally'); buff(u, T.rally, T.rally); }
       if (u.combo === 'wangu') { fired = true; ev('combo', { uid: u.uid, n: u.cname, quiet: 1 }); allies(u).forEach(a => buff(a, 1, 1)); }
     }
+    if (BX.dispatch(ctx, h, u, c)) fired = true;   // [BX]
     return fired;
   }
   function reap() {
     for (let guard = 0; guard < 200; guard++) {
       const dead = [...S[0], ...S[1]].filter(u => u.hp <= 0 && !u.dead);
-      if (!dead.length) return;
+      if (!dead.length) { if (BX.settle(ctx)) continue; return; }   // [BX] 炉口换人、光阴回溯
       for (const u of dead) {
         if (u.dead) continue;
         if (u.combo === 'tuoke' && !u.f.tuoke) {
@@ -122,6 +126,7 @@ export function battle(ta, tb, seed, ma = [], mb = []) {
           comboEv(u); continue;
         }
         if (has(u.side, 'buMie') && !sideF[u.side].buMie) { sideF[u.side].buMie = 1; u.hp = 1; u.killer = null; ev('trig', { uid: u.uid, mk: 'buMie' }); continue; }
+        if (BX.saveDeath(ctx, u)) continue;   // [BX]
         const arr = S[u.side], idx = arr.indexOf(u);
         if (idx >= 0) arr.splice(idx, 1);
         u.dead = true; ev('faint', { uid: u.uid });
@@ -137,6 +142,7 @@ export function battle(ta, tb, seed, ma = [], mb = []) {
     if (has(side, 'tieBi')) S[side].forEach(u => shield(u, 2));
     if (has(side, 'shaZhao')) S[side].forEach(u => { if (u.combo) buff(u, 3, 3); });
   }
+  BX.begin(ctx);   // [BX] 布阵：开战快照、换位、吞噬
   const order = () => [...S[0], ...S[1]].filter(alive).sort((x, y) => y.atk - x.atk || x.side - y.side);
   for (const u of order()) if (alive(u)) hook(u, 'start', {});
   reap();
@@ -144,7 +150,7 @@ export function battle(ta, tb, seed, ma = [], mb = []) {
   for (;;) {
     if (!S[0].length || !S[1].length) { winner = !S[0].length && !S[1].length ? 'draw' : S[0].length ? 'A' : 'B'; break; }
     if (++turn > MAXTURN) { winner = 'draw'; turn = MAXTURN; break; }
-    ev('turn', { n: turn });
+    ev('turn', { n: turn }); ctx.turn = turn;
     for (const u of order()) { u.f.duopo = 0; if (alive(u)) hook(u, 'turn', {}); }
     reap();
     if (!S[0].length || !S[1].length) continue;
@@ -152,7 +158,9 @@ export function battle(ta, tb, seed, ma = [], mb = []) {
     const pa = Math.max(1, a.atk - (a.q.includes('timid') ? 2 : 0)), pb = Math.max(1, b.atk - (b.q.includes('timid') ? 2 : 0));
     const ca = rng() < BATTLE.crit, cb = rng() < BATTLE.crit;
     ev('clash', { a: a.uid, b: b.uid });
-    deal(a, b, ca ? pa * BATTLE.critMul : pa, 'hit', ca); deal(b, a, cb ? pb * BATTLE.critMul : pb, 'hit', cb);
+    const pa2 = BX.atkMod(ctx, a, pa, b), pb2 = BX.atkMod(ctx, b, pb, a);   // [BX] 定身 / 扑空 / 疾袭
+    deal(a, b, ca ? pa2 * BATTLE.critMul : pa2, 'hit', ca && pa2 > 0); deal(b, a, cb ? pb2 * BATTLE.critMul : pb2, 'hit', cb && pb2 > 0);
+    BX.afterClash(ctx, a, b);
     reap();
   }
   ev('end', { w: winner });

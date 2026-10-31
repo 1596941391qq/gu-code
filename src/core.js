@@ -1,4 +1,5 @@
 // 蛊码 GuCode · 纯逻辑：种子随机、数据表、养成、坐标码。不碰 DOM。
+import { NEW_SPECIES, NEW_TRAITS, NEW_COMBOS, NEW_SUMMONS, NEW_POOL, OLD_EXTRA, loreWithEats, trCapOf } from './bestiary.js';
 export function hashStr(s) { s = String(s); let h = 2166136261 >>> 0; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
 export function makeRng(seed) {
   let a = (typeof seed === 'number' ? seed : hashStr(seed)) >>> 0;
@@ -8,14 +9,16 @@ export function makeRng(seed) {
   return r;
 }
 
-export const MAXV = 3, MAXTR = 4, MAXQ = 2, MAXATT = 2, SLOTS = 5;
+export const MAXV = 3, MAXTR = 4, MAXQ = 1, MAXATT = 2, SLOTS = 5;   // MAXQ：策略性守则，怪癖最多 1 个
 export const REALMS = ['凡人', '一转', '二转', '三转', '四转', '五转'];
 export const SLOT_BY_REALM = [3, 4, 5, 5, 5, 5];
 export const slotCap = r => SLOT_BY_REALM[Math.min(5, Math.max(0, r | 0))];
-export const POOL_TIERS = [['boar', 'fire', 'twin', 'iron', 'thorn', 'bone'], ['mantis', 'queen', 'cicada'], ['drum', 'scorp', 'moth']];
-export const poolFor = r => POOL_TIERS.slice(0, Math.min(3, (r | 0) + 1)).flat();
+// 蛊池 6 档（下标 = 境界）：旧 12 种在前三档，蛊典扩充的新蛊按档追加；六转仙蛊不进任何一档
+export const POOL_TIERS = [['boar', 'fire', 'twin', 'iron', 'thorn', 'bone'], ['mantis', 'queen', 'cicada'], ['drum', 'scorp', 'moth'], [], [], []].map((t, i) => [...t, ...NEW_POOL[i]]);
+export const poolFor = r => POOL_TIERS.slice(0, Math.min(6, (r | 0) + 1)).flat();
 export const ECON = { node: 2, buy: 3, refresh: 1, tokPer: 25, lose: 1, win: { easy: 3, mid: 5, hard: 8, trib: 10, endless: 6, duel: 0 } };
-export const trCap = g => MAXTR + Math.max(0, (g.star || 1) - 1);
+// 词条上限：五转蛊与仙蛊 4 个，其余 3 个（策略性守则）；升星的加成也不能越过这条线
+export const trCap = g => Math.min(MAXTR + Math.max(0, (g.star || 1) - 1), trCapOf(g.sp));
 
 // 词条：v 为层数（1–3），同名合并即叠层
 export const TRAITS = {
@@ -35,7 +38,9 @@ export const TRAITS = {
   snipe:    { n: '暗针', ch: '针', trig: '开战', d: v => `开战：不在最前时，射敌方最末一只 ${2 * v + 1} 伤害` },
   vanguard: { n: '先登', ch: '登', trig: '开战', d: v => `开战：站最前时自身 +${v}/+${2 * v}` },
 };
-export const TRAIT_KEYS = Object.keys(TRAITS);
+Object.assign(TRAITS, NEW_TRAITS);   // 蛊典扩充的词条接在后面（序号只增不改）
+export const TRAIT_ALL = Object.keys(TRAITS);                         // 全部词条：坐标码按这个序号编码
+export const TRAIT_KEYS = TRAIT_ALL.filter(k => !TRAITS[k].innate);   // 突变池：物种专属（innate）词条不进
 
 // 物种：每只一个直白词条。ab = 附蛊简字
 export const SPECIES = [
@@ -52,9 +57,13 @@ export const SPECIES = [
   { id: 'scorp',  n: '蝎尾蛊', ab: '蝎', atk: 1, hp: 2, t: 'strike', v: 2, t2: 'snipe', v2: 1, lore: '一针定生死' },
   { id: 'moth',   n: '月蛾蛊', ab: '蛾', atk: 1, hp: 2, t: 'legacy', v: 2, lore: '燃尽自己照亮后人' },
 ];
+// 旧 12 种补上转数 / 喂食偏好 / 流派；蛊典扩充的 52 种接在后面（坐标码按下标编码，只能往后加）
+SPECIES.forEach(s => { Object.assign(s, OLD_EXTRA[s.id]); s.lore = loreWithEats(s.lore, s.food); });
+SPECIES.push(...NEW_SPECIES);
+export const NORMAL_SPECIES = SPECIES.filter(s => !s.immortal);   // 随机池（幽灵、天劫、招蛊）：六转仙蛊只能开茧获得
 export const SP = Object.fromEntries(SPECIES.map(s => [s.id, s]));
 export const spTraits = id => { const s = SP[id]; return s.t2 ? [[s.t, s.v], [s.t2, s.v2]] : [[s.t, s.v]]; };
-export const SUMMON_NAMES = { pupa: '蛊蛹', shade: '分影', lunar: '月影' };
+export const SUMMON_NAMES = { pupa: '蛊蛹', shade: '分影', lunar: '月影', ...NEW_SUMMONS };
 
 // 怪癖：武火超频的双刃剑
 export const QUIRKS = {
@@ -81,6 +90,7 @@ export const COMBOS = [
   { id: 'jingji',   n: '荆棘王座',   need: ['thorn', 'queen'], d: '受击：全体友蛊获得 1 点护体' },
   { id: 'liaoyuan', n: '天火燎原',   need: ['fire', 'scorp'],  d: '开战：开锋改为波及敌方全体（每只伤害减半）' },
 ];
+COMBOS.push(...NEW_COMBOS);   // 新杀招都是两蛊配方，排在旧配方之后
 export const COMBO = Object.fromEntries(COMBOS.map(c => [c.id, c]));
 
 // 道痕：整局被动，渡劫成功三选一。顺序固定（坐标码按位编码），只能往后加
@@ -167,7 +177,7 @@ export function nodeOk(type, team, cap = SLOTS) {
 }
 export function mkNode(type, rng) {
   const n = { type, cost: NODES[type].cost + rng.int(3) * 5 };
-  if (type === 'summon') n.sp = rng.pick(SPECIES).id;
+  if (type === 'summon') n.sp = rng.pick(NORMAL_SPECIES).id;
   return n;
 }
 export function rollCompass(rng, team, first, cap = SLOTS) {
@@ -198,7 +208,7 @@ export function applyNode(team, node, rng, opt = {}) {
       const c = comboOf(L); if (c && c !== before) combo = { uid: L.uid, n: c.n };
       fx.push({ uid: L.uid, txt: '吞·' + SP[v.sp].ab, k: 'eat' }); break;
     }
-    case 'summon': { const g = newGu((opt.pick && SP[opt.pick]) ? opt.pick : node.sp || rng.pick(SPECIES).id); team.push(g); fx.push({ uid: g.uid, txt: '招来', k: 'new' }); break; }
+    case 'summon': { const g = newGu((opt.pick && SP[opt.pick]) ? opt.pick : node.sp || rng.pick(NORMAL_SPECIES).id); team.push(g); fx.push({ uid: g.uid, txt: '招来', k: 'new' }); break; }
     case 'refine': {
       const s = team.pop(); gone.push(s.uid); const before = comboOf(L);
       L.att.push(s.sp); L.atk += Math.ceil(s.atk * 0.4); L.hp += Math.ceil(s.hp * 0.4);
@@ -250,7 +260,7 @@ export const sellValue = g => (g.star || 1) + (g.att ? g.att.length : 0);
 
 // 程序生成同阶阵容（幽灵 / 天劫），用同一套养成规则随机走路
 export function genTeam(rng, power, cap = SLOTS) {
-  const team = [newGu(rng.pick(SPECIES).id)];
+  const team = [newGu(rng.pick(NORMAL_SPECIES).id)];
   for (let i = 0; i < power; i++) {
     const types = Object.keys(NODES).filter(t => nodeOk(t, team, cap));
     const t = (team.length < 3 && types.includes('summon') && rng() < 0.6) ? 'summon' : rng.pick(types);
@@ -259,7 +269,7 @@ export function genTeam(rng, power, cap = SLOTS) {
     const tg = t === 'summon' ? team[team.length - 1] : team[0];
     if (tg) tg.fed += node.cost * 1000;
   }
-  while (team.length < 2) team.push(newGu(rng.pick(SPECIES).id));
+  while (team.length < 2) team.push(newGu(rng.pick(NORMAL_SPECIES).id));
   return arrangeTeam(team);
 }
 // ---------- 布阵：站位效果与敌方排阵 ----------
@@ -315,7 +325,7 @@ export function arrangeTeam(team) {
 }
 export const TRIB_NAMES = ['心魔劫', '雷劫', '火劫', '风劫', '天人劫'];
 // 修行路：每一阶额外解锁说明（空窍格数取 SLOT_BY_REALM，蛊池取 POOL_TIERS）
-export const REALM_NOTES = ['开局三选一本命蛊', '蛊池加入一转档', '蛊池全开，可合炼到 ★3', '敌阵开始出现杀招与怪癖', '天人劫前最后一阶', '登顶，开启无尽劫'];
+export const REALM_NOTES = ['开局三选一本命蛊', '蛊池加入一转档', '蛊池加入二转档，可合炼到 ★3', '蛊池加入三转档，敌阵开始出现杀招与怪癖', '蛊池加入四转档，天人劫前最后一阶', '蛊池加入五转档，登顶开启无尽劫'];
 // 无尽劫：五转之后逐层变强，层数写进分享卡
 export const ENDLESS = { basePower: 80, perFloor: 3, atkPerFloor: 1, hpPerFloor: 2, baseAtk: 5, baseHp: 10 };
 export function endlessTeam(floor) {
@@ -341,7 +351,7 @@ export const GHOST_NAMES = ['夜码人', '零点蛊师', '断点散人', '递归
 // ---------- 界壁坐标码：阵容 → 位流 → base64url ----------
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 const SPI = Object.fromEntries(SPECIES.map((s, i) => [s.id, i]));
-const TRI = Object.fromEntries(TRAIT_KEYS.map((k, i) => [k, i]));
+const TRI = Object.fromEntries(TRAIT_ALL.map((k, i) => [k, i]));
 const QUI = Object.fromEntries(QUIRK_KEYS.map((k, i) => [k, i]));
 function utf8(s) { return typeof TextEncoder !== 'undefined' ? new TextEncoder().encode(s) : Buffer.from(s, 'utf8'); }
 function unutf8(b) { return typeof TextDecoder !== 'undefined' ? new TextDecoder().decode(new Uint8Array(b)) : Buffer.from(b).toString('utf8'); }
@@ -377,7 +387,7 @@ export function decodeTeam(code) {
     for (let i = 0; i < n; i++) {
       const sp = SPECIES[get(4)]; if (!sp) return null;
       const g = { uid: nuid(), sp: sp.id, atk: Math.max(1, get(8)), hp: Math.max(1, get(8)), wound: get(2), tr: [], q: [], att: [] };
-      const nt = get(3); for (let j = 0; j < nt; j++) { const k = TRAIT_KEYS[get(4)], v = get(2); if (k && j < MAXTR) g.tr.push([k, Math.max(1, Math.min(MAXV, v))]); }
+      const nt = get(3); for (let j = 0; j < nt; j++) { const k = TRAIT_ALL[get(4)], v = get(2); if (k && j < MAXTR) g.tr.push([k, Math.max(1, Math.min(MAXV, v))]); }
       const nq = get(2); for (let j = 0; j < nq; j++) { const k = QUIRK_KEYS[get(3)]; if (k) g.q.push(k); }
       const na = get(2); for (let j = 0; j < na; j++) { const a = SPECIES[get(4)]; if (a && j < MAXATT) g.att.push(a.id); }
       g.fed = get(18) * 10000; g.mut = get(7); if (get(1)) g.boss = 1;
@@ -397,7 +407,7 @@ export const WOUND = { max: 3, healTok: 60000, healSec: 240, loseNodePct: 0.3 };
 // 战斗手感：暴击概率与倍数（种子随机，复盘可复现）
 export const BATTLE = { crit: 0.10, critMul: 2 };
 // 战斗回放节奏（毫秒，1 倍速基准）。界面按 playMs 自动缩放，使一局约 15–25 秒
-export const EV_MS = { begin: 900, turn: 220, clash: 640, hit: 60, dmg: 200, buff: 110, trig: 300, combo: 1700, comboQuiet: 180, summon: 260, faint: 400, end: 300 };
+export const EV_MS = { begin: 900, turn: 220, clash: 640, hit: 60, dmg: 200, buff: 110, trig: 300, combo: 1700, comboQuiet: 180, summon: 260, faint: 400, status: 160, end: 300 };
 export function playMs(log) {
   const seen = new Set(); let t = 0;
   for (const e of log) t += e.t === 'dmg' ? (e.k === 'hit' ? EV_MS.hit : EV_MS.dmg) : e.t === 'combo' ? ((e.quiet || seen.has(e.uid)) ? EV_MS.comboQuiet : (seen.add(e.uid), EV_MS.combo)) : (EV_MS[e.t] || 0);

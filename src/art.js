@@ -1,4 +1,5 @@
 // 蛊码 GuCode · 程序水墨蛊虫。头朝右，viewBox 0 0 100 100。墨色主体 + 一抹淡彩，毛笔边靠 #ink/#wash 滤镜。
+import { ART2 } from './art2.js';
 const INK = '#1c1915', PAPER = '#efe7d4';
 const aE = (cx, cy, rx, ry, f = INK, r = 0, ex = '') => `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="${f}"${r ? ` transform="rotate(${r} ${cx} ${cy})"` : ''}${ex}/>`;
 const aC = (cx, cy, r, f = INK, ex = '') => `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${f}"${ex}/>`;
@@ -103,6 +104,8 @@ const A = {
 };
 A.shade = () => { const t = A.twin(); return { w: '', b: `<g opacity=".5">${t.b}</g>` }; };
 A.lunar = () => { const t = A.moth(); return { w: t.w, b: `<g opacity=".55">${t.b}</g>` }; };
+// 蛊典扩充：52 只新蛊与 6 种召唤物的画（src/art2.js），同名不覆盖
+Object.entries(ART2).forEach(([k, v]) => { if (!A[k]) A[k] = () => v; });
 
 export function guSVG(sp, o = {}) {
   const f = A[sp] || A.pupa, { w, b } = f();

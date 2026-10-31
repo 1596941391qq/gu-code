@@ -44,7 +44,7 @@
 //      两次 deal 之后、reap() 之前：BX.afterClash(ctx, a, b);
 //
 // 三、渲染层（ui.js）建议
-//   - 新事件 ev('status', { uid, k, n })：k ∈ psn 中毒 / para 寄生 / stun 定身 / web 落空 / miss 扑空 / swap 换位 / strip 破甲。没处理也不会报错（EV_MS 无此键 = 0 毫秒）。
+//   - 新事件 ev('status', { uid, k, n })：k ∈ psn 中毒 / para 寄生 / stun 定身 / web 落网 / miss 扑空 / swap 换位 / strip 破甲 / tie 系丝 / blitz 疾袭。没处理也不会报错（EV_MS 无此键 = 0 毫秒）。
 //   - buff 事件可能带负攻（a < 0，减攻），浮字请写成「-n 攻」。
 //   - 光阴回溯：先 ev('trig', { id: 'rewind' })，再对每只复生的蛊 ev('summon', { uid, rewind: 1 })，uid 与阵亡前相同，记得去掉 .die。
 //   - 吞入瓮中的蛊发 ev('faint', { uid, eaten: 1 })，不触发亡语。
@@ -120,11 +120,11 @@ export const NEW_TRAITS = {
     hooks: { onDeath(ctx, u, v, c, go) { go(); for (let i = 0; i < v + 1; i++) ctx.summon(u.side, c.idx, { sp: 'aphidling', atk: 1, hp: 1 }, u); } } },
   nettle:  { n: '毒毛', ch: '毛', trig: '受击', innate: true, d: v => `被对撞打中：攻击者中毒 ${v} 层`,
     hooks: { onHit(ctx, u, v, c, go) { if (c.src && c.kind === 'hit' && c.src.side !== u.side && ctx.alive(c.src)) { go(); poison(ctx, c.src, v); } } } },
-  snipe:   { n: '点刺', ch: '刺', trig: '开战', innate: true, d: v => `开战：对敌方血最少的蛊造成 ${2 * v + 1} 伤害`,
+  prick:   { n: '点刺', ch: '刺', trig: '开战', innate: true, d: v => `开战：对敌方血最少的蛊造成 ${2 * v + 1} 伤害`,
     hooks: { onStart(ctx, u, v, c, go) { const t = by(ctx.foes(u), f => -f.hp); if (t) { go(); ctx.deal(u, t, 2 * v + 1, 'skill'); } } } },
   brood:   { n: '抱卵', ch: '卵', trig: '受击', innate: true, d: v => `受击存活：身后召唤 1/1 小蛛（每场最多 ${v + 1} 只）`,
     hooks: { onHit(ctx, u, v, c, go) {
-      if (!ctx.alive(u) || (u.f.brood || 0) >= v + 1 || ctx.allies(u).length >= 5) return;
+      if (!ctx.alive(u) || (u.f.brood || 0) >= v + 1 || ctx.allies(u).length >= ctx.CAP) return;
       u.f.brood = (u.f.brood || 0) + 1; go(); ctx.summon(u.side, idx(ctx, u) + 1, { sp: 'spiderling', atk: 1, hp: 1 }, u);
     } } },
   burrow:  { n: '钻地', ch: '钻', trig: '换到炉口', innate: true, d: v => `换到炉口那一刻：钻地突袭敌方末位，造成攻×${v} 伤害`,
@@ -173,7 +173,7 @@ export const NEW_TRAITS = {
     } } },
   hive:    { n: '蜂巢', ch: '巢', trig: '回合开始', innate: true, d: v => `回合开始：身后召唤 1/1 工蜂（每场最多 ${v + 2} 只）`,
     hooks: { onTurn(ctx, u, v, c, go) {
-      if (!ctx.alive(u) || (u.f.hive || 0) >= v + 2 || ctx.allies(u).length >= 5) return;
+      if (!ctx.alive(u) || (u.f.hive || 0) >= v + 2 || ctx.allies(u).length >= ctx.CAP) return;
       u.f.hive = (u.f.hive || 0) + 1; go(); ctx.summon(u.side, idx(ctx, u) + 1, { sp: 'bee', atk: 1, hp: 1 }, u);
     } } },
   inherit: { n: '承嗣', ch: '嗣', trig: '亡语', innate: true, d: v => `亡语：把自己其余词条全部传给身后友蛊${v > 1 ? `（各多 ${v - 1} 层）` : ''}`,
@@ -206,7 +206,7 @@ export const NEW_TRAITS = {
     hooks: { takeMod(ctx, u, v, amt, src, kind) { if (kind !== 'hit' || !isFront(ctx, u)) return amt; return Math.max(1, Math.ceil(amt / 2) - (v - 1)); } } },
   strings: { n: '牵丝', ch: '丝', trig: '击杀', innate: true, d: v => `击杀：把对方做成傀儡，放在己方末位（一半攻血，带它的词条；每场 ${v} 次）`,
     hooks: { onKill(ctx, u, v, c, go) {
-      const x = c.victim; if (!x || x.f.tied || (u.f.str || 0) >= v || ctx.allies(u).length >= 5) return; u.f.str = (u.f.str || 0) + 1; go();
+      const x = c.victim; if (!x || x.f.tied || (u.f.str || 0) >= v || ctx.allies(u).length >= ctx.CAP) return; u.f.str = (u.f.str || 0) + 1; go();
       puppetOf(ctx, u, x, false);
     } } },
   parasite:{ n: '寄生', ch: '寄', trig: '开战', innate: true, d: v => `开战：钻进敌方攻最高的蛊体内，它每回合开始受 ${v + 1} 伤害`,
@@ -289,7 +289,7 @@ export const NEW_SPECIES = [
   S('hairy',    '毛虫蛊', '毛', 2, 3, 'nettle',  1, 0, '反伤·毒', '摸一下，痒三天'),
   S('cent',     '蜈蚣蛊', '蜈', 2, 3, 'venom',   1, 0, '毒', '百足一咬，伤口发黑'),
   // 一转 10
-  S('wasp',     '胡蜂蛊', '胡', 2, 2, 'snipe',   1, 1, '开锋·点杀', '专挑最软的那一只'),
+  S('wasp',     '胡蜂蛊', '胡', 2, 2, 'prick',   1, 1, '开锋·点杀', '专挑最软的那一只'),
   S('spider',   '蛛母蛊', '母', 1, 5, 'brood',   1, 1, '召唤', '背上全是孩子，打一下掉一只'),
   S('mole',     '蝼蛄蛊', '蝼', 3, 3, 'burrow',  1, 1, '站位·换位触发', '从地底钻出来，先掏你后院'),
   S('gecko',    '守宫蛊', '守', 1, 4, 'ward',    1, 1, '站位·护体', '趴在后墙上，替门口那位挡刀'),
@@ -349,7 +349,8 @@ export const FOODS = {
   qwen:   { n: '云气', model: 'Qwen',   verb: '好饮' },
   any:    { n: '百气', model: '不挑食', verb: '' },
 };
-export const FOOD_BONUS = 0.3, FOOD_ANY_BONUS = 0.1;
+export const FOOD_BONUS = 0.3;
+export const FOOD_ANY_BONUS = 0.1;
 const FOOD_OF = {
   ant: 'gpt', firefly: 'gemini', stick: 'qwen', leech: 'any', dung: 'claude', tiger: 'gpt', webspider: 'glm', aphid: 'any', hairy: 'qwen', cent: 'glm',
   wasp: 'gpt', spider: 'glm', mole: 'qwen', gecko: 'qwen', qingfu: 'claude', bomb: 'glm', silk: 'claude', mosq: 'any', rhino: 'qwen', gold: 'claude',
@@ -456,9 +457,10 @@ Object.entries(OLD_SCHOOL).forEach(([id, sc]) => { OLD_EXTRA[id].school = sc; })
 // ---------- 通用派发（battle.js 打补丁后调用） ----------
 // 天劫压阵：第 20 合起双方全体每合受 (回合-19) 伤害，杜绝回血/护体互耗的僵局（旧 12 种的对局最长 15 合，不受影响）
 export const DOOM = 20;
+// battle.js 只引这一个对象：import { BX } from './bestiary.js'（构建脚本把各文件拼成一个脚本，用对象收口可以避免与别的文件重名）
 const HMAP = { start: 'onStart', turn: 'onTurn', hurt: 'onHit', kill: 'onKill', faint: 'onDeath', ally: 'onSummon', attack: 'onAttack', prep: 'onPrep', front: 'onFront', foeFront: 'onFoeFront', mourn: 'onMourn' };
 
-export function dispatch(ctx, h, u, c = {}) {
+function dispatch(ctx, h, u, c = {}) {
   let fired = false;
   // 状态结算：每只蛊每回合一次（回响重放不重复扣）
   if (h === 'turn' && ctx.alive(u) && u.f.tick !== ctx.turn) {
@@ -468,7 +470,7 @@ export function dispatch(ctx, h, u, c = {}) {
     if (ctx.turn >= DOOM && ctx.alive(u)) ctx.deal(null, u, ctx.turn - DOOM + 1, 'doom');
   }
   // 友蛊阵亡广播（殉道重放不重复广播）
-  if (h === 'faint' && u.f.tied && !c.tied) { c.tied = 1; const o = u.f.tied; if (ctx.alive(o) && ctx.allies(o).length < 5) { cq(ctx, o); puppetOf(ctx, o, u, true); } }
+  if (h === 'faint' && u.f.tied && !c.tied) { c.tied = 1; const o = u.f.tied; if (ctx.alive(o) && ctx.allies(o).length < ctx.CAP) { cq(ctx, o); puppetOf(ctx, o, u, true); } }
   if (h === 'faint' && !c.mourned) { c.mourned = 1; for (const a of ctx.S[u.side].filter(ctx.alive)) ctx.hook(a, 'mourn', { dead: u }); }
   const name = HMAP[h]; if (!name) return false;
   for (const id in u.tr) {
@@ -481,7 +483,7 @@ export function dispatch(ctx, h, u, c = {}) {
 }
 
 // 伤害修正：攻方 dealMod → 守方 takeMod → 同侧光环 auraTake
-export function dmgMod(ctx, src, tg, amt, kind) {
+function dmgMod(ctx, src, tg, amt, kind) {
   if (src && src.tr) for (const id in src.tr) { const m = NEW_TRAITS[id] && NEW_TRAITS[id].hooks.dealMod; if (m && src.tr[id]) amt = m(ctx, src, src.tr[id], amt, tg, kind); }
   for (const id in tg.tr) { const m = NEW_TRAITS[id] && NEW_TRAITS[id].hooks.takeMod; if (m && tg.tr[id]) amt = m(ctx, tg, tg.tr[id], amt, src, kind); }
   for (const h of ctx.S[tg.side]) { if (!ctx.alive(h) || !h.tr.aegis) continue; amt = NEW_TRAITS.aegis.hooks.auraTake(ctx, h, h.tr.aegis, tg, amt, src, kind); }
@@ -489,7 +491,7 @@ export function dmgMod(ctx, src, tg, amt, kind) {
 }
 
 // 对撞出手前：定身 / 扑空 / 疾袭
-export function atkMod(ctx, u, pa, tg) {
+function atkMod(ctx, u, pa, tg) {
   u.f.swung = 0;
   if (u.f.stun > 0) { u.f.stun--; status(ctx, u, 'miss'); return 0; }
   if (u.f.web > 0) { u.f.web--; status(ctx, u, 'miss'); return 0; }
@@ -497,18 +499,18 @@ export function atkMod(ctx, u, pa, tg) {
   if (pa > 0) { u.f.swung = 1; u.f.lastHit = pa; }
   return pa;
 }
-export function afterClash(ctx, a, b) {
+function afterClash(ctx, a, b) {
   for (const [x, y] of [[a, b], [b, a]]) if (x.f.swung) { x.f.swung = 0; ctx.hook(x, 'attack', { tg: y, n: x.f.lastHit }); }
 }
 
 // 免死：太岁再生、涅火重生
-export function saveDeath(ctx, u) {
+function saveDeath(ctx, u) {
   for (const id in u.tr) { const m = NEW_TRAITS[id] && NEW_TRAITS[id].hooks.saveDeath; if (m && u.tr[id] && m(ctx, u, u.tr[id])) return true; }
   return false;
 }
 
 // 布阵：开战前（先于开锋）记下开战快照，结算换位/吞噬/照抄/夺志
-export function begin(ctx) {
+function begin(ctx) {
   ctx.BX = { front: [null, null], rew: [0, 0] };
   ctx.opening = ctx.S.map(a => a.map(u => ({ u, atk: u.atk, hp: u.hp, tr: { ...u.tr } })));
   const order = [...ctx.S[0], ...ctx.S[1]].filter(ctx.alive).sort((x, y) => y.atk - x.atk || x.side - y.side);
@@ -517,7 +519,7 @@ export function begin(ctx) {
 }
 
 // 每轮清点阵亡后：炉口换人（换到炉口 / 敌换炉口），以及光阴回溯
-export function settle(ctx) {
+function settle(ctx) {
   if (!ctx.BX) return false;
   let act = false;
   for (const s of [0, 1]) {
@@ -535,7 +537,7 @@ function rewind(ctx, s) {
   const tj = hd.u.combo === 'shousui', k = 0.5;
   ctx.ev('trig', { uid: hd.u.uid, id: 'rewind' }); if (tj) ctx.ev('combo', { uid: hd.u.uid, n: hd.u.cname });
   ctx.S[s].length = 0;
-  for (const o of op.slice(0, 5)) {
+  for (const o of op.slice(0, ctx.CAP)) {
     const u = o.u; u.dead = false; u.killer = null; u.sh = 0; u.f = {};
     u.atk = Math.max(1, Math.ceil(o.atk * k)); u.mx = u.hp = o === hd ? (tj ? Math.max(1, Math.ceil(o.hp * 0.3)) : 1) : Math.max(1, Math.ceil(o.hp * k));   // 叫完这一声，蝉自己只剩一口气
     ctx.S[s].push(u); ctx.ev('summon', { uid: u.uid, by: hd.u.uid, rewind: 1 });
@@ -543,6 +545,7 @@ function rewind(ctx, s) {
   return true;
 }
 
+export const BX = { dispatch, dmgMod, atkMod, afterClash, saveDeath, begin, settle };
 
 // ---------- 蛊方（炼蛊配方） ----------
 // { id, n, need, out, d }：need 为 2–3 个原料，元素是物种 id，或 { rank: n } 表示「任意一只 n 转蛊」。炼成后原料全部消耗，得到 out。
