@@ -481,7 +481,7 @@ function tripPlayBattle(foeTeam, opts = {}) {
   const A = { team, name: S.name || '无名蛊师', realm: S.realm, trial: S.trial }, B = { team: foeTeam, name: opts.foeName || '秘境', realm: S.realm };
   return new Promise(resolve => runBattle({ kind: 'trip', title: opts.title || '秘境 · 斗蛊', res, A, B, sota, done: () => resolve({ res, A, B }) }));
 }
-TRIP.api = { S: () => S, save, unlocked: (id, k) => unlocked(id, k), synLine: (team, o) => resoHTML(team, { lone: false, ...(o || {}) }), get el() { return $('#trip'); }, playBattle: tripPlayBattle, onTripEnd, big, note, float: (uid, t, k) => fxFloat(uid, t, k || 'buff'), renderHome };
+TRIP.api = { S: () => S, save, unlocked: (id, k) => unlocked(id, k), synLine: (team, o) => resoHTML(team, o || {}), get el() { return $('#trip'); }, playBattle: tripPlayBattle, onTripEnd, big, note, float: (uid, t, k) => fxFloat(uid, t, k || 'buff'), renderHome };
 function meters() {
   if (!S.started) return;
   const q = $('#qiTxt'); if (!q) return;

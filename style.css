@@ -514,6 +514,7 @@ button.mg{font:inherit;font-size:11px;border:0;cursor:pointer;position:relative;
 .rz.clash{text-decoration:underline wavy rgba(216,85,63,.55);text-underline-offset:3px}
 .rz.combo{color:var(--on-zhu);background:var(--zhu);border-color:var(--zhu)}.rz.combo b{color:var(--on-zhu)}
 .rz.none{border:0;padding:0}
+.rz.lone{border-style:dashed;padding:0 6px;letter-spacing:.05em}
 /* 蛊卡右上角的小道字 */
 .gu .dz,.mg .dz,.ware .dz{position:absolute;top:3px;right:3px;font:11px/1 var(--kai);color:var(--dc,var(--mu));border:1px solid currentColor;border-radius:2px;padding:1px 2px;background:var(--paper)}
 .gu .mseal + .dz{top:22px}

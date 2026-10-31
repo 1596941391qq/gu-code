@@ -1,8 +1,9 @@
 // 蛊码 GuCode · 道共鸣和杀招的常驻显示（洞府空窍上方、秘境队伍上方共用这一套，别各写一套）。只出 HTML 字符串，不碰 DOM。
-//   resoHTML(team, opts)  一排小签：阵上出现的每一道「力道 1/2」「炎道 2/2 · 攻 +15%」，已触发的描朱，差一只的写「再 1 只：攻 +15%」，
-//                         相冲的写明打几折；成形的杀招各一签。悬停（data-tip）写每只蛊实际加了多少，例如「赤焰蛊 攻 20 → 23（+3）」。
-//     opts.near   = false 不写「再 1 只」（默认写）
-//     opts.lone   = false 只有 1 只、还没触发的道不列（秘境队伍上方地方小时用；默认列）
+//   resoHTML(team, opts)  一排横排自动折行的小签：已触发的共鸣一道一签描朱「炎道 2/2 · 攻 +15%」（相冲写「相冲五折」）；
+//                         还没触发的道合成一枚灰签「金·力·奴·血 各 1/2」，悬停逐道写「再 1 只：…」；成形的杀招各一签。
+//                         悬停（data-tip）写每只蛊实际加了多少，例如「赤焰蛊 攻 20 → 23（+3）」。
+//     opts.near   = false 离下一档差一只的签不描虚线（默认描）
+//     opts.lone   = false 不列还没触发的那枚灰签（默认列）
 //     opts.combos = false 不列杀招（默认列）
 //     opts.empty  = 阵上没有蛊时的那句话（默认空串）
 //   resoInfo(team)        上面用到的数：{ daos: [...], combos: [...] }
@@ -65,17 +66,21 @@ export function resoInfo(team) {
 }
 
 export function resoHTML(team, opts = {}) {
-  const { daos, combos } = resoInfo(team), near = opts.near !== false, lone = opts.lone !== false;
-  const chips = [];
-  for (const x of daos) {
-    if (!x.on && !lone && !(near && x.next === 1)) continue;
-    const head = `${x.name} ${x.cnt}/${x.cap}`;
-    const clash = x.on && x.clash < 1 ? `与${x.clashName}相冲，${zhe(x.clash)}` : '';
-    const hint = near && x.next === 1 && x.nextSum ? `再 1 只：${x.nextSum}` : '';
-    const txt = [head, x.on ? x.sum : '', clash, hint].filter(Boolean).join(' · ');
-    const tip = [x.on ? `${x.name}共鸣（${x.tier} 只）：${x.d}${clash ? `（${clash}）` : ''}` : `${x.name}：阵上 ${x.cnt} 只，凑到 ${x.cap} 只触发共鸣`,
-      ...x.gus, x.next === 1 && x.nextD ? `再上 1 只${x.name}的蛊：${x.nextD}` : x.next > 1 ? `再上 ${x.next} 只${x.name}的蛊升一档` : ''].filter(Boolean).join('\n');
-    chips.push(`<span class="rz${x.on ? ' on' : ''}${clash ? ' clash' : ''}${hint ? ' near' : ''}" style="--dc:${esc(x.color)}" data-tip="${esc(tip)}"><b>${esc(x.ch)}</b>${esc(txt)}</span>`);
+  const { daos, combos } = resoInfo(team), near = opts.near !== false;
+  const chips = [], lone = daos.filter(x => !x.on);
+  // 已触发的共鸣：一道一签描朱，「力道 2/2 · 攻 +15%」；相冲写「相冲五折」；离下一档差一只的签描虚线，悬停写「再 1 只」
+  for (const x of daos.filter(d => d.on)) {
+    const clash = x.clash < 1 ? `与${x.clashName}相冲，${zhe(x.clash)}` : '';
+    const txt = [`${x.name} ${x.cnt}/${x.cap}`, x.sum, clash ? '相冲' + zhe(x.clash).replace(/^打/, '') : ''].filter(Boolean).join(' · ');
+    const tip = [`${x.name}共鸣（${x.tier} 只）：${x.d}${clash ? `（${clash}）` : ''}`, ...x.gus,
+      x.next === 1 && x.nextD ? `再 1 只：${x.nextD}` : x.next > 1 ? `再 ${x.next} 只升一档` : ''].filter(Boolean).join('\n');
+    chips.push(`<span class="rz on${clash ? ' clash' : ''}${near && x.next === 1 ? ' near' : ''}" style="--dc:${esc(x.color)}" data-tip="${esc(tip)}"><b>${esc(x.ch)}</b>${esc(txt)}</span>`);
+  }
+  // 还没触发的道（阵上各 1 只）合成一枚灰签：「金·力·奴·血 各 1/2」，悬停逐道写「再 1 只：…」
+  if (lone.length && opts.lone !== false) {
+    const cnt = [...new Set(lone.map(x => `${x.cnt}/${x.cap}`))], txt = `${lone.map(x => x.ch).join('·')} ${cnt.length === 1 ? (lone.length > 1 ? '各 ' : '') + cnt[0] : ''}`.trim();
+    const tip = ['还没触发的道（同一道凑到 2 只触发共鸣）：', ...lone.map(x => `${x.name} ${x.cnt}/${x.cap} · 再 ${x.next || 1} 只：${x.nextSum || x.nextD || '触发共鸣'}`)].join('\n');
+    chips.push(`<span class="rz lone" data-tip="${esc(tip)}">${esc(txt)}</span>`);
   }
   if (opts.combos !== false) for (const c of combos) {
     const tip = `杀招「${c.n}」：${c.d || ''}\n核心蛊：${RANK.names[c.rank] || ''}${c.coreName}，威力 ×${c.mul}`;
