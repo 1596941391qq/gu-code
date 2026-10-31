@@ -32,10 +32,10 @@ const TXT = {
   shopTip: '花元气买蛊和食物。什么道的蛊都会刷，罗盘选中的道出现得稍多一点（+5%）。转市换一批，冻结的货下次还在。',
   refresh: c => `转市 · ${c}`,
   freeze: on => on ? '解冻' : '冻结',
-  daoNone: '还没定主道',
-  daoLine: d => `本轮主道：${DAO[d] ? DAO[d].n : d}`,
+  daoNone: '罗盘：还没转（选中的道在蛊市里多出 5%）',
+  daoLine: d => `罗盘：${DAO[d] ? DAO[d].n : d}（这一轮蛊市里多出 5%）`,
   daoTip: '每次回到洞府转一次罗盘，三选一：选中的道在本轮蛊市出现的概率 +5%。只是轻轻偏一下，蛊市照样什么道都会刷。罗盘不加属性。',
-  compassHead: '罗盘 · 三选一主道',
+  compassHead: '罗盘 · 三选一',
   compassSub: '选一道，它在本轮蛊市出现的概率 +5%。只是轻轻偏一下，什么道都还会刷。',
   resoNone: '道共鸣：同一道的蛊在空窍里有 2 只、4 只时触发',
   go: '出征',
@@ -299,7 +299,7 @@ function renderReso() {
     ...sy.combos.map(c => `杀招·${c.n}：${c.d}（核心蛊${RANK.names[c.rank] || ''}，威力 ×${c.mul}）`), ...near.map(x => `${x.name}·${x.cnt}：再来 ${x.next} 只触发共鸣`)].join('\n');
   setHTML(r, sy.line ? `<span class="ro on" data-tip="${esc(tip)}">${esc(sy.line)}</span>` : `<span class="ro"${tip ? ` data-tip="${esc(tip)}"` : ''}>${esc(TXT.resoNone)}</span>`);
 }
-// ---------- 罗盘：回到洞府时三选一主道 ----------
+// ---------- 罗盘：回到洞府时三选一，选中的道在这一轮蛊市里多出 5% ----------
 function rollCompass() { const r = R(), ids = DAOS.map(d => d.id), out = []; while (out.length < 3 && ids.length) out.push(ids.splice(r.int(ids.length), 1)[0]); S.compass = out; }
 function compassHTML() {
   return `<section class="compass2"><div class="ch"><span class="lbl">${TXT.compassHead}</span></div><p class="sm">${TXT.compassSub}</p><div class="dopts">${S.compass.map(id => { const d = DAO[id], sp = shopSpeciesOf(id); return `<button class="dopt" data-act="dao" data-d="${id}"><b>${d.n}</b><small>${esc(d.d)}</small><span class="dsp">${sp.slice(0, 4).map(x => `<i>${guSVG(x)}</i>`).join('')}</span><em>共鸣：${esc(d.r2.d)}</em></button>`; }).join('')}</div></section>`;
