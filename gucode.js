@@ -1044,7 +1044,7 @@ function rollShop(rng, realm, dao, old = [], unlocked) {
 const foodCost = id => (FOOD[id] ? FOOD[id].cost : 3) * PRICE.food;   // 单位同 PRICE
 
 // ---------- 阵盘：3 行 × 3 列（列 c：0 前、1 中、2 后），g.pos = { r, c } ----------
-const COLS = ['前', '中', '后'];
+const COL_NAMES = ['前', '中', '后'];
 const cellOf = g => g && g.pos ? g.pos.r * 3 + g.pos.c : -1;
 const cellPos = k => ({ r: Math.floor(k / 3), c: k % 3 });
 const CELL_ORDER = [0, 3, 6, 1, 4, 7, 2, 5, 8];   // 自动摆放：先前列（上中下），再中列，再后列
@@ -3946,7 +3946,7 @@ function renderSlots() {
   autoPlace(S.team);
   const combos = teamCombos(S.team), byUid = {}; S.team.forEach((g, i) => { byUid[g.uid] = combos[i]; });
   const at = {}; S.team.forEach(g => { at[cellOf(g)] = g; });
-  let h = `<span class="bcol">${COLS[2]}</span><span class="bcol">${COLS[1]}</span><span class="bcol">${COLS[0]} <small>敌在右</small></span>`;
+  let h = `<span class="bcol">${COL_NAMES[2]}</span><span class="bcol">${COL_NAMES[1]}</span><span class="bcol">${COL_NAMES[0]} <small>敌在右</small></span>`;
   for (let r = 0; r < 3; r++) for (const c of [2, 1, 0]) { const k = r * 3 + c, g = at[k]; h += g ? guCard(g, byUid[g.uid]) : `<div class="gu empty" data-drag="${k}"><span>空</span></div>`; }
   box.innerHTML = h; box.dataset.sort = 'team'; box.dataset.group = 'main'; box.classList.add('board');
 }
@@ -4350,7 +4350,7 @@ function guTip(g, team, i) {
   if (!g) return '';
   const nat = natOfG(g), c = team ? teamCombos(team)[i] : null, f = g.food && FOOD[g.food];
   const act = actOfG(g), p = g.pos;
-  return `<b>${rankName(g)}</b> <i class="a">${g.atk}</i> <i class="h">${g.hp}</i> <i class="v">${spdOf(g)}</i><br><small>${esc(SP[g.sp].lore)}${team && p ? ` · 第 ${p.r + 1} 行${COLS[p.c]}列` : ''} · 攻 / 血 / 速</small>`
+  return `<b>${rankName(g)}</b> <i class="a">${g.atk}</i> <i class="h">${g.hp}</i> <i class="v">${spdOf(g)}</i><br><small>${esc(SP[g.sp].lore)}${team && p ? ` · 第 ${p.r + 1} 行${COL_NAMES[p.c]}列` : ''} · 攻 / 血 / 速</small>`
     + (nat ? `<p><b>被动·${esc(nat.n)}</b> ${esc(nat.d)}</p>` : '') + (act ? `<p><b>主动·${esc(act.n)}</b> ${esc(act.d)}<br><small>蛊力攒满自动放</small></p>` : '') + (c ? `<p><b>杀招·${esc(c.n)}</b> ${esc(c.d)}<br><small>配方：${c.need.map(x => SP[x].n).join(' + ')}</small></p>` : '')
     + (f ? `<p><b>挂件·${esc(f.n)}</b> ${esc(f.d)}</p>` : '') + `<small>点开看完整详情</small>`;
 }

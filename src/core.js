@@ -155,7 +155,7 @@ export function rollShop(rng, realm, dao, old = [], unlocked) {
 export const foodCost = id => (FOOD[id] ? FOOD[id].cost : 3) * PRICE.food;   // 单位同 PRICE
 
 // ---------- 阵盘：3 行 × 3 列（列 c：0 前、1 中、2 后），g.pos = { r, c } ----------
-export const COLS = ['前', '中', '后'];
+export const COL_NAMES = ['前', '中', '后'];
 export const cellOf = g => g && g.pos ? g.pos.r * 3 + g.pos.c : -1;
 export const cellPos = k => ({ r: Math.floor(k / 3), c: k % 3 });
 const CELL_ORDER = [0, 3, 6, 1, 4, 7, 2, 5, 8];   // 自动摆放：先前列（上中下），再中列，再后列
