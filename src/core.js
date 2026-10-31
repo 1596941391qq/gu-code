@@ -34,6 +34,9 @@ export const QUOTA = [4, 7, 10, 14, 18, 22];
 export const isImm = g => !!(g && SP[g.sp] && SP[g.sp].immortal);
 export const quotaOf = team => (team || []).reduce((s, g) => s + (isImm(g) ? IMMORTAL.cost : rankOf(g)), 0);
 export const immFull = (team, except = null) => (team || []).filter(g => g !== except && isImm(g)).length >= IMMORTAL.max;
+// 能不能驱使上阵：普通蛊看 driveCap（境界 r 驱使 r+1 转及以下），仙蛊只有五转境界（IMM_REALM）能驱使
+export const IMM_REALM = 5;
+export const canDrive = (g, realm) => (isImm(g) ? (realm | 0) >= IMM_REALM : rankOf(g) <= driveCap(realm));
 export const driveCap = r => Math.min(RANK.max, (r | 0) + 1);   // 驱使上限：境界 r 只能让 r+1 转及以下的蛊上阵
 // 斗幽灵、战帖按额度分场：上阵转数总和不超过这一场的额度就能进（和秘境一样只限总和，不限只数和单只转数）
 export const ARENAS = [4, 9, 15, 22];

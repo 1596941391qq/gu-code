@@ -2361,6 +2361,9 @@ const QUOTA = [4, 7, 10, 14, 18, 22];
 const isImm = g => !!(g && SP[g.sp] && SP[g.sp].immortal);
 const quotaOf = team => (team || []).reduce((s, g) => s + (isImm(g) ? IMMORTAL.cost : rankOf(g)), 0);
 const immFull = (team, except = null) => (team || []).filter(g => g !== except && isImm(g)).length >= IMMORTAL.max;
+// 能不能驱使上阵：普通蛊看 driveCap（境界 r 驱使 r+1 转及以下），仙蛊只有五转境界（IMM_REALM）能驱使
+const IMM_REALM = 5;
+const canDrive = (g, realm) => (isImm(g) ? (realm | 0) >= IMM_REALM : rankOf(g) <= driveCap(realm));
 const driveCap = r => Math.min(RANK.max, (r | 0) + 1);   // 驱使上限：境界 r 只能让 r+1 转及以下的蛊上阵
 // 斗幽灵、战帖按额度分场：上阵转数总和不超过这一场的额度就能进（和秘境一样只限总和，不限只数和单只转数）
 const ARENAS = [4, 9, 15, 22];
@@ -8502,6 +8505,7 @@ const TRIP_CFG = {
   market: { heal: 0.4, price: { heal: 35 }, prem: { gu: 1.25, food: 2 }, realm: 0.25 },
   pay: { realm: 0.25, gu: 0.75 },              // 奇遇里要花的元气，每高一境 +25%；拿元气换蛊的（payGu）= 这个境界最高转数的蛊在蛊市的价钱 × gu
   bless: 3,                                    // 祝福一次给几个选（灵台房间、打赢精英后）
+  imm: 5,                                      // 劫五及以上第一次渡过（这一劫比这个秘境以前打过的都高）：首领掉落多一个「仙蛊」选项（design.md 仙蛊）
 };
 // n 名字、ch 地图上的单字、k 图例里的一句用途、tip 地图格子悬停的一句话（是什么、能得到什么）、d 进房间后的说明
 const ROOMS = {
@@ -8717,13 +8721,14 @@ function fxText(fx, pay = 0) {
 //   d 当前第几层（0 起）；lane 上一层走的路（第一层前为 null）；pick 这一层选好的路；prog 这个房间已走的元气
 //   room 走到后待处理的房间 { type, d, lane, foe?, ev?, wares?, done? }；end 结束结果；short 下一个房间路程倍数（断崖窄道）
 // purse：放元气的对象（界面传 S，用 S.bank），选路时先从里面花；等待时进账的 token 也存回去
-// opts = { trip: 出征食物 id（S.tripFood）, foods / sp: 道途已解锁的食物、物种 id（掉落只出这些，不给 = 全部）, kalpa: 第几劫（0 = 普通） }
+// opts = { trip: 出征食物 id（S.tripFood）, foods / sp: 道途已解锁的食物、物种 id（掉落只出这些，不给 = 全部）, kalpa: 第几劫（0 = 普通）,
+//          best: 这个秘境以前通关过的最高劫（没通关过 = -1；劫五及以上第一次渡过才多一个仙蛊选项） }
 // 天象和首领由种子 + 秘境定（tripPlan），进秘境前就能算出来给玩家看（tripPreview）
 function tripStart(seed, land, team, opts = {}) {   // land = 秘境 id（也认境界数字，取那个境界的第一个秘境）
   const L = landOf(land), fielded = team.slice(0, SLOTS), plan = tripPlan(seed, L), tf = (opts.trip || []).map(id => FOOD[id]).filter(f => f && f.kind === 'trip');
   const t = { v: 2, seed: String(seed), land: L.id, realm: L.realm, quota: L.quota, d: 0, lane: null, pick: null, prog: 0, order: fielded.map(g => g.uid), hp: {}, mx: {}, dead: [], fallen: [],
     loot: { foods: [], gu: [] }, log: [], room: null, end: null, kills: {}, saved: [], seen: [], rooms: 0, short: 1, foodPool: (opts.foods || []).slice(), spPool: opts.sp && opts.sp.length ? opts.sp.slice() : null,
-    kalpa: Math.max(0, Math.min(JIE_MAX, opts.kalpa | 0)), sky: plan.sky, boss: plan.boss, bless: [], offer: null, reward: null, got: null,
+    kalpa: Math.max(0, Math.min(JIE_MAX, opts.kalpa | 0)), best: opts.best == null ? -1 : opts.best | 0, sky: plan.sky, boss: plan.boss, bless: [], offer: null, reward: null, got: null,
     map: tripMap(seed, L.realm), path: [],                                                                   // 整张地图进秘境时就生成好存下；path = 每层走的哪条路
     pre: Math.min(1, tf.reduce((a, f) => a + (f.trip === 'heal' ? (f.pct || 0) / 100 : 0), 0)),                 // 回春茶、续命汤：每场开打前全队回的比例
     road: tf.reduce((a, f) => a * (f.trip === 'road' ? 1 - (f.pct || 0) / 100 : 1), 1),                       // 寻路图：路程乘几
@@ -8840,7 +8845,7 @@ function tripFight(t, team, fielded, res) {
   offers.filter(o => o.auto).forEach(o => tlog(t, `${name(o.uid)} 得蛊性「${XING[o.xing].n}」`));
   const out = { win, saved, dead: [], loot, offers, revived };
   if (room.type === 'boss') {
-    if (win) { t.reward = bossReward(t.seed, t.land, { sp: t.spPool, foods: t.foodPool }); tlog(t, '渡劫成功。首领必掉一样东西，二选一'); return { ...out, cleared: true, reward: t.reward }; }
+    if (win) { t.reward = bossReward(t.seed, t.land, { sp: t.spPool, foods: t.foodPool, imm: immOffer(t) }); tlog(t, `渡劫成功。首领必掉一样东西，${t.reward.imm ? '三' : '二'}选一`); return { ...out, cleared: true, reward: t.reward }; }
     tripEnd(t, 'retreat'); return { ...out, fled: true };
   }
   if (win && room.type === 'elite') { t.offer = { from: 'elite', ids: blessChoices(t, `e${room.d}:${room.lane}`) }; out.bless = t.offer.ids; }
@@ -8900,31 +8905,38 @@ function foeFx(t, g, isBoss) {
 
 // ───────────── 渡劫成功的奖励：首领必掉，二选一（这个秘境主道的一只高转蛊，或一份稀有食物）─────────────
 // 高转 = 这个境界能驱使的最高转数；稀有食物 = 价钱 4 档及以上（道途解锁过的）。同一趟永远是同样两样
+// o.imm = true（劫五及以上第一次渡过，见 immOffer）：多一个仙蛊选项，变成三选一。仙蛊取这个秘境主道的，没有就随机一只
+const IMMS = () => SPECIES.filter(s => s.immortal).map(s => s.id);
+const immOffer = t => !!t && (t.kalpa | 0) >= TRIP_CFG.imm && (t.kalpa | 0) > (t.best == null ? -1 : t.best);
+const landImm = land => { const L = landOf(land), all = IMMS(), mine = all.filter(id => daoOf(id) === L.dao); return mine.length === 1 ? mine[0] : null; };   // 主道只有一只仙蛊时就是它（预告能写名字）
 function bossReward(seed, land, o = {}) {
   const L = landOf(land), rng = makeRng(`trip:${seed}:reward:${L.id}`), rank = driveCap(L.realm), ok = o.sp && o.sp.length ? new Set(o.sp) : null;
   const all = NORMAL_SPECIES.map(s => s.id).filter(id => daoOf(id) === L.dao && baseRank(id) <= rank), sps = ok && all.some(id => ok.has(id)) ? all.filter(id => ok.has(id)) : all;
   const w = sps.map(id => baseRank(id) * baseRank(id)), tot = w.reduce((a, b) => a + b, 0); let x = rng() * tot, sp = sps[0];   // 原本就是高转的物种更常出
   for (let i = 0; i < sps.length; i++) { x -= w[i]; if (x < 0) { sp = sps[i]; break; } }
   const fp = foodPoolOf({ foodPool: o.foods }), rare = fp.filter(id => FOOD[id] && (FOOD[id].cost || 0) >= 4);
-  return { gu: sp ? { sp, rank: Math.max(baseRank(sp), rank) } : null, food: rng.pick(rare.length ? rare : fp) };
+  const out = { gu: sp ? { sp, rank: Math.max(baseRank(sp), rank) } : null, food: rng.pick(rare.length ? rare : fp) };
+  if (o.imm) { const all = IMMS(), mine = all.filter(id => daoOf(id) === L.dao), isp = mine.length ? rng.pick(mine) : all.length ? rng.pick(all) : null; if (isp) out.imm = { sp: isp, rank: baseRank(isp) }; }
+  return out;
 }
-// 选一样：k = 'gu' | 'food'。放进战利品袋，然后渡劫成功、回洞府
+// 选一样：k = 'gu' | 'food' | 'imm'（仙蛊）。放进战利品袋，然后渡劫成功、回洞府
 function tripReward(t, k) {
-  const r = t.reward; if (!r || !(k === 'gu' ? r.gu : r.food)) return null;
-  t.reward = null; t.got = k === 'gu' ? { k, gu: { ...r.gu } } : { k, food: r.food };
-  if (k === 'gu') t.loot.gu.push({ ...r.gu }); else t.loot.foods.push(r.food);
-  tlog(t, `首领掉落：${k === 'gu' ? guName(r.gu) : foodName(r.food)}`);
+  const r = t.reward, g = k === 'imm' ? r && r.imm : r && r.gu; if (!r || !(k === 'food' ? r.food : g)) return null;
+  t.reward = null; t.got = k === 'food' ? { k, food: r.food } : { k, gu: { ...g } };
+  if (k === 'food') t.loot.foods.push(r.food); else t.loot.gu.push({ ...g });
+  tlog(t, `首领掉落：${k === 'food' ? foodName(r.food) : guName(g)}`);
   leave(t); return t.got;
 }
 // 给选秘境列表的「渡劫成功可得」：{ pick: [两样二选一的说明], first: [第一次渡过才有的], lines: [全部，一行一条] }
 //   o = { realm: 玩家当前境界, best: 这个秘境通关过的最高劫（没通关过 = -1 或不给）, kalpa: 这次打第几劫 }
 function landReward(land, o = {}) {
   const L = landOf(land), rank = driveCap(L.realm), dao = DAO[L.dao] ? DAO[L.dao].n : L.dao, best = o.best == null ? -1 : o.best, k = o.kalpa | 0;
-  const pick = [`${dao}的一只${RANK.names[rank]}蛊`, '一份稀有食物'], first = [];
+  const pick = [`${dao}的一只${RANK.names[rank]}蛊`, '一份稀有食物'], first = [], li = landImm(L);
+  if (k >= TRIP_CFG.imm && k > best) pick.push(`${li ? `仙蛊「${SP[li].n}」` : '随机一只仙蛊'}（第一次渡过${JIE_NAMES[k]}才有，五转境界能驱使）`);
   if (best < 0 && o.realm != null && L.realm === o.realm && o.realm < REALMS.length - 1) first.push(`境界晋一层：${REALMS[o.realm + 1]}`);
   if (best < 0) first.push('这个秘境开放劫一');
   else if (k > best && k < JIE_MAX) first.push(`这个秘境开放${JIE_NAMES[k + 1]}`);
-  return { pick, first, lines: [`首领必掉，二选一：${pick.join('，或')}`, ...first, '这一趟的战利品全部带回'] };
+  return { pick, first, lines: [`首领必掉，${pick.length > 2 ? '三' : '二'}选一：${pick.join('，或')}`, ...first, '这一趟的战利品全部带回'] };
 }
 
 // ───────────── 进秘境前就能看的：天象、首领、劫数 ─────────────
@@ -9049,7 +9061,7 @@ function tuInit(api) {
   const S = api.S(), at = (S.trip && S.trip.at) || Date.now();
   const land = (S.trip && S.trip.land) || S.realm, kalpa = (S.trip && S.trip.kalpa) | 0;   // 洞府选好的秘境 id 和第几劫
   const ok = typeof api.unlocked === 'function' ? api.unlocked : null;   // 道途：掉落只出解锁过的食物和蛊
-  const t = tripStart(tuNextSeed(S), land, S.team, { trip: S.tripFood || [], kalpa,
+  const t = tripStart(tuNextSeed(S), land, S.team, { trip: S.tripFood || [], kalpa, best: tuBest(S, tripLand({ land }).id),
     foods: ok ? FOODS.filter(f => ok(f.id, 'food')).map(f => f.id) : [], sp: ok ? NORMAL_SPECIES.filter(s => ok(s.id, 'species')).map(s => s.id) : null });
   S.tripN = (S.tripN | 0) + 1;
   S.trip = Object.assign({ at }, t, { ui: { msg: [], offers: [], ask: null } });
@@ -9197,9 +9209,10 @@ function tuBlessPick(t, ids) {
   return `<div class="tu-panel t-bless"><p class="tu-eyebrow">打赢精英</p><h3><b class="tu-seal">福</b>选一个祝福</h3><p>只在这一趟有效，回洞府就没了。</p>${tuBlessCards(ids, 'offer')}<div class="tu-main"><button class="tu-sec" data-trip="offer" data-i="-1">都不要</button></div></div>`;
 }
 function tuReward(t) {
-  const r = t.reward, g = r.gu, f = r.food && FOOD[r.food];
-  return `<div class="tu-panel t-boss"><p class="tu-eyebrow">渡劫成功</p><h3><b class="tu-seal">劫</b>首领掉落，二选一</h3><p>选一样放进战利品袋，然后带着全部战利品回洞府。</p><div class="tu-cards two">
+  const r = t.reward, g = r.gu, f = r.food && FOOD[r.food], im = r.imm;
+  return `<div class="tu-panel t-boss"><p class="tu-eyebrow">渡劫成功</p><h3><b class="tu-seal">劫</b>首领掉落，${im ? '三' : '二'}选一</h3><p>选一样放进战利品袋，然后带着全部战利品回洞府。</p><div class="tu-cards${im ? '' : ' two'}">
     ${g ? `<button class="tu-card" data-trip="reward" data-k="gu"><span class="tu-art">${guSVG(g.sp, { rank: g.rank })}</span><b>${tuEsc(tuGuN(g))}</b><span>${tuEsc(SP[g.sp] && SP[g.sp].d ? SP[g.sp].d : '这个秘境主道的蛊')}</span><small>放进蛊囊</small></button>` : ''}
+    ${im ? `<button class="tu-card imm" data-trip="reward" data-k="imm"><span class="tu-art">${guSVG(im.sp, { rank: im.rank })}</span><b>仙蛊·${tuEsc(tuGuN(im))}</b><span>${tuEsc(SP[im.sp] && SP[im.sp].d ? SP[im.sp].d : '六转仙蛊')}</span><small>第一次渡过${tuEsc(JIE_NAMES[t.kalpa] || '')}才有 · 五转境界能驱使，一队一只</small></button>` : ''}
     ${f ? `<button class="tu-card" data-trip="reward" data-k="food"><span class="tu-art">${foodSVG(r.food)}</span><b>${tuEsc(f.n)}</b><span>${tuEsc(f.d)}</span><small>放进食物架</small></button>` : ''}</div></div>`;
 }
 function tuOffer(t, by, o) {
@@ -9218,7 +9231,7 @@ const tuTripSum = t => { const m = tripMods(t), bl = (t.bless || []).map(x => BL
 function tuEnd(t, by, S) {
   const e = t.end, head = { clear: ['渡劫成功', '闯到了最深处，赢了首领'], wipe: ['渡劫失败', '打输了一场，全队永久死亡'], retreat: ['退出秘境', '带着战利品回洞府'] }[e.why] || ['回洞府', ''];
   const first = e.cleared ? landReward(t.land, { realm: S.realm, best: tuBest(S, t.land), kalpa: t.kalpa }).first : [];   // 第一次渡过：晋境界、开放劫一（打到新的劫：开放下一劫）
-  const isGot = (k, x) => t.got && t.got.k === k && (k === 'gu' ? t.got.gu.sp === x.sp && t.got.gu.rank === x.rank : t.got.food === x);
+  const isGot = (k, x) => t.got && (k === 'gu' ? !!t.got.gu && t.got.gu.sp === x.sp && t.got.gu.rank === x.rank : t.got.k === 'food' && t.got.food === x);   // 仙蛊（k 'imm'）也按蛊算
   let gotGu = false, gotFood = false;
   const N = tripMapOf(t).length, deep = Math.min(N, e.why === 'clear' ? N : e.depth + (t.rooms > e.depth ? 1 : 0));
   const tag = (k, x) => { const on = k === 'gu' ? !gotGu && isGot(k, x) : !gotFood && isGot(k, x); if (on) { if (k === 'gu') gotGu = true; else gotFood = true; } return on ? '<em class="tu-drop">首领掉落</em>' : ''; };
@@ -9368,12 +9381,12 @@ const TXT = {
   jieSub: '劫数越高敌人越强，规则一条条叠上去；打过这一劫，开放下一劫',
   landLine: l => `${REALMS[l.realm]} · 额度 ${l.quota} · 敌人多${DAO[l.dao] ? DAO[l.dao].n : '杂道'}`,
   quotaTip: (u, q) => `上阵蛊的转数加起来是 ${u}，这个秘境的额度是 ${q}。额度 9 可以带三只三转，也可以一只五转加两只二转；只限转数总和，不限只数。`,
-  driveTip: () => `${REALMS[S.realm]}境界能驱使${RANK.names[driveCap(S.realm)]}及以下的蛊上阵；第一次渡过本境界的劫，境界加一，能驱使更高转数的蛊。`,
+  driveTip: () => `${REALMS[S.realm]}境界能驱使${RANK.names[driveCap(S.realm)]}及以下的蛊上阵${S.realm >= 5 ? '，还能带一只仙蛊（额度算 8 点）' : ''}；第一次渡过本境界的劫，境界加一，能驱使更高转数的蛊。`,
   whyEmpty: '空窍里还没有蛊',
   whyQuota: (u, q) => `上阵转数 ${u}，超过额度 ${q}：收一只进蛊囊再渡劫`,
   whyDrive: g => `${rankName(g)}要${REALMS[rankOf(g) - 1]}境界才能驱使：先收进蛊囊`,
   immOne: '一队只能有一只仙蛊',
-  driveNo: g => `${REALMS[S.realm]}境界只能驱使${RANK.names[driveCap(S.realm)]}及以下的蛊，${rankName(g)}先留在蛊囊`,
+  driveNo: g => isImm(g) ? `仙蛊要五转境界才能驱使，${rankName(g)}先留在蛊囊` : `${REALMS[S.realm]}境界只能驱使${RANK.names[driveCap(S.realm)]}及以下的蛊，${rankName(g)}先留在蛊囊`,
   overDrive: '境界不够，驱使不了：渡劫前收进蛊囊',
   ateLine: g => `加攻血的食物 已吃 ${ateOf(g)}/${ATE_MAX}`,
   ateNo: g => `${rankName(g)}已经吃满 ${ATE_MAX} 次加攻血的食物了`,
@@ -9435,7 +9448,7 @@ const TXT = {
   arenaNone: u => `转数 ${u}，超过最高的 22 点场`,
   duelArena: q => `这张战帖是 ${q} 点场：双方上阵转数都不超过 ${q}`,
   trib: r => `渡劫成功 · ${REALMS[r]}`,
-  tribLines: r => [`开放额度 ${QUOTA[r]} 的秘境`, `能驱使${RANK.names[driveCap(r)]}及以下的蛊上阵`, `蛊市进新档：能买到${RANK.names[Math.min(5, r + 1)]}的蛊`, '罗盘会转出新的道'],
+  tribLines: r => [`开放额度 ${QUOTA[r]} 的秘境`, `能驱使${RANK.names[driveCap(r)]}及以下的蛊上阵${r >= 5 ? '，还能带一只仙蛊（额度算 8 点）' : ''}`, `蛊市进新档：能买到${RANK.names[Math.min(5, r + 1)]}的蛊`, '罗盘会转出新的道'],
   comboFirst: c => `杀招成形 · ${c.n}`,
   comboLines: (c, g) => [`${c.need.map(x => SP[x].n).join(' + ')} 同时在空窍，杀招自动成形`, `挂在${SP[g.sp].n}身上：${c.d}`, '蛊卡上的朱印就是它，悬停能看配方和效果'],
   achFirst: a => `道途 · ${a.n}`,
@@ -9646,7 +9659,7 @@ const fi = id => `<span class="fi">${foodSVG(id)}</span>`;
 const gearHTML = g => (g && g.food && FOOD[g.food] ? `<span class="gear" title="${esc('挂件「' + FOOD[g.food].n + '」：' + FOOD[g.food].d)}">${foodSVG(g.food)}</span>` : '');
 const dzHTML = sp => { const c = daoChar(sp); return c ? `<span class="dz" style="--dc:${daoColor(sp)}">${esc(c)}</span>` : ''; };
 function guCard(g, combo) {
-  const nat = natOfG(g), act = actOfG(g), k = cellOf(g), over = rankOf(g) > driveCap(S.realm);
+  const nat = natOfG(g), act = actOfG(g), k = cellOf(g), over = !canDrive(g, S.realm);
   return `<button class="gu${over ? ' over' : ''}" data-act="gu" data-uid="${g.uid}" data-drag="${k}" data-tip-fn="gu">
   <span class="art">${guSVG(g.sp, { rank: rankOf(g) })}</span><span class="rk rk${rankOf(g)}">${RANK.ch[rankOf(g)]}</span>${combo ? `<span class="mseal">${esc(combo.n[0])}</span>` : ''}${dzHTML(g.sp)}${gearHTML(g)}
   <span class="nm">${SP[g.sp].n}</span><span class="st"><i class="a">${g.atk}</i><i class="h">${g.hp}</i><i class="v">${spdG(g)}</i></span>
@@ -9737,7 +9750,7 @@ function renderShop() {
 }
 // 新得一只蛊：能合成先合成；蛊市买的先进空窍再进蛊囊；战利品只进蛊囊
 function placeNew(g, mode = 'shop') {
-  if (mode === 'shop' && rankOf(g) > driveCap(S.realm)) mode = 'bag';   // 驱使不了的只进蛊囊
+  if (mode === 'shop' && !canDrive(g, S.realm)) mode = 'bag';   // 驱使不了的只进蛊囊
   const r = placeGu(S.team, S.bag, g, curCap(), BC(), mode);
   if (!r.where) return false;
   if (r.where === 'bag' && !r.merged.length) note(TXT.toBag(g));
@@ -9856,7 +9869,7 @@ const gainHTML = pv => { const L = gainLines(pv); return L.length ? `<div class=
 function goWhy(land = curLand()) {
   if (!S.team.length) return TXT.whyEmpty;
   const used = quotaOf(S.team); if (used > land.quota) return TXT.whyQuota(used, land.quota);
-  const over = S.team.find(g => rankOf(g) > driveCap(S.realm)); if (over) return TXT.whyDrive(over);
+  const over = S.team.find(g => !canDrive(g, S.realm)); if (over) return TXT.whyDrive(over);
   return '';
 }
 function landCard(l, lock) {
@@ -10263,7 +10276,7 @@ function guDetail(g, ctx = {}) {
   ${g.xing ? `<h4>蛊性</h4><p><b>${esc(xingName(g.xing))}</b> ${esc(xingDesc(g.xing))}</p>` : ''}
   <h4>${TXT.statHead}</h4><p class="sm">${esc(TXT.statSub)}</p>${growHTML(g)}<p class="sm">${esc(TXT.ateLine(g))}${g.bonusA || g.bonusH ? `（已加攻 ${g.bonusA || 0}、血 ${g.bonusH || 0}）` : ''}</p>
   ${recipes.length ? `<h4>能凑的杀招</h4><ul>${recipes.map(x => `<li><b>${esc(x.n)}</b> ${x.need.map(y => SP[y].n + (comboLow(x, y) ? `<small>（${comboLow(x, y)}）</small>` : '')).join(' + ')}${unlocked(x.id, 'combo') ? '' : ' <small>道途解锁</small>'}</li>`).join('')}</ul>` : ''}
-  ${ctx.kind === 'team' || ctx.kind === 'bag' ? `<div class="row2">${ctx.kind === 'team' ? `<button data-act="toBag" data-k="${cellOf(g)}"${S.bag.length < BC() && !tripOn() ? '' : ' disabled'}>收进蛊囊</button>` : `<button class="zhu" data-act="fromBag" data-i="${i}"${S.team.length < SLOTS && rankOf(g) <= driveCap(S.realm) && !tripOn() ? '' : ' disabled'}>上阵</button>`}<button data-act="sell" data-k="${ctx.kind}" data-i="${i}"${tripOn() ? ' disabled' : ''}>卖出 · 退回 ${fmtTok(price(sellValue(g)))}</button></div>` : ''}`);
+  ${ctx.kind === 'team' || ctx.kind === 'bag' ? `<div class="row2">${ctx.kind === 'team' ? `<button data-act="toBag" data-k="${cellOf(g)}"${S.bag.length < BC() && !tripOn() ? '' : ' disabled'}>收进蛊囊</button>` : `<button class="zhu" data-act="fromBag" data-i="${i}"${S.team.length < SLOTS && canDrive(g, S.realm) && !tripOn() ? '' : ' disabled'}>上阵</button>`}<button data-act="sell" data-k="${ctx.kind}" data-i="${i}"${tripOn() ? ' disabled' : ''}>卖出 · 退回 ${fmtTok(price(sellValue(g)))}</button></div>` : ''}`);
 }
 function openCodex() {
   const have = S.team.map(g => g.sp);
@@ -10298,7 +10311,7 @@ function guTip(g, team, i) {
   const nat = natOfG(g), c = team ? combosBy(team)[i] : null, f = g.food && FOOD[g.food];
   const act = actOfG(g), p = g.pos, sk = skills(g.sp, rankOf(g)), skP = sk.find(k => k.kind === 'passive'), skA = sk.find(k => k.kind === 'active'), rs = team ? resoOf(team, g) : '';
   return `<b>${rankName(g)}</b> <i class="a">${g.atk}</i> <i class="h">${g.hp}</i> <i class="v">${spdG(g)}</i><br><small>${esc(SP[g.sp].lore)}${team && p ? ` · 第 ${p.r + 1} 行${COL_NAMES[p.c]}列` : ''} · ${reachG(g)} · 攻 / 血 / 速</small>`
-    + (rankOf(g) > driveCap(S.realm) ? `<p class="warn">${esc(TXT.overDrive)}</p>` : '') + (rs ? `<p class="rs"><b>${esc(rs.split('：')[0])}</b> ${esc(rs.slice(rs.indexOf('：') + 1))}</p>` : '') + (nat ? `<p><b>被动·${esc((skP || nat).n)}</b> ${esc(skP ? skP.text : nat.d)}</p>` : '') + (act ? `<p><b>主动·${esc((skA || act).n)}</b> ${esc(skA ? skA.text : act.d)}<br><small>蛊力攒满自动放</small></p>` : '') + (c ? `<p><b>杀招·${esc(c.n)}</b> ${esc(c.d)}<br><small>配方：${c.need.map(x => SP[x].n).join(' + ')}</small></p>` : '')
+    + (!canDrive(g, S.realm) ? `<p class="warn">${esc(TXT.overDrive)}</p>` : '') + (rs ? `<p class="rs"><b>${esc(rs.split('：')[0])}</b> ${esc(rs.slice(rs.indexOf('：') + 1))}</p>` : '') + (nat ? `<p><b>被动·${esc((skP || nat).n)}</b> ${esc(skP ? skP.text : nat.d)}</p>` : '') + (act ? `<p><b>主动·${esc((skA || act).n)}</b> ${esc(skA ? skA.text : act.d)}<br><small>蛊力攒满自动放</small></p>` : '') + (c ? `<p><b>杀招·${esc(c.n)}</b> ${esc(c.d)}<br><small>配方：${c.need.map(x => SP[x].n).join(' + ')}</small></p>` : '')
     + (f ? `<p>${fi(f.id)}<b>挂件·${esc(f.n)}</b> ${esc(f.d)}</p>` : '') + (g.xing ? `<p><b>蛊性·${esc(xingName(g.xing))}</b> ${esc(xingDesc(g.xing))}</p>` : '') + (g.fz ? `<p class="sm">${esc(TXT.fuseTip(g))}</p>` : '') + `<small>${esc(TXT.ateLine(g))} · 点开看完整详情</small>`;
 }
 const TIPS = {
@@ -10344,13 +10357,13 @@ function moveGu(fromKey, fi, toKey, ti) {
   if (fromKey === 'bag' && toKey === 'bag') { if (!S.bag[fi]) return false; moveIdx(S.bag, fi, Math.min(ti, S.bag.length - 1)); return true; }
   if (fromKey === 'bag') {
     const g = S.bag[fi], k = ti == null || ti < 0 ? freeCell(S.team) : ti, o = atCell(k); if (!g || k == null) return false;
-    if (rankOf(g) > driveCap(S.realm)) { note(TXT.driveNo(g)); return false; }
+    if (!canDrive(g, S.realm)) { note(TXT.driveNo(g)); return false; }
     if (isImm(g) && immFull(S.team, o)) { note(TXT.immOne); return false; }
     if (o) { S.bag[fi] = o; o.pos = null; } else { if (S.team.length >= SLOTS) { note(`阵盘 9 格都满了：拖到一只蛊身上就能换下它`); return false; } S.bag.splice(fi, 1); }
     g.pos = cellPos(k); S.team.push(g); sortTeam(S.team); return true;
   }
   const g = atCell(fi), o = S.bag[ti]; if (!g) return false;
-  if (o && rankOf(o) > driveCap(S.realm)) { note(TXT.driveNo(o)); return false; }
+  if (o && !canDrive(o, S.realm)) { note(TXT.driveNo(o)); return false; }
   if (o && isImm(o) && immFull(S.team, g)) { note(TXT.immOne); return false; }
   if (o) { S.bag[ti] = g; o.pos = g.pos; S.team.splice(S.team.indexOf(g), 1, o); g.pos = null; }
   else { if (S.bag.length >= BC()) return false; S.team.splice(S.team.indexOf(g), 1); g.pos = null; S.bag.push(g); }

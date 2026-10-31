@@ -276,5 +276,15 @@ console.log('# 9 天象、首领机制、祝福、劫数、渡劫奖励、出征
   ok(tw.end && tw.end.cleared && rr.reward.k === 'food' && rr.loot.foods.includes(rr.reward.food) && rr.land === 'liusha' && rr.kalpa === 0, '选了食物：进战利品袋，渡劫成功回洞府，结果带秘境和第几劫');
   const lr = T.landReward('liusha', { realm: 2, best: -1 }), lr2 = T.landReward('liusha', { realm: 3, best: 2, kalpa: 3 });
   ok(lr.lines[0].includes('金道的一只三转蛊') && lr.first.some(x => x.includes('境界晋一层')) && lr.first.some(x => x.includes('劫一')) && lr2.first[0] === '这个秘境开放劫四', '「渡劫成功可得」：主道高转蛊或稀有食物；第一次渡过写晋境界、开放劫一；打到新劫写开放下一劫');
+  // 仙蛊：劫五及以上第一次渡过，首领掉落多一个仙蛊选项（主道的，没有就随机），三选一；以前打过这一劫就没有
+  const ti = T.tripStart('imm', 'qingmao', team, { kalpa: 5, best: 4 }); ti.room = { type: 'boss', d: 9, lane: 1, foe: 1 }; ti.pick = 1; ti.d = 9; ff = T.fieldTeam(ti, team);
+  T.tripFight(ti, team, ff, { winner: 'A', hpA: ff.map(g => g.hp), statA: [] });
+  const tj = T.tripStart('imm', 'qingmao', team, { kalpa: 5, best: 5 }); tj.room = { type: 'boss', d: 9, lane: 1, foe: 1 }; tj.pick = 1; tj.d = 9; ff = T.fieldTeam(tj, team);
+  T.tripFight(tj, team, ff, { winner: 'A', hpA: ff.map(g => g.hp), statA: [] });
+  ok(ti.reward && ti.reward.imm && ti.reward.imm.sp === 'qingtian' && ti.reward.imm.rank === 6 && tj.reward && !tj.reward.imm, `劫五第一次渡过青茅山：多一个仙蛊「${ti.reward && ti.reward.imm ? T.guName(ti.reward.imm) : '—'}」（力道），以前渡过劫五就没有`);
+  T.tripReward(ti, 'imm'); const ri = T.tripResult(ti);
+  ok(ri.reward.k === 'imm' && ri.loot.gu.some(g => g.sp === 'qingtian'), '选了仙蛊：进战利品袋带回');
+  const li = T.landReward('suishi', { realm: 5, best: 4, kalpa: 5 }), lj = T.landReward('suishi', { realm: 5, best: 4, kalpa: 4 });
+  ok(li.lines[0].startsWith('首领必掉，三选一') && li.pick.some(x => x.includes('随机一只仙蛊')) && lj.lines[0].startsWith('首领必掉，二选一'), '「渡劫成功可得」写明仙蛊选项（主道没有仙蛊写「随机一只」），劫四以下没有');
 }
 console.log(bad ? `\n${bad} 项未通过` : '\n全部通过'); process.exit(bad ? 1 : 0);

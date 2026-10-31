@@ -1,5 +1,5 @@
 // 蛊码 GuCode · 界面与流程：洞府（养成）、斗幽灵与战帖（切磋）、战斗回放、秘境接口。规则只认 docs/design.md
-import { SPECIES, SP, TRAITS, REALMS, SLOTS, RANK, COMBOS, COMBO, COMBOS_ALL, setComboLocks, makeRng, hashStr, newGu, starterTeam, baseRank, rankOf, rankName, statFor, STAT_SCALE, HP_SCALE, fuseW, natOf, natMulFor, awOf, QUOTA, quotaOf, ARENAS, arenaOf, GHOST_NAMES, ATE_MAX, ateOf, canEat, statTable, XING, driveCap, quotaTeam, poolFor, BAG, bagCap, canBuy, placeGu, mergeAll, sellValue, guCost, isImm, immFull, lowOk, comboMissing, COL_NAMES, cellOf, cellPos, freeCell, autoPlace, sortTeam, daoOf, rollShop, foodCost, feedStat, PRICE, genTeam, posLinks, encodeTeam, decodeTeam, EV_MS, playMs, tempoFor, fmtNum, fmtTok } from './core.js';
+import { SPECIES, SP, TRAITS, REALMS, SLOTS, RANK, COMBOS, COMBO, COMBOS_ALL, setComboLocks, makeRng, hashStr, newGu, starterTeam, baseRank, rankOf, rankName, statFor, STAT_SCALE, HP_SCALE, fuseW, natOf, natMulFor, awOf, QUOTA, quotaOf, ARENAS, arenaOf, GHOST_NAMES, ATE_MAX, ateOf, canEat, statTable, XING, driveCap, quotaTeam, poolFor, BAG, bagCap, canBuy, placeGu, mergeAll, sellValue, guCost, isImm, immFull, canDrive, lowOk, comboMissing, COL_NAMES, cellOf, cellPos, freeCell, autoPlace, sortTeam, daoOf, rollShop, foodCost, feedStat, PRICE, genTeam, posLinks, encodeTeam, decodeTeam, EV_MS, playMs, tempoFor, fmtNum, fmtTok } from './core.js';
 import { battle, synergyOf, battleProfile, skillText } from './battle.js';
 import { guSVG, ART_DEFS } from './art.js';
 import { TokenSource, VSC } from './tokens.js';
@@ -53,12 +53,12 @@ const TXT = {
   jieSub: '劫数越高敌人越强，规则一条条叠上去；打过这一劫，开放下一劫',
   landLine: l => `${REALMS[l.realm]} · 额度 ${l.quota} · 敌人多${DAO[l.dao] ? DAO[l.dao].n : '杂道'}`,
   quotaTip: (u, q) => `上阵蛊的转数加起来是 ${u}，这个秘境的额度是 ${q}。额度 9 可以带三只三转，也可以一只五转加两只二转；只限转数总和，不限只数。`,
-  driveTip: () => `${REALMS[S.realm]}境界能驱使${RANK.names[driveCap(S.realm)]}及以下的蛊上阵；第一次渡过本境界的劫，境界加一，能驱使更高转数的蛊。`,
+  driveTip: () => `${REALMS[S.realm]}境界能驱使${RANK.names[driveCap(S.realm)]}及以下的蛊上阵${S.realm >= 5 ? '，还能带一只仙蛊（额度算 8 点）' : ''}；第一次渡过本境界的劫，境界加一，能驱使更高转数的蛊。`,
   whyEmpty: '空窍里还没有蛊',
   whyQuota: (u, q) => `上阵转数 ${u}，超过额度 ${q}：收一只进蛊囊再渡劫`,
   whyDrive: g => `${rankName(g)}要${REALMS[rankOf(g) - 1]}境界才能驱使：先收进蛊囊`,
   immOne: '一队只能有一只仙蛊',
-  driveNo: g => `${REALMS[S.realm]}境界只能驱使${RANK.names[driveCap(S.realm)]}及以下的蛊，${rankName(g)}先留在蛊囊`,
+  driveNo: g => isImm(g) ? `仙蛊要五转境界才能驱使，${rankName(g)}先留在蛊囊` : `${REALMS[S.realm]}境界只能驱使${RANK.names[driveCap(S.realm)]}及以下的蛊，${rankName(g)}先留在蛊囊`,
   overDrive: '境界不够，驱使不了：渡劫前收进蛊囊',
   ateLine: g => `加攻血的食物 已吃 ${ateOf(g)}/${ATE_MAX}`,
   ateNo: g => `${rankName(g)}已经吃满 ${ATE_MAX} 次加攻血的食物了`,
@@ -120,7 +120,7 @@ const TXT = {
   arenaNone: u => `转数 ${u}，超过最高的 22 点场`,
   duelArena: q => `这张战帖是 ${q} 点场：双方上阵转数都不超过 ${q}`,
   trib: r => `渡劫成功 · ${REALMS[r]}`,
-  tribLines: r => [`开放额度 ${QUOTA[r]} 的秘境`, `能驱使${RANK.names[driveCap(r)]}及以下的蛊上阵`, `蛊市进新档：能买到${RANK.names[Math.min(5, r + 1)]}的蛊`, '罗盘会转出新的道'],
+  tribLines: r => [`开放额度 ${QUOTA[r]} 的秘境`, `能驱使${RANK.names[driveCap(r)]}及以下的蛊上阵${r >= 5 ? '，还能带一只仙蛊（额度算 8 点）' : ''}`, `蛊市进新档：能买到${RANK.names[Math.min(5, r + 1)]}的蛊`, '罗盘会转出新的道'],
   comboFirst: c => `杀招成形 · ${c.n}`,
   comboLines: (c, g) => [`${c.need.map(x => SP[x].n).join(' + ')} 同时在空窍，杀招自动成形`, `挂在${SP[g.sp].n}身上：${c.d}`, '蛊卡上的朱印就是它，悬停能看配方和效果'],
   achFirst: a => `道途 · ${a.n}`,
@@ -331,7 +331,7 @@ const fi = id => `<span class="fi">${foodSVG(id)}</span>`;
 const gearHTML = g => (g && g.food && FOOD[g.food] ? `<span class="gear" title="${esc('挂件「' + FOOD[g.food].n + '」：' + FOOD[g.food].d)}">${foodSVG(g.food)}</span>` : '');
 const dzHTML = sp => { const c = daoChar(sp); return c ? `<span class="dz" style="--dc:${daoColor(sp)}">${esc(c)}</span>` : ''; };
 function guCard(g, combo) {
-  const nat = natOfG(g), act = actOfG(g), k = cellOf(g), over = rankOf(g) > driveCap(S.realm);
+  const nat = natOfG(g), act = actOfG(g), k = cellOf(g), over = !canDrive(g, S.realm);
   return `<button class="gu${over ? ' over' : ''}" data-act="gu" data-uid="${g.uid}" data-drag="${k}" data-tip-fn="gu">
   <span class="art">${guSVG(g.sp, { rank: rankOf(g) })}</span><span class="rk rk${rankOf(g)}">${RANK.ch[rankOf(g)]}</span>${combo ? `<span class="mseal">${esc(combo.n[0])}</span>` : ''}${dzHTML(g.sp)}${gearHTML(g)}
   <span class="nm">${SP[g.sp].n}</span><span class="st"><i class="a">${g.atk}</i><i class="h">${g.hp}</i><i class="v">${spdG(g)}</i></span>
@@ -422,7 +422,7 @@ function renderShop() {
 }
 // 新得一只蛊：能合成先合成；蛊市买的先进空窍再进蛊囊；战利品只进蛊囊
 function placeNew(g, mode = 'shop') {
-  if (mode === 'shop' && rankOf(g) > driveCap(S.realm)) mode = 'bag';   // 驱使不了的只进蛊囊
+  if (mode === 'shop' && !canDrive(g, S.realm)) mode = 'bag';   // 驱使不了的只进蛊囊
   const r = placeGu(S.team, S.bag, g, curCap(), BC(), mode);
   if (!r.where) return false;
   if (r.where === 'bag' && !r.merged.length) note(TXT.toBag(g));
@@ -541,7 +541,7 @@ const gainHTML = pv => { const L = gainLines(pv); return L.length ? `<div class=
 function goWhy(land = curLand()) {
   if (!S.team.length) return TXT.whyEmpty;
   const used = quotaOf(S.team); if (used > land.quota) return TXT.whyQuota(used, land.quota);
-  const over = S.team.find(g => rankOf(g) > driveCap(S.realm)); if (over) return TXT.whyDrive(over);
+  const over = S.team.find(g => !canDrive(g, S.realm)); if (over) return TXT.whyDrive(over);
   return '';
 }
 function landCard(l, lock) {
@@ -948,7 +948,7 @@ function guDetail(g, ctx = {}) {
   ${g.xing ? `<h4>蛊性</h4><p><b>${esc(xingName(g.xing))}</b> ${esc(xingDesc(g.xing))}</p>` : ''}
   <h4>${TXT.statHead}</h4><p class="sm">${esc(TXT.statSub)}</p>${growHTML(g)}<p class="sm">${esc(TXT.ateLine(g))}${g.bonusA || g.bonusH ? `（已加攻 ${g.bonusA || 0}、血 ${g.bonusH || 0}）` : ''}</p>
   ${recipes.length ? `<h4>能凑的杀招</h4><ul>${recipes.map(x => `<li><b>${esc(x.n)}</b> ${x.need.map(y => SP[y].n + (comboLow(x, y) ? `<small>（${comboLow(x, y)}）</small>` : '')).join(' + ')}${unlocked(x.id, 'combo') ? '' : ' <small>道途解锁</small>'}</li>`).join('')}</ul>` : ''}
-  ${ctx.kind === 'team' || ctx.kind === 'bag' ? `<div class="row2">${ctx.kind === 'team' ? `<button data-act="toBag" data-k="${cellOf(g)}"${S.bag.length < BC() && !tripOn() ? '' : ' disabled'}>收进蛊囊</button>` : `<button class="zhu" data-act="fromBag" data-i="${i}"${S.team.length < SLOTS && rankOf(g) <= driveCap(S.realm) && !tripOn() ? '' : ' disabled'}>上阵</button>`}<button data-act="sell" data-k="${ctx.kind}" data-i="${i}"${tripOn() ? ' disabled' : ''}>卖出 · 退回 ${fmtTok(price(sellValue(g)))}</button></div>` : ''}`);
+  ${ctx.kind === 'team' || ctx.kind === 'bag' ? `<div class="row2">${ctx.kind === 'team' ? `<button data-act="toBag" data-k="${cellOf(g)}"${S.bag.length < BC() && !tripOn() ? '' : ' disabled'}>收进蛊囊</button>` : `<button class="zhu" data-act="fromBag" data-i="${i}"${S.team.length < SLOTS && canDrive(g, S.realm) && !tripOn() ? '' : ' disabled'}>上阵</button>`}<button data-act="sell" data-k="${ctx.kind}" data-i="${i}"${tripOn() ? ' disabled' : ''}>卖出 · 退回 ${fmtTok(price(sellValue(g)))}</button></div>` : ''}`);
 }
 function openCodex() {
   const have = S.team.map(g => g.sp);
@@ -983,7 +983,7 @@ function guTip(g, team, i) {
   const nat = natOfG(g), c = team ? combosBy(team)[i] : null, f = g.food && FOOD[g.food];
   const act = actOfG(g), p = g.pos, sk = skills(g.sp, rankOf(g)), skP = sk.find(k => k.kind === 'passive'), skA = sk.find(k => k.kind === 'active'), rs = team ? resoOf(team, g) : '';
   return `<b>${rankName(g)}</b> <i class="a">${g.atk}</i> <i class="h">${g.hp}</i> <i class="v">${spdG(g)}</i><br><small>${esc(SP[g.sp].lore)}${team && p ? ` · 第 ${p.r + 1} 行${COL_NAMES[p.c]}列` : ''} · ${reachG(g)} · 攻 / 血 / 速</small>`
-    + (rankOf(g) > driveCap(S.realm) ? `<p class="warn">${esc(TXT.overDrive)}</p>` : '') + (rs ? `<p class="rs"><b>${esc(rs.split('：')[0])}</b> ${esc(rs.slice(rs.indexOf('：') + 1))}</p>` : '') + (nat ? `<p><b>被动·${esc((skP || nat).n)}</b> ${esc(skP ? skP.text : nat.d)}</p>` : '') + (act ? `<p><b>主动·${esc((skA || act).n)}</b> ${esc(skA ? skA.text : act.d)}<br><small>蛊力攒满自动放</small></p>` : '') + (c ? `<p><b>杀招·${esc(c.n)}</b> ${esc(c.d)}<br><small>配方：${c.need.map(x => SP[x].n).join(' + ')}</small></p>` : '')
+    + (!canDrive(g, S.realm) ? `<p class="warn">${esc(TXT.overDrive)}</p>` : '') + (rs ? `<p class="rs"><b>${esc(rs.split('：')[0])}</b> ${esc(rs.slice(rs.indexOf('：') + 1))}</p>` : '') + (nat ? `<p><b>被动·${esc((skP || nat).n)}</b> ${esc(skP ? skP.text : nat.d)}</p>` : '') + (act ? `<p><b>主动·${esc((skA || act).n)}</b> ${esc(skA ? skA.text : act.d)}<br><small>蛊力攒满自动放</small></p>` : '') + (c ? `<p><b>杀招·${esc(c.n)}</b> ${esc(c.d)}<br><small>配方：${c.need.map(x => SP[x].n).join(' + ')}</small></p>` : '')
     + (f ? `<p>${fi(f.id)}<b>挂件·${esc(f.n)}</b> ${esc(f.d)}</p>` : '') + (g.xing ? `<p><b>蛊性·${esc(xingName(g.xing))}</b> ${esc(xingDesc(g.xing))}</p>` : '') + (g.fz ? `<p class="sm">${esc(TXT.fuseTip(g))}</p>` : '') + `<small>${esc(TXT.ateLine(g))} · 点开看完整详情</small>`;
 }
 const TIPS = {
@@ -1029,13 +1029,13 @@ function moveGu(fromKey, fi, toKey, ti) {
   if (fromKey === 'bag' && toKey === 'bag') { if (!S.bag[fi]) return false; moveIdx(S.bag, fi, Math.min(ti, S.bag.length - 1)); return true; }
   if (fromKey === 'bag') {
     const g = S.bag[fi], k = ti == null || ti < 0 ? freeCell(S.team) : ti, o = atCell(k); if (!g || k == null) return false;
-    if (rankOf(g) > driveCap(S.realm)) { note(TXT.driveNo(g)); return false; }
+    if (!canDrive(g, S.realm)) { note(TXT.driveNo(g)); return false; }
     if (isImm(g) && immFull(S.team, o)) { note(TXT.immOne); return false; }
     if (o) { S.bag[fi] = o; o.pos = null; } else { if (S.team.length >= SLOTS) { note(`阵盘 9 格都满了：拖到一只蛊身上就能换下它`); return false; } S.bag.splice(fi, 1); }
     g.pos = cellPos(k); S.team.push(g); sortTeam(S.team); return true;
   }
   const g = atCell(fi), o = S.bag[ti]; if (!g) return false;
-  if (o && rankOf(o) > driveCap(S.realm)) { note(TXT.driveNo(o)); return false; }
+  if (o && !canDrive(o, S.realm)) { note(TXT.driveNo(o)); return false; }
   if (o && isImm(o) && immFull(S.team, g)) { note(TXT.immOne); return false; }
   if (o) { S.bag[ti] = g; o.pos = g.pos; S.team.splice(S.team.indexOf(g), 1, o); g.pos = null; }
   else { if (S.bag.length >= BC()) return false; S.team.splice(S.team.indexOf(g), 1); g.pos = null; S.bag.push(g); }

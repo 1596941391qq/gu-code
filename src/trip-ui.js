@@ -30,7 +30,7 @@ function tuInit(api) {
   const S = api.S(), at = (S.trip && S.trip.at) || Date.now();
   const land = (S.trip && S.trip.land) || S.realm, kalpa = (S.trip && S.trip.kalpa) | 0;   // 洞府选好的秘境 id 和第几劫
   const ok = typeof api.unlocked === 'function' ? api.unlocked : null;   // 道途：掉落只出解锁过的食物和蛊
-  const t = tripStart(tuNextSeed(S), land, S.team, { trip: S.tripFood || [], kalpa,
+  const t = tripStart(tuNextSeed(S), land, S.team, { trip: S.tripFood || [], kalpa, best: tuBest(S, tripLand({ land }).id),
     foods: ok ? FOODS.filter(f => ok(f.id, 'food')).map(f => f.id) : [], sp: ok ? NORMAL_SPECIES.filter(s => ok(s.id, 'species')).map(s => s.id) : null });
   S.tripN = (S.tripN | 0) + 1;
   S.trip = Object.assign({ at }, t, { ui: { msg: [], offers: [], ask: null } });
@@ -178,9 +178,10 @@ function tuBlessPick(t, ids) {
   return `<div class="tu-panel t-bless"><p class="tu-eyebrow">打赢精英</p><h3><b class="tu-seal">福</b>选一个祝福</h3><p>只在这一趟有效，回洞府就没了。</p>${tuBlessCards(ids, 'offer')}<div class="tu-main"><button class="tu-sec" data-trip="offer" data-i="-1">都不要</button></div></div>`;
 }
 function tuReward(t) {
-  const r = t.reward, g = r.gu, f = r.food && FOOD[r.food];
-  return `<div class="tu-panel t-boss"><p class="tu-eyebrow">渡劫成功</p><h3><b class="tu-seal">劫</b>首领掉落，二选一</h3><p>选一样放进战利品袋，然后带着全部战利品回洞府。</p><div class="tu-cards two">
+  const r = t.reward, g = r.gu, f = r.food && FOOD[r.food], im = r.imm;
+  return `<div class="tu-panel t-boss"><p class="tu-eyebrow">渡劫成功</p><h3><b class="tu-seal">劫</b>首领掉落，${im ? '三' : '二'}选一</h3><p>选一样放进战利品袋，然后带着全部战利品回洞府。</p><div class="tu-cards${im ? '' : ' two'}">
     ${g ? `<button class="tu-card" data-trip="reward" data-k="gu"><span class="tu-art">${guSVG(g.sp, { rank: g.rank })}</span><b>${tuEsc(tuGuN(g))}</b><span>${tuEsc(SP[g.sp] && SP[g.sp].d ? SP[g.sp].d : '这个秘境主道的蛊')}</span><small>放进蛊囊</small></button>` : ''}
+    ${im ? `<button class="tu-card imm" data-trip="reward" data-k="imm"><span class="tu-art">${guSVG(im.sp, { rank: im.rank })}</span><b>仙蛊·${tuEsc(tuGuN(im))}</b><span>${tuEsc(SP[im.sp] && SP[im.sp].d ? SP[im.sp].d : '六转仙蛊')}</span><small>第一次渡过${tuEsc(JIE_NAMES[t.kalpa] || '')}才有 · 五转境界能驱使，一队一只</small></button>` : ''}
     ${f ? `<button class="tu-card" data-trip="reward" data-k="food"><span class="tu-art">${foodSVG(r.food)}</span><b>${tuEsc(f.n)}</b><span>${tuEsc(f.d)}</span><small>放进食物架</small></button>` : ''}</div></div>`;
 }
 function tuOffer(t, by, o) {
@@ -199,7 +200,7 @@ const tuTripSum = t => { const m = tripMods(t), bl = (t.bless || []).map(x => BL
 function tuEnd(t, by, S) {
   const e = t.end, head = { clear: ['渡劫成功', '闯到了最深处，赢了首领'], wipe: ['渡劫失败', '打输了一场，全队永久死亡'], retreat: ['退出秘境', '带着战利品回洞府'] }[e.why] || ['回洞府', ''];
   const first = e.cleared ? landReward(t.land, { realm: S.realm, best: tuBest(S, t.land), kalpa: t.kalpa }).first : [];   // 第一次渡过：晋境界、开放劫一（打到新的劫：开放下一劫）
-  const isGot = (k, x) => t.got && t.got.k === k && (k === 'gu' ? t.got.gu.sp === x.sp && t.got.gu.rank === x.rank : t.got.food === x);
+  const isGot = (k, x) => t.got && (k === 'gu' ? !!t.got.gu && t.got.gu.sp === x.sp && t.got.gu.rank === x.rank : t.got.k === 'food' && t.got.food === x);   // 仙蛊（k 'imm'）也按蛊算
   let gotGu = false, gotFood = false;
   const N = tripMapOf(t).length, deep = Math.min(N, e.why === 'clear' ? N : e.depth + (t.rooms > e.depth ? 1 : 0));
   const tag = (k, x) => { const on = k === 'gu' ? !gotGu && isGot(k, x) : !gotFood && isGot(k, x); if (on) { if (k === 'gu') gotGu = true; else gotFood = true; } return on ? '<em class="tu-drop">首领掉落</em>' : ''; };

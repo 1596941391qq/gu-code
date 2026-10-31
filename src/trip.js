@@ -2,7 +2,7 @@
 // 规则正本：docs/design.md 第 2 节。界面在 trip-ui.js。战斗引擎归战斗一侧：秘境给出场蛊带 hpNow，读回 res.hpEnd（每只剩血，0 = 倒下）
 // 和 res.statA（每只这一场的经历，判蛊性用）；引擎还没给 hpEnd 时，用最后一帧快照兜底（hpFromLog）。
 // 资源只有元气（= 消耗的 token）：房间路程、坊市、奇遇里要花的都按元气算，先花洞府攒着的（purse.bank），不够就等实时 token。
-import { makeRng, hashStr, SP, poolFor, baseRank, RANK, SLOTS, XING, fmtTok, statFor, daoOf, NORMAL_SPECIES, autoPlace, arrangeTeam, QUOTA, REALMS, driveCap, PRICE } from './core.js';   // QUOTA（各境界额度）定义在 core，洞府也用
+import { makeRng, hashStr, SP, SPECIES, poolFor, baseRank, RANK, SLOTS, XING, fmtTok, statFor, daoOf, NORMAL_SPECIES, autoPlace, arrangeTeam, QUOTA, REALMS, driveCap, PRICE } from './core.js';   // QUOTA（各境界额度）定义在 core，洞府也用
 import { FOODS, FOOD } from './foods.js';
 import { DAO } from './daos.js';
 import { SKIES, SKY, MECHS, MECH, BLESSES, BLESS, blessLast, JIE, JIE_MAX, JIE_NAMES, jieRules, skyEff, blessRules } from './trip-mods.js';
@@ -56,6 +56,7 @@ export const TRIP_CFG = {
   market: { heal: 0.4, price: { heal: 35 }, prem: { gu: 1.25, food: 2 }, realm: 0.25 },
   pay: { realm: 0.25, gu: 0.75 },              // 奇遇里要花的元气，每高一境 +25%；拿元气换蛊的（payGu）= 这个境界最高转数的蛊在蛊市的价钱 × gu
   bless: 3,                                    // 祝福一次给几个选（灵台房间、打赢精英后）
+  imm: 5,                                      // 劫五及以上第一次渡过（这一劫比这个秘境以前打过的都高）：首领掉落多一个「仙蛊」选项（design.md 仙蛊）
 };
 // n 名字、ch 地图上的单字、k 图例里的一句用途、tip 地图格子悬停的一句话（是什么、能得到什么）、d 进房间后的说明
 export const ROOMS = {
@@ -271,13 +272,14 @@ export function fxText(fx, pay = 0) {
 //   d 当前第几层（0 起）；lane 上一层走的路（第一层前为 null）；pick 这一层选好的路；prog 这个房间已走的元气
 //   room 走到后待处理的房间 { type, d, lane, foe?, ev?, wares?, done? }；end 结束结果；short 下一个房间路程倍数（断崖窄道）
 // purse：放元气的对象（界面传 S，用 S.bank），选路时先从里面花；等待时进账的 token 也存回去
-// opts = { trip: 出征食物 id（S.tripFood）, foods / sp: 道途已解锁的食物、物种 id（掉落只出这些，不给 = 全部）, kalpa: 第几劫（0 = 普通） }
+// opts = { trip: 出征食物 id（S.tripFood）, foods / sp: 道途已解锁的食物、物种 id（掉落只出这些，不给 = 全部）, kalpa: 第几劫（0 = 普通）,
+//          best: 这个秘境以前通关过的最高劫（没通关过 = -1；劫五及以上第一次渡过才多一个仙蛊选项） }
 // 天象和首领由种子 + 秘境定（tripPlan），进秘境前就能算出来给玩家看（tripPreview）
 export function tripStart(seed, land, team, opts = {}) {   // land = 秘境 id（也认境界数字，取那个境界的第一个秘境）
   const L = landOf(land), fielded = team.slice(0, SLOTS), plan = tripPlan(seed, L), tf = (opts.trip || []).map(id => FOOD[id]).filter(f => f && f.kind === 'trip');
   const t = { v: 2, seed: String(seed), land: L.id, realm: L.realm, quota: L.quota, d: 0, lane: null, pick: null, prog: 0, order: fielded.map(g => g.uid), hp: {}, mx: {}, dead: [], fallen: [],
     loot: { foods: [], gu: [] }, log: [], room: null, end: null, kills: {}, saved: [], seen: [], rooms: 0, short: 1, foodPool: (opts.foods || []).slice(), spPool: opts.sp && opts.sp.length ? opts.sp.slice() : null,
-    kalpa: Math.max(0, Math.min(JIE_MAX, opts.kalpa | 0)), sky: plan.sky, boss: plan.boss, bless: [], offer: null, reward: null, got: null,
+    kalpa: Math.max(0, Math.min(JIE_MAX, opts.kalpa | 0)), best: opts.best == null ? -1 : opts.best | 0, sky: plan.sky, boss: plan.boss, bless: [], offer: null, reward: null, got: null,
     map: tripMap(seed, L.realm), path: [],                                                                   // 整张地图进秘境时就生成好存下；path = 每层走的哪条路
     pre: Math.min(1, tf.reduce((a, f) => a + (f.trip === 'heal' ? (f.pct || 0) / 100 : 0), 0)),                 // 回春茶、续命汤：每场开打前全队回的比例
     road: tf.reduce((a, f) => a * (f.trip === 'road' ? 1 - (f.pct || 0) / 100 : 1), 1),                       // 寻路图：路程乘几
@@ -394,7 +396,7 @@ export function tripFight(t, team, fielded, res) {
   offers.filter(o => o.auto).forEach(o => tlog(t, `${name(o.uid)} 得蛊性「${XING[o.xing].n}」`));
   const out = { win, saved, dead: [], loot, offers, revived };
   if (room.type === 'boss') {
-    if (win) { t.reward = bossReward(t.seed, t.land, { sp: t.spPool, foods: t.foodPool }); tlog(t, '渡劫成功。首领必掉一样东西，二选一'); return { ...out, cleared: true, reward: t.reward }; }
+    if (win) { t.reward = bossReward(t.seed, t.land, { sp: t.spPool, foods: t.foodPool, imm: immOffer(t) }); tlog(t, `渡劫成功。首领必掉一样东西，${t.reward.imm ? '三' : '二'}选一`); return { ...out, cleared: true, reward: t.reward }; }
     tripEnd(t, 'retreat'); return { ...out, fled: true };
   }
   if (win && room.type === 'elite') { t.offer = { from: 'elite', ids: blessChoices(t, `e${room.d}:${room.lane}`) }; out.bless = t.offer.ids; }
@@ -454,31 +456,38 @@ export function foeFx(t, g, isBoss) {
 
 // ───────────── 渡劫成功的奖励：首领必掉，二选一（这个秘境主道的一只高转蛊，或一份稀有食物）─────────────
 // 高转 = 这个境界能驱使的最高转数；稀有食物 = 价钱 4 档及以上（道途解锁过的）。同一趟永远是同样两样
+// o.imm = true（劫五及以上第一次渡过，见 immOffer）：多一个仙蛊选项，变成三选一。仙蛊取这个秘境主道的，没有就随机一只
+export const IMMS = () => SPECIES.filter(s => s.immortal).map(s => s.id);
+export const immOffer = t => !!t && (t.kalpa | 0) >= TRIP_CFG.imm && (t.kalpa | 0) > (t.best == null ? -1 : t.best);
+export const landImm = land => { const L = landOf(land), all = IMMS(), mine = all.filter(id => daoOf(id) === L.dao); return mine.length === 1 ? mine[0] : null; };   // 主道只有一只仙蛊时就是它（预告能写名字）
 export function bossReward(seed, land, o = {}) {
   const L = landOf(land), rng = makeRng(`trip:${seed}:reward:${L.id}`), rank = driveCap(L.realm), ok = o.sp && o.sp.length ? new Set(o.sp) : null;
   const all = NORMAL_SPECIES.map(s => s.id).filter(id => daoOf(id) === L.dao && baseRank(id) <= rank), sps = ok && all.some(id => ok.has(id)) ? all.filter(id => ok.has(id)) : all;
   const w = sps.map(id => baseRank(id) * baseRank(id)), tot = w.reduce((a, b) => a + b, 0); let x = rng() * tot, sp = sps[0];   // 原本就是高转的物种更常出
   for (let i = 0; i < sps.length; i++) { x -= w[i]; if (x < 0) { sp = sps[i]; break; } }
   const fp = foodPoolOf({ foodPool: o.foods }), rare = fp.filter(id => FOOD[id] && (FOOD[id].cost || 0) >= 4);
-  return { gu: sp ? { sp, rank: Math.max(baseRank(sp), rank) } : null, food: rng.pick(rare.length ? rare : fp) };
+  const out = { gu: sp ? { sp, rank: Math.max(baseRank(sp), rank) } : null, food: rng.pick(rare.length ? rare : fp) };
+  if (o.imm) { const all = IMMS(), mine = all.filter(id => daoOf(id) === L.dao), isp = mine.length ? rng.pick(mine) : all.length ? rng.pick(all) : null; if (isp) out.imm = { sp: isp, rank: baseRank(isp) }; }
+  return out;
 }
-// 选一样：k = 'gu' | 'food'。放进战利品袋，然后渡劫成功、回洞府
+// 选一样：k = 'gu' | 'food' | 'imm'（仙蛊）。放进战利品袋，然后渡劫成功、回洞府
 export function tripReward(t, k) {
-  const r = t.reward; if (!r || !(k === 'gu' ? r.gu : r.food)) return null;
-  t.reward = null; t.got = k === 'gu' ? { k, gu: { ...r.gu } } : { k, food: r.food };
-  if (k === 'gu') t.loot.gu.push({ ...r.gu }); else t.loot.foods.push(r.food);
-  tlog(t, `首领掉落：${k === 'gu' ? guName(r.gu) : foodName(r.food)}`);
+  const r = t.reward, g = k === 'imm' ? r && r.imm : r && r.gu; if (!r || !(k === 'food' ? r.food : g)) return null;
+  t.reward = null; t.got = k === 'food' ? { k, food: r.food } : { k, gu: { ...g } };
+  if (k === 'food') t.loot.foods.push(r.food); else t.loot.gu.push({ ...g });
+  tlog(t, `首领掉落：${k === 'food' ? foodName(r.food) : guName(g)}`);
   leave(t); return t.got;
 }
 // 给选秘境列表的「渡劫成功可得」：{ pick: [两样二选一的说明], first: [第一次渡过才有的], lines: [全部，一行一条] }
 //   o = { realm: 玩家当前境界, best: 这个秘境通关过的最高劫（没通关过 = -1 或不给）, kalpa: 这次打第几劫 }
 export function landReward(land, o = {}) {
   const L = landOf(land), rank = driveCap(L.realm), dao = DAO[L.dao] ? DAO[L.dao].n : L.dao, best = o.best == null ? -1 : o.best, k = o.kalpa | 0;
-  const pick = [`${dao}的一只${RANK.names[rank]}蛊`, '一份稀有食物'], first = [];
+  const pick = [`${dao}的一只${RANK.names[rank]}蛊`, '一份稀有食物'], first = [], li = landImm(L);
+  if (k >= TRIP_CFG.imm && k > best) pick.push(`${li ? `仙蛊「${SP[li].n}」` : '随机一只仙蛊'}（第一次渡过${JIE_NAMES[k]}才有，五转境界能驱使）`);
   if (best < 0 && o.realm != null && L.realm === o.realm && o.realm < REALMS.length - 1) first.push(`境界晋一层：${REALMS[o.realm + 1]}`);
   if (best < 0) first.push('这个秘境开放劫一');
   else if (k > best && k < JIE_MAX) first.push(`这个秘境开放${JIE_NAMES[k + 1]}`);
-  return { pick, first, lines: [`首领必掉，二选一：${pick.join('，或')}`, ...first, '这一趟的战利品全部带回'] };
+  return { pick, first, lines: [`首领必掉，${pick.length > 2 ? '三' : '二'}选一：${pick.join('，或')}`, ...first, '这一趟的战利品全部带回'] };
 }
 
 // ───────────── 进秘境前就能看的：天象、首领、劫数 ─────────────
