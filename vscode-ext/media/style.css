@@ -1143,9 +1143,6 @@ button.tu-room:hover{transform:translateY(-2px)}
 .tu-xl{list-style:none;padding:0;margin:6px 0;display:grid;gap:6px}
 .tu-xl li{padding:8px 10px;background:var(--paper);color:var(--ink);border-radius:3px;font-size:13px;line-height:1.5}
 .tu-xl b{display:block;font:15px var(--kai)}
-.tu-fare{text-align:center}
-.tu-fare .tu-art{width:96px;margin:4px auto 6px}
-.tu-fare h3{justify-content:center}
 .tu-art.gone{filter:grayscale(1) contrast(.9);opacity:.55}
 .tu-got,.tu-gone{list-style:none;padding:0;margin:0 0 8px;display:grid;gap:6px}
 .tu-got li{display:grid;grid-template-columns:30px 1fr auto;gap:8px;align-items:center;padding:4px 8px;background:var(--paper);color:var(--ink);border-radius:3px;font:15px var(--kai)}
@@ -1161,3 +1158,4 @@ button.tu-room:hover{transform:translateY(-2px)}
 .tu-bag .lbl{font-size:15px}
 .tu-bag small{flex-basis:100%;font-size:11px;color:var(--mu)}
 @media (max-width:400px){.tu-team{grid-template-columns:repeat(2,minmax(0,1fr))}.tu-room{min-height:78px}}
+.tu-saved{padding:6px 10px;border-left:3px solid var(--qing);background:color-mix(in srgb,var(--qing) 10%,transparent);font-size:13px}
