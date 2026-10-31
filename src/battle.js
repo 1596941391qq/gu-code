@@ -8,8 +8,11 @@ import { BX, NEW_TRAITS } from './bestiary.js';   // 现有 64 种本命技（�
 
 // HPK：战斗血量 = 卡面血 × HPK；DIST：行动条长度（速 100 的蛊每 DIST 个时间单位出手一次 = 一轮）
 // SPD_K：速对出手间隔的影响系数（速 120 的蛊出手频率 = 1 + 0.2 × SPD_K 倍），让速度有意义又不一边倒
-export const HPK = 4, DIST = 100, SPD_K = 0.6, MAXROUND = 30, ROWS = 3, COLS = 3;
-export const GP = { act: 25, charge: 50, hit: 12, cap: 100 };
+export const HPK = 4, DIST = 100, SPD_K = 0.18, MAXROUND = 30;
+const ROWS = 3, COLS = 3;
+// RES_K：道共鸣数值整体折算（design.md 2.6：道共鸣只给轻量加成，配合比堆道重要）
+export const RES_K = 0.5;
+export const GP = { act: 34, charge: 60, hit: 15, cap: 100, start: 20 };
 export const CRIT = { p: 0.1, mul: 1.5 };
 const MAXOPS = 20000, MAXACT = 900, CAP = SLOTS, INFLICT = new Set(['psn', 'para', 'burn', 'chill', 'stun', 'web', 'mark', 'seal', 'tie']);
 
@@ -19,60 +22,67 @@ const DEF = {
   boar: [105, 'm', 'pounce'], fire: [100, 'r', 'spit'], twin: [115, 'm', 'slash'], iron: [75, 'm', 'bite'], thorn: [85, 'm', 'slash'], mantis: [120, 'm', 'slash'],
   bone: [90, 'm', 'bite'], queen: [95, 'r', 'spore'], cicada: [100, 'r', 'wave'], drum: [90, 'r', 'wave', 'front'], scorp: [110, 'r', 'needle', 'last'], moth: [105, 'r', 'spore'],
   ant: [110, 'm', 'bite'], firefly: [120, 'r', 'spit'], stick: [80, 'm', 'slash'], leech: [100, 'm', 'bite'], dung: [70, 'm', 'pounce'], tiger: [140, 'm', 'pounce'],
-  webspider: [105, 'r', 'needle', 'front'], aphid: [115, 'm', 'bite'], hairy: [85, 'm', 'bite'], cent: [110, 'm', 'bite'], wasp: [130, 'r', 'needle'], spider: [85, 'r', 'needle'],
+  webspider: [125, 'r', 'needle', 'front'], aphid: [115, 'm', 'bite'], hairy: [85, 'm', 'bite'], cent: [110, 'm', 'bite'], wasp: [130, 'r', 'needle'], spider: [85, 'r', 'needle'],
   mole: [95, 'm', 'pounce'], gecko: [90, 'r', 'wave', 'front'], qingfu: [110, 'r', 'wave'], bomb: [95, 'm', 'pounce'], silk: [70, 'm', 'bite'], mosq: [125, 'r', 'needle', 'top'],
-  rhino: [75, 'm', 'pounce'], gold: [85, 'm', 'pounce'], qant: [85, 'r', 'spore'], flea: [135, 'm', 'bite'], bfly: [115, 'r', 'wave'], sleep: [90, 'r', 'spore', 'front'],
+  rhino: [75, 'm', 'pounce'], gold: [85, 'm', 'pounce'], qant: [85, 'r', 'spore'], flea: [135, 'm', 'bite'], bfly: [100, 'r', 'wave'], sleep: [90, 'r', 'spore', 'front'],
   stag: [95, 'm', 'slash'], glut: [90, 'm', 'bite'], toad: [80, 'r', 'spore'], cricket: [115, 'r', 'wave', 'front'], locust: [120, 'm', 'slash'], mirror: [85, 'm', 'slash'],
   hive: [70, 'r', 'spore'], fly: [125, 'm', 'bite'], bury: [85, 'm', 'bite'], frost: [110, 'r', 'bolt'], lure: [120, 'r', 'wave'], antlion: [80, 'm', 'bite'],
   mayfly: [150, 'm', 'slash'], thunder: [100, 'r', 'bolt'], tortoise: [60, 'm', 'bite'], puppet: [95, 'r', 'needle'], hairworm: [105, 'r', 'needle', 'top'], urn: [75, 'm', 'pounce'],
-  hex: [110, 'r', 'spore', 'top'], saw: [90, 'm', 'slash'], dfly: [140, 'r', 'bolt'], orchid: [105, 'm', 'slash'], taisui: [65, 'm', 'pounce'], yue: [60, 'r', 'wave', 'front'],
+  hex: [110, 'r', 'spore', 'top'], saw: [90, 'm', 'slash'], dfly: [140, 'r', 'bolt'], orchid: [105, 'm', 'slash'], taisui: [80, 'm', 'pounce'], yue: [60, 'r', 'wave', 'front'],
   jinchan: [85, 'r', 'spit'], guangyin: [100, 'r', 'wave'], fate: [95, 'r', 'needle'], nirvana: [115, 'r', 'spit'],
 };
 // 主动技（占位：约四成物种；内容专家在物种上写 act 后以物种为准）。格式见规格 5.2
 const E = (op, tg, o = {}) => ({ op, tg, ...o });
 const DEF_ACT = {
-  boar: { n: '蛮豕冲撞', cap: 100, fx: 'pounce', d: '撞敌方最前两只各 120% 攻，自己攻 +15%', eff: [E('dmg', 'foe.front:2', { atk: 1.2 }), E('buff', 'self', { atk: 0.15 })] },
-  fire: { n: '焚风吐息', cap: 110, fx: 'fire', d: '敌方全体各 55% 攻，灼烧 2 轮（每轮 25% 攻）', eff: [E('dmg', 'foe.all', { atk: 0.55 }), E('st', 'same', { k: 'burn', n: 2, atk: 0.25 })] },
-  twin: { n: '镜影分身', cap: 90, fx: 'summon', d: '身后召出一只 60% 攻血的分影，自己护 1 层', eff: [E('summon', null, { sp: 'shade', atk: 0.6, mx: 0.6, at: 'behind' }), E('st', 'self', { k: 'guard', n: 1 })] },
-  iron: { n: '铁壁', cap: 80, fx: 'shield', d: '自己得 45% 血的护体，嘲讽 2 轮', eff: [E('shield', 'self', { mx: 0.45 }), E('st', 'self', { k: 'taunt', n: 2 })] },
-  mantis: { n: '斩心镰', cap: 100, fx: 'slash', d: '斩血最少的敌蛊 200% 攻，它血不过半再 ×1.5', eff: [E('dmg', 'foe.low', { atk: 2.0, exe: 0.5 })] },
-  queen: { n: '万蜂朝王', cap: 120, fx: 'summon', d: '末位召两只工蜂（各 40% 攻血），全体友蛊攻 +10%', eff: [E('summon', null, { sp: 'bee', atk: 0.4, mx: 0.4, at: 'back', count: 2 }), E('buff', 'ally.all', { atk: 0.1 })] },
-  scorp: { n: '三连毒针', cap: 90, fx: 'needle', d: '对末位连射三针各 70% 攻，上毒（每轮 30% 攻）', eff: [E('dmg', 'foe.last', { atk: 0.7, times: 3 }), E('st', 'same', { k: 'psn', atk: 0.3 })] },
-  tiger: { n: '猛虎下山', cap: 80, fx: 'pounce', d: '扑血最少的敌蛊 170% 攻，自己行动条提前 50%', eff: [E('dmg', 'foe.low', { atk: 1.7 }), E('pull', 'self', { v: 0.5 })] },
-  webspider: { n: '天罗网', cap: 90, fx: 'web', d: '敌方最前两只落网（下次普攻落空），行动条推后 30%', eff: [E('st', 'foe.front:2', { k: 'web', n: 1 }), E('push', 'same', { v: 0.3 })] },
-  cent: { n: '百足噬', cap: 90, fx: 'bite', d: '咬敌方最前一只 150% 攻并上毒（每轮 40% 攻）', eff: [E('dmg', 'foe.front', { atk: 1.5 }), E('st', 'same', { k: 'psn', atk: 0.4 })] },
-  wasp: { n: '群锋攒刺', cap: 100, fx: 'needle', d: '随机刺 4 下，每下 60% 攻', eff: [E('dmg', 'foe.rand', { atk: 0.6, times: 4 })] },
-  spider: { n: '万蛛归巢', cap: 110, fx: 'summon', d: '身后召两只小蛛（各 35% 攻血），自己回 20% 血', eff: [E('summon', null, { sp: 'spiderling', atk: 0.35, mx: 0.35, at: 'behind', count: 2 }), E('heal', 'self', { mx: 0.2 })] },
-  gecko: { n: '断尾护主', cap: 80, fx: 'shield', d: '最前友蛊得本蛊 45% 血的护体，并清掉减益', eff: [E('shield', 'ally.front', { mx: 0.45 }), E('cleanse', 'same')] },
-  mosq: { n: '吸髓', cap: 90, fx: 'drain', d: '吸攻最高的敌蛊 130% 攻，回一半，偷它 15% 攻', eff: [E('dmg', 'foe.top', { atk: 1.3, steal: 0.5 }), E('buff', 'same', { atk: -0.15 }), E('buff', 'self', { atk: 0.15 })] },
-  rhino: { n: '犀角冲锋', cap: 100, fx: 'pounce', d: '冲撞敌方最前一只 160% 攻，眩晕 1 次', eff: [E('dmg', 'foe.front', { atk: 1.6 }), E('st', 'same', { k: 'stun', n: 1 })] },
-  flea: { n: '连环跳', cap: 75, fx: 'pounce', d: '跳咬血最少的敌蛊 100% 攻，行动条提前 80%', eff: [E('dmg', 'foe.low', { atk: 1.0 }), E('pull', 'self', { v: 0.8 })] },
-  sleep: { n: '催眠粉', cap: 110, fx: 'spore', d: '敌方攻最高的两只眩晕 1 次', eff: [E('st', 'foe.top:2', { k: 'stun', n: 1 })] },
-  stag: { n: '断钳', cap: 100, fx: 'slash', d: '夹敌方最前一只 140% 攻，它血不过半时 ×1.8', eff: [E('dmg', 'foe.front', { atk: 1.4, exe: 0.5, exeMul: 1.8 })] },
-  toad: { n: '毒瘴', cap: 110, fx: 'spore', d: '敌方全体中毒（每轮本蛊 8% 血）', eff: [E('st', 'foe.all', { k: 'psn', mx: 0.08 })] },
-  locust: { n: '蝗灾', cap: 110, fx: 'slash', d: '敌方全体各 70% 攻', eff: [E('dmg', 'foe.all', { atk: 0.7 })] },
-  frost: { n: '冰封', cap: 100, fx: 'frost', d: '冻住速最快的敌蛊（眩 2 次），并造成 80% 攻', eff: [E('dmg', 'foe.fast', { atk: 0.8 }), E('st', 'same', { k: 'stun', n: 2 })] },
-  thunder: { n: '雷暴', cap: 110, fx: 'bolt', d: '劈随机 3 只各 90% 攻，三成麻痹（眩 1 次）', eff: [E('dmg', 'foe.rand:3', { atk: 0.9 }), E('st', 'same', { k: 'stun', n: 1, chance: 0.3 })] },
-  tortoise: { n: '玄武镇', cap: 120, fx: 'shield', d: '全体友蛊得本蛊 22% 血的护体，自己嘲讽 2 轮', eff: [E('shield', 'ally.all', { mx: 0.22 }), E('st', 'self', { k: 'taunt', n: 2 })] },
-  dfly: { n: '九霄引雷', cap: 120, fx: 'bolt', d: '敌方全体各 80% 攻，行动条推后 20%', eff: [E('dmg', 'foe.all', { atk: 0.8 }), E('push', 'same', { v: 0.2 })] },
-  jinchan: { n: '金光普照', cap: 110, fx: 'heal', d: '全体友蛊回本蛊 18% 血，加速 10%（2 轮）', eff: [E('heal', 'ally.all', { mx: 0.18 }), E('buff', 'same', { spd: 0.1, dur: 2 })] },
-  nirvana: { n: '焚身涅槃', cap: 120, fx: 'fire', d: '敌方全体各 90% 攻并灼烧 2 轮，自己回 25% 血', eff: [E('dmg', 'foe.all', { atk: 0.9 }), E('st', 'same', { k: 'burn', n: 2, atk: 0.3 }), E('heal', 'self', { mx: 0.25 })] },
-  hairworm: { n: '钻心', cap: 100, fx: 'needle', d: '对攻最高的敌蛊 150% 攻，无视护体', eff: [E('dmg', 'foe.top', { atk: 1.5, pierce: 1 })] },
-  cricket: { n: '震天鸣', cap: 100, fx: 'roar', d: '敌方全体攻 -12%（2 轮），行动条推后 25%', eff: [E('buff', 'foe.all', { atk: -0.12, dur: 2 }), E('push', 'same', { v: 0.25 })] },
+  fire: { n: '焚风吐息', cap: 110, fx: 'fire', d: '敌方全体各 90% 攻，灼烧 2 轮（每轮 30% 攻）', eff: [E('dmg', 'foe.all', { atk: 0.9 }), E('st', 'same', { k: 'burn', n: 2, atk: 0.3 })] },
+  twin: { n: '镜影分身', cap: 90, fx: 'summon', d: '身后召出一只 80% 攻血的分影，自己护 2 层', eff: [E('summon', null, { sp: 'shade', atk: 0.8, mx: 0.8, at: 'behind' }), E('st', 'self', { k: 'guard', n: 2 })] },
+  iron: { n: '铁壁', cap: 95, fx: 'shield', d: '自己得 60% 血的护体，嘲讽 2 轮', eff: [E('shield', 'self', { mx: 0.6 }), E('st', 'self', { k: 'taunt', n: 2 })] },
+  mantis: { n: '斩心镰', cap: 100, fx: 'slash', d: '斩血最少的敌蛊 280% 攻，它血不过半再 ×1.5', eff: [E('dmg', 'foe.low', { atk: 2.8, exe: 0.5 })] },
+  queen: { n: '万蜂朝王', cap: 120, fx: 'summon', d: '后列召两只工蜂（各 50% 攻血），全体友蛊攻 +15%', eff: [E('summon', null, { sp: 'bee', atk: 0.5, mx: 0.5, at: 'back', count: 2 }), E('buff', 'ally.all', { atk: 0.15 })] },
+  scorp: { n: '三连毒针', cap: 90, fx: 'needle', d: '对末位连射三针各 110% 攻，上毒（每轮 40% 攻）', eff: [E('dmg', 'foe.last', { atk: 1.1, times: 3 }), E('st', 'same', { k: 'psn', atk: 0.4 })] },
+  tiger: { n: '猛虎下山', cap: 70, fx: 'pounce', d: '扑血最少的敌蛊 260% 攻，自己行动条提前 50%', eff: [E('dmg', 'foe.low', { atk: 2.6 }), E('adv', 'self', { v: 0.5 })] },
+  webspider: { n: '天罗网', cap: 70, fx: 'web', d: '敌方最前一列落网（下次普攻落空），各受 80% 攻，行动条推后 30%', eff: [E('st', 'foe.front', { shape: 'col', k: 'web', n: 1 }), E('dmg', 'same', { atk: 0.8 }), E('delay', 'same', { v: 0.3 })] },
+  cent: { n: '百足噬', cap: 90, fx: 'bite', d: '咬最近的敌蛊 220% 攻并上毒（每轮 50% 攻）', eff: [E('dmg', 'foe.front', { atk: 2.2 }), E('st', 'same', { k: 'psn', atk: 0.5 })] },
+  wasp: { n: '群锋攒刺', cap: 100, fx: 'needle', d: '随机刺 5 下，每下 80% 攻', eff: [E('dmg', 'foe.rand', { atk: 0.8, times: 5 })] },
+  spider: { n: '万蛛归巢', cap: 110, fx: 'summon', d: '身后召两只小蛛（各 45% 攻血），自己回 25% 血', eff: [E('summon', null, { sp: 'spiderling', atk: 0.45, mx: 0.45, at: 'behind', count: 2 }), E('heal', 'self', { mx: 0.25 })] },
+  gecko: { n: '断尾护主', cap: 80, fx: 'shield', d: '相邻友蛊各得本蛊 50% 血的护体，并清掉减益', eff: [E('shield', 'ally.adj', { mx: 0.5 }), E('cleanse', 'same')] },
+  mosq: { n: '吸髓', cap: 90, fx: 'drain', d: '吸攻最高的敌蛊 180% 攻，回一半，偷它 15% 攻', eff: [E('dmg', 'foe.top', { atk: 1.8, steal: 0.5 }), E('buff', 'same', { atk: -0.15 }), E('buff', 'self', { atk: 0.15 })] },
+  rhino: { n: '犀角冲锋', cap: 100, fx: 'pounce', d: '冲最近的敌蛊 220% 攻并击退一格，眩晕 1 次', eff: [E('dmg', 'foe.front', { atk: 2.2 }), E('st', 'same', { k: 'stun', n: 1 }), E('knock', 'same', { v: 1 })] },
+  flea: { n: '连环跳', cap: 75, fx: 'pounce', d: '跳咬血最少的敌蛊 150% 攻，自己行动条提前 80%', eff: [E('dmg', 'foe.low', { atk: 1.5 }), E('adv', 'self', { v: 0.8 })] },
+  sleep: { n: '催眠粉', cap: 100, fx: 'spore', d: '敌方攻最高的蛊和它周围一圈眩晕 1 次', eff: [E('st', 'foe.top', { shape: 'ring', k: 'stun', n: 1 })] },
+  stag: { n: '断钳', cap: 100, fx: 'slash', d: '夹最近的敌蛊 220% 攻，它血不过半时 ×1.8', eff: [E('dmg', 'foe.front', { atk: 2.2, exe: 0.5, exeMul: 1.8 })] },
+  toad: { n: '毒瘴', cap: 110, fx: 'spore', d: '敌方全体中毒（每轮本蛊 10% 血）', eff: [E('st', 'foe.all', { k: 'psn', mx: 0.1 })] },
+  locust: { n: '蝗灾', cap: 110, fx: 'slash', d: '整行贯穿：最近那一行的敌蛊各 150% 攻', eff: [E('dmg', 'foe.front', { shape: 'row', atk: 1.5 })] },
+  frost: { n: '冰封', cap: 100, fx: 'frost', d: '速最快的敌蛊十字范围各 90% 攻，挂寒 2 层', eff: [E('dmg', 'foe.fast', { shape: 'cross', atk: 0.9 }), E('st', 'same', { k: 'chill', n: 2 })] },
+  thunder: { n: '雷暴', cap: 110, fx: 'bolt', d: '劈随机 3 只各 120% 攻，三成麻痹（眩 1 次）', eff: [E('dmg', 'foe.rand:3', { atk: 1.2 }), E('st', 'same', { k: 'stun', n: 1, chance: 0.3 })] },
+  tortoise: { n: '玄武镇', cap: 120, fx: 'shield', d: '全体友蛊得本蛊 30% 血的护体，自己嘲讽 2 轮', eff: [E('shield', 'ally.all', { mx: 0.3 }), E('st', 'self', { k: 'taunt', n: 2 })] },
+  dfly: { n: '九霄引雷', cap: 120, fx: 'bolt', d: '敌方后排各 160% 攻，行动条推后 25%', eff: [E('dmg', null, { shape: 'back', atk: 1.6 }), E('delay', 'same', { v: 0.25 })] },
+  jinchan: { n: '金光普照', cap: 110, fx: 'heal', d: '全体友蛊回本蛊 25% 血，加速 15%（2 轮）', eff: [E('heal', 'ally.all', { mx: 0.25 }), E('buff', 'same', { spd: 0.15, dur: 2 })] },
+  nirvana: { n: '焚身涅槃', cap: 120, fx: 'fire', d: '敌方全体各 120% 攻并灼烧 2 轮，自己回 30% 血', eff: [E('dmg', 'foe.all', { atk: 1.2 }), E('st', 'same', { k: 'burn', n: 2, atk: 0.4 }), E('heal', 'self', { mx: 0.3 })] },
+  hairworm: { n: '钻心', cap: 100, fx: 'needle', d: '对攻最高的敌蛊 240% 攻，无视护体', eff: [E('dmg', 'foe.top', { atk: 2.4, pierce: 1 })] },
+  cricket: { n: '震天鸣', cap: 100, fx: 'roar', d: '敌方全体攻 -15%（2 轮），行动条推后 30%', eff: [E('buff', 'foe.all', { atk: -0.15, dur: 2 }), E('delay', 'same', { v: 0.3 })] },
+  taisui: { n: '肉芝再生', cap: 80, fx: 'heal', d: '自己回 45% 血，相邻友蛊各得本蛊 25% 血的护体', eff: [E('heal', 'self', { mx: 0.45 }), E('shield', 'ally.adj', { mx: 0.25 })] },
+  hex: { n: '魇梦', cap: 80, fx: 'spore', d: '攻最高的两只敌蛊各受 120% 攻，封住蛊力 2 轮，攻 -25%（2 轮）', eff: [E('dmg', 'foe.top:2', { atk: 1.2 }), E('st', 'same', { k: 'seal', n: 2 }), E('buff', 'same', { atk: -0.25, dur: 2 })] },
+  lure: { n: '迷香', cap: 75, fx: 'spore', d: '把血最少的敌蛊拉近一格并打上印记（受伤 +25%，2 轮）', eff: [E('draw', 'foe.low', { v: 1 }), E('st', 'same', { k: 'mark', n: 2 })] },
+  gold: { n: '金身', cap: 100, fx: 'shield', d: '同一列的友蛊和自己各得本蛊 45% 血的护体', eff: [E('shield', 'self', { shape: 'col', mx: 0.45 })] },
 };
 // 旧 10 个杀招（core.js COMBOS 只有文字）的引擎侧效果；内容专家在杀招上写 when/eff 后以数据为准。新杀招的钩子在 bestiary.js
 const DEF_COMBO = {
-  sanzhu: { when: 'start', eff: [E('dmg', 'foe.front:3', { atk: 0.8 })] },
-  jinjia: { when: 'start', eff: [E('shield', 'self', { mx: 0.3 }), E('st', 'self', { k: 'taunt', n: 2 })] },
-  wangu: { eff: [E('summon', null, { when: 'hit', sp: 'pupa', atk: 0.3, mx: 0.3, at: 'behind', max: 1 }), E('buff', 'ally.all', { when: 'summon', atk: 0.04, hp: 0.04, max: 4 })] },
-  tuoke: { when: 'lethal', eff: [E('endure', null, { v: 0.5, max: 1 })] },
-  duopo: { when: 'kill', eff: [E('dmg', 'foe.front', { atk: 1.0, max: 3 })] },
-  pozhen: { when: 'round', eff: [E('buff', 'ally.all', { atk: 0.03, hp: 0.03 })] },
-  shishan: { when: 'death', eff: [E('summon', null, { sp: 'lunar', atk: 0.5, mx: 0.4, at: 'here' })] },
-  fenshen: { when: 'kill', eff: [E('dmg', 'foe.all', { atk: 0.25 })] },
-  jingji: { when: 'hit', eff: [E('shield', 'ally.all', { mx: 0.04, max: 6 })] },
+  sanzhu: { when: 'start', eff: [E('dmg', 'foe.front', { shape: 'row', atk: 0.6 })] },
+  jinjia: { when: 'start', eff: [E('shield', 'self', { mx: 0.2 }), E('st', 'self', { k: 'taunt', n: 1 })] },
+  wangu: { eff: [E('summon', null, { when: 'hit', sp: 'pupa', atk: 0.2, mx: 0.2, at: 'behind', max: 1 }), E('buff', 'ally.all', { when: 'summon', atk: 0.02, hp: 0.02, max: 3 })] },
+  tuoke: { when: 'lethal', eff: [E('endure', null, { v: 0.25, max: 1 })] },
+  duopo: { when: 'kill', eff: [E('dmg', 'foe.front', { atk: 0.8, max: 2 })] },
+  pozhen: { when: 'round', eff: [E('buff', 'ally.all', { atk: 0.015, hp: 0.015, max: 6 })] },
+  shishan: { when: 'death', eff: [E('summon', null, { sp: 'lunar', atk: 0.3, mx: 0.25, at: 'here' })] },
+  fenshen: { when: 'kill', eff: [E('dmg', 'foe.all', { atk: 0.2 })] },
+  jingji: { when: 'hit', eff: [E('shield', 'ally.adj', { mx: 0.03, max: 4 })] },
 };
-Object.values(NEW_TRAITS).forEach(t => { if (!t.hooks) t.hooks = {}; });   // 声明式本命技没写 hooks 时补空表，BX 派发不报错
+Object.values(NEW_TRAITS).forEach(t => { if (!t.hooks) t.hooks = {}; });
+// 现有本命技是按旧的「炉口对撞、一回合一下」调的数值；新引擎里人人出手、挨打次数多得多，这里按本命技逐个折算（只缩放本命技钩子里的加攻血、护体、伤害、召唤、毒）。
+// 内容专家把本命技改写成声明式后，这张表对应的项删掉即可。
+export const NAT_K = { aegis: 2.68, beat: 0.25, blitz: 3, brief: 0.4, burrow: 3, burst: 2.67, chain: 0.2, cocoon: 1.63, drain: 0.62, execute: 2.12, frost: 0.35, gild: 3, gorge: 1.73, hex: 3, hive: 0.16, inherit: 0.7, ironskin: 0.18, leech: 0.57, lull: 3, lure: 3, miasma: 0.22, mimic: 1.55, mirage: 0.48, mirror: 3, molt: 1.5, moon: 0.6, mother: 1.43, mourn: 0.5, muster: 0.31, pair: 0.3, pit: 2, prick: 1.2, rage: 0.28, regrow: 3, roll: 2.16, rot: 0.45, royal: 0.22, scale: 2.76, storm: 1.59, sunder: 0.32, venom: 0.36, ward: 1.39, web: 3 };
+const NAT_K0 = 1;   // 声明式本命技没写 hooks 时补空表，BX 派发不报错
 
 const prof = sp => {
   const s = SP[sp] || {}, d = DEF[sp] || [100, s.school === '护体' || s.school === '减伤' ? 'm' : 'm', 'pounce'];
@@ -163,6 +173,7 @@ export function battle(ta, tb, seed, opts = {}) {
     o.t = t; if (ctx.nat) o.nat = 1;
     if (t === 'combo') { const u = byId[o.uid]; if (u) { o.id = u.combo; if (!told.has(o.uid)) { told.add(o.uid); o.quiet = 0; o.big = 1; } } }
     if (t === 'buff' && cur && cur.side === (byId[o.uid] || {}).side && (o.h > 0 || o.sh > 0)) cur.sup += (o.h > 0 ? o.h : 0) + (o.sh || 0);
+    if (t === 'status' && ctx.nat && cur && (o.k === 'psn' || o.k === 'para') && byId[o.uid]) { const k = nk(), tg = byId[o.uid]; if (k !== 1 && tg.f[o.k]) { const cut = Math.round(o.n * (1 - k)); tg.f[o.k] = Math.max(1, tg.f[o.k] - cut); o.n = Math.max(1, o.n - cut); } }
     if (!lite) o.s = snap(); log.push(o);
     // 跨道配合：谁给敌蛊挂上了状态（毒、灼、寒、眩、网、印……），施放者和它的友蛊都能接着触发（inflict / allyInflict）
     if (t === 'status' && INFLICT.has(o.k) && cur && alive(cur) && byId[o.uid] && byId[o.uid].side !== cur.side && depth < 6) {
@@ -241,7 +252,7 @@ export function battle(ta, tb, seed, opts = {}) {
     return [anchor];
   }
   function moveTo(u, r, c, k) { u.r = r; u.c = c; sortSide(u.side); ev('move', { uid: u.uid, r, c, k }); }
-  const syn = [synergyOf(tA), synergyOf(tB)];
+  const noSyn = opts.noSyn || [], syn = [tA, tB].map((T, s) => noSyn[s] ? { daos: [], combos: [], clashes: [], line: '' } : synergyOf(T));   // noSyn：模拟用，关掉某一方的羁绊做对照
   syn.forEach((sy, s) => sy.combos.forEach(c => {
     const u = S[s].find(x => x.src === c.idx), C = comboDef(COMBOS.find(x => x.id === c.id)); if (!u) return;
     u.combo = c.id; u.cname = c.n; u.cmul = c.mul; roster[u.uid].combo = { id: c.id, n: c.n, mul: c.mul };
@@ -250,8 +261,10 @@ export function battle(ta, tb, seed, opts = {}) {
 
   // ----- 伤害、增益、召唤（ctx 接口与 bestiary.js 文件头一致） -----
   const P = (n, p) => p > 0 ? Math.max(1, Math.round(n * p)) : 0;
-  const buff = (u, a, h) => { if (!alive(u)) return; u.atk = Math.max(1, Math.min(99999, u.atk + a)); u.hp = Math.min(999999, u.hp + h); u.mx += h; ev('buff', { uid: u.uid, a, h }); };
-  const shield = (u, n) => { if (!alive(u) || n <= 0) return; n = Math.round(n); u.sh = Math.min(Math.max(99, 2 * u.mx), u.sh + n); ev('buff', { uid: u.uid, sh: n }); };
+  const nk = () => ctx.nat && cur ? (NAT_K[natOf(cur.sp)] != null ? NAT_K[natOf(cur.sp)] : NAT_K0) : 1;
+  const nsc = (n, k) => k === 1 || !n ? n : n > 0 ? Math.max(1, Math.round(n * k)) : Math.min(-1, Math.round(n * k));
+  const buff = (u, a, h) => { if (!alive(u)) return; { const k = nk(); a = nsc(a, k); h = nsc(h, k); } u.atk = Math.max(1, Math.min(99999, u.atk + a)); u.hp = Math.min(999999, u.hp + h); u.mx += h; ev('buff', { uid: u.uid, a, h }); };
+  const shield = (u, n) => { if (!alive(u) || n <= 0) return; n = Math.round(n * nk()); if (n <= 0) return; u.sh = Math.min(Math.max(99, 2 * u.mx), u.sh + n); ev('buff', { uid: u.uid, sh: n }); };
   const setSpd = (u, ns) => { ns = Math.max(30, ns); if (u.next > now) { u.next = now + (u.next - now) * ivOf(ns) / ivOf(u.spd); } u.spd = ns; };
   const gainGp = (u, n) => { if (!u.act || !alive(u) || u.f.seal > 0) return; u.gp = Math.max(0, Math.min(u.gpMax, (u.gp || 0) + n)); };
   const comboEv = u => ev('combo', { uid: u.uid, n: u.cname });
@@ -259,12 +272,15 @@ export function battle(ta, tb, seed, opts = {}) {
 
   function deal(src, tg, amt, kind, crit, o = {}) {
     if (!alive(tg) || amt <= 0) return 0;
+    if (ctx.nat && cur && src === cur && kind !== 'hit') amt = Math.max(1, Math.round(amt * nk()));
     const foe = src && src.side !== tg.side;
     if (foe && (kind === 'hit' || kind === 'skill') && !tg.f.guarded && !tg.tr.guard) {   // 护卫（蛊蛹等）：相邻友蛊第一次挨打时代受
       const arr = S[tg.side], i = arr.indexOf(tg), gd = [arr[i - 1], arr[i + 1]].find(x => alive(x) && x.tr.guard);
       if (gd) { tg.f.guarded = 1; ev('trig', { uid: gd.uid, id: 'guard' }); tg = gd; }
     }
-    amt = BX.dmgMod(ctx, src, tg, amt, kind); if (amt <= 0) return 0;
+    { const a0 = amt, a1 = BX.dmgMod(ctx, src, tg, amt, kind), who = a1 > a0 ? src : tg, k = who && NAT_K[natOf(who.sp)] != null ? NAT_K[natOf(who.sp)] : NAT_K0;   // 本命修正器（增伤 / 减伤）也按折算表缩放
+      amt = a1 === a0 || k === 1 || a1 <= 0 ? a1 : Math.max(1, Math.round(a0 + (a1 - a0) * k)); }
+    if (amt <= 0) return 0;
     if (src && src.dx.length) amt *= modMul(src, 'deal', { tg, kind, n: amt });
     if (tg.dx.length) amt *= modMul(tg, 'take', { src, kind, n: amt });
     if (tg.f.mark > 0 && foe) amt *= 1.25;
@@ -285,7 +301,8 @@ export function battle(ta, tb, seed, opts = {}) {
   }
   function summon(side, idx, spec, by) {
     const arr = S[side]; if (arr.filter(alive).length >= CAP) return null;
-    const u = reg(base(side, { sp: spec.sp, name: SUMMON_NAMES[spec.sp] || spec.sp, atk: Math.max(1, Math.round(spec.atk)), hp: Math.max(1, Math.round(spec.hp)), mx: Math.max(1, Math.round(spec.hp)), summon: true, src: null, gid: null, spd: 100, reach: 'melee', aim: 'low', atkFx: 'bite', rank: 0, aw: 0 }));
+    const sk = by && by === cur ? nk() : 1;
+    const u = reg(base(side, { sp: spec.sp, name: SUMMON_NAMES[spec.sp] || spec.sp, atk: Math.max(1, Math.round(spec.atk * sk)), hp: Math.max(1, Math.round(spec.hp * sk)), mx: Math.max(1, Math.round(spec.hp * sk)), summon: true, src: null, gid: null, spd: 100, reach: 'melee', aim: 'low', atkFx: 'bite', rank: 0, aw: 0 }));
     u.a0 = u.atk; u.h0 = u.mx; u.next = now + iv(u);
     // 落在哪一格：spec.cell 指定；否则按旧钩子的下标找参照（下标 0 = 最前空格；k = 第 k 只身后；超出 = 后列），亡语召唤落在倒下那一格
     let cell = spec.cell && !at(side, spec.cell[0], spec.cell[1]) ? spec.cell : null;
@@ -566,7 +583,7 @@ export function battle(ta, tb, seed, opts = {}) {
     const sy = syn[s], act = sy.daos.filter(d => d.tier);
     ev('syn', { side: s, daos: act.map(d => ({ dao: d.dao, n: d.name, cnt: d.cnt, tier: d.tier, clash: d.clash, d: d.d })), combos: sy.combos.map(c => ({ id: c.id, n: c.n, uid: (arr.find(x => x.src === c.idx) || {}).uid, mul: c.mul, rank: c.rank })) });
     for (const d of act) {
-      const r = d.eff, k = d.clash; if (!r) continue;
+      const r = d.eff, k = d.clash * RES_K; if (!r) continue;
       for (const u of arr.filter(x => !x.summon && daoOf(x.sp) === d.dao)) {
         const a = r.atk ? P(u.atk, r.atk / 100 * k) : 0, h = r.hp ? P(u.mx, r.hp / 100 * k) : 0;
         if (a || h) { u.atk += a; u.mx += h; u.hp += h; }
@@ -578,7 +595,7 @@ export function battle(ta, tb, seed, opts = {}) {
       }
     }
   });
-  all.forEach(u => { u.next = iv(u); });
+  all.forEach(u => { u.next = iv(u) * (0.55 + 0.45 * rng()); if (u.act) u.gp = Math.max(u.gp, GP.start); });   // 开战时行动条起点有先有后（种子随机），速快的整体出手更勤，但不是每次都抢到第一下
   BX.begin(ctx); syncAll();
   for (const u of order()) if (alive(u)) hook(u, 'start', {});
   reap();
