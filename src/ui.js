@@ -1,5 +1,5 @@
 // 蛊码 GuCode · 界面与流程（渲染层；逻辑都在 core/battle）
-import { makeRng, SPECIES, SP, TRAITS, QUIRKS, NODES, REALMS, TRIB_NAMES, GHOST_NAMES, SLOTS, MAXTR, MAXV, newGu, starterTeam, skillOf, comboOf, nodeOk, rollCompass, applyNode, genTeam, tribTeam, encodeTeam, decodeTeam, fmtTok, addTrait, COMBOS } from './core.js';
+import { makeRng, SPECIES, SP, TRAITS, QUIRKS, NODES, REALMS, TRIB_NAMES, GHOST_NAMES, SLOTS, MAXTR, MAXV, newGu, starterTeam, skillOf, comboOf, nodeOk, rollCompass, applyNode, genTeam, tribTeam, encodeTeam, decodeTeam, fmtTok, addTrait, COMBOS, hashStr } from './core.js';
 import { battle } from './battle.js';
 import { guSVG, ART_DEFS } from './art.js';
 import { TokenSource, VSC } from './tokens.js';
@@ -229,16 +229,35 @@ function shake(px) { const a = $('#arena'); if (a) a.animate([{ transform: 'none
 // ---------- 斗蛊 ----------
 function startBattle(kind, foe) {
   if (inBattle) return;
-  let enemy, title;
-  if (kind === 'trib') { if (S.realm >= 5) return; enemy = tribTeam(S.realm); title = `${REALMS[S.realm + 1]} · ${TRIB_NAMES[Math.min(S.realm, 4)]}`; }
-  else if (kind === 'ghost') { const r = R(); enemy = genTeam(r, Math.max(1, S.nodes) + S.realm); title = '幽灵 · ' + r.pick(GHOST_NAMES); }
-  else { enemy = foe.team; title = '战帖 · ' + (foe.name || '无名蛊师'); }
+  let enemy, title, ename, erealm = S.realm;
+  if (kind === 'trib') { if (S.realm >= 5) return; enemy = tribTeam(S.realm); ename = `${REALMS[S.realm + 1]}·${TRIB_NAMES[Math.min(S.realm, 4)]}`; title = ename.replace('·', ' · '); erealm = S.realm + 1; }
+  else if (kind === 'ghost') { const r = R(), gn = r.pick(GHOST_NAMES); enemy = genTeam(r, Math.max(1, S.nodes) + S.realm); ename = '幽灵·' + gn; title = '幽灵 · ' + gn; }
+  else { enemy = foe.team; ename = foe.name || '无名蛊师'; erealm = foe.realm || 0; title = '战帖 · ' + ename; }
   if (kind !== 'duel' && (phase !== 'yin' || S.will <= 0)) return;
   const mine = (kind === 'duel' && (!S.started || !S.team.length)) ? starterTeam() : S.team;
-  const res = battle(mine, enemy, [kind, encodeTeam(mine), encodeTeam(enemy), kind === 'duel' ? '' : S.step].join(':'));
+  const ca = encodeTeam(mine, { name: S.name || '无名蛊师', realm: S.realm }), cb = encodeTeam(enemy, { name: ename, realm: erealm });
+  const seed = kind === 'duel' ? hashStr(ca + '|' + cb).toString(36) : ((S.seed ^ Math.imul(++S.step, 2654435761)) >>> 0).toString(36);
+  const A = decodeTeam(ca), Bt = decodeTeam(cb);
+  const res = battle(A.team, Bt.team, 'r:' + seed);
   if (kind !== 'duel') S.will--;
-  save(); playBattle({ kind, title, res, enemy, foe });
+  save(); playBattle({ kind, title, res, enemy, foe, A, B: Bt, replay: [ca, cb, seed, kind[0]].join('.') });
 }
+function parseReplay(text) {
+  const m = String(text || '').match(/r=([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)\.([0-9a-z]+)(?:\.([tgd]))?/); if (!m) return null;
+  const A = decodeTeam(m[1]), B = decodeTeam(m[2]); if (!A || !B) return null;
+  return { A, B, seed: m[3], kind: m[4] || 'd', replay: [m[1], m[2], m[3], m[4] || 'd'].join('.') };
+}
+function openReplay(rp) {
+  window.__guRp = rp;
+  const row = t => `<div class="mini">${t.map(g => { const sk = skillOf(g); return `<div class="mg"><span class="art">${guSVG(g.sp)}</span><b>${SP[g.sp].n}</b><span class="st"><i class="a">${effA(g)}</i><i class="h">${effH(g)}</i></span>${sk && sk.named ? `<em class="cs">${esc(sk.n)}</em>` : `<span class="tr">${trChars(g.tr)}</span>`}</div>`; }).join('')}</div>`;
+  sheet(`<p class="eyebrow">复盘</p><h3 class="duelh">${esc(rp.B.name || '无名')} 对 ${esc(rp.A.name || '无名')}</h3><p class="sm">同一组阵容、同一颗种子，重放的是一模一样的那一场。</p>${row(rp.B.team)}<p class="vsline">— 对 —</p>${row(rp.A.team)}<div class="row2"><button class="zhu big" data-act="replayGo">观看复盘</button></div>`);
+}
+function openLinkText(text) {
+  const rp = parseReplay(text); if (rp) { openReplay(rp); return true; }
+  const foe = decodeTeam(text); if (foe) { openDuel(foe); return true; }
+  return false;
+}
+function replayURL(link) { return (/^https?:/.test(location.protocol) ? location.origin + location.pathname : SHARE_BASE) + '#r=' + link; }
 function buHTML(uid, r) {
   return `<div class="bu${r.side ? ' foe' : ''}${r.boss ? ' boss' : ''}" data-uid="${uid}"><div class="bart">${guSVG(r.sp)}</div><div class="binfo"><b class="bnm">${esc(r.name)}</b><span class="bst"><i class="a"></i><i class="h"></i><i class="s" hidden></i></span><span class="btr">${trChars(r.tr)}</span>${r.combo ? `<em class="cs">${esc(r.combo)}</em>` : ''}</div></div>`;
 }
@@ -311,7 +330,8 @@ function wound() {
 function showResult(B) {
   const w = B.res.winner, win = w === 'A', draw = w === 'draw';
   let txt = '', loot = [], btns = '';
-  if (B.kind === 'trib') {
+  if (B.kind === 'replay') {}
+  else if (B.kind === 'trib') {
     if (win) { S.realm++; S.wins++; S.team.forEach(g => { g.atk++; g.hp++; }); txt = `渡劫成功，晋${REALMS[S.realm]}。全体蜕变 +1/+1。`; }
     else if (draw) txt = '劫云散去，未分胜负。';
     else { S.losses++; wound(); txt = '渡劫失败：元气受损，全体伤 1 层，主蛊降阶。写代码温养可愈。'; }
@@ -330,10 +350,15 @@ function showResult(B) {
     txt = win ? '你接下了这封战帖，赢了。' : draw ? '平手。再养一养，回敬一封。' : '这封战帖的主人更强。去养蛊，再来。';
     btns = `<button class="zhu" data-act="replyDuel">回敬战帖</button>` + (S.started ? '' : `<button data-act="closeBattle">开始养自己的蛊</button>`);
   }
+  if (B.kind === 'replay') {
+    txt = draw ? '这一场打成了平手。' : `${esc((win ? B.A : B.B).name || '无名')} 胜。`;
+    window.__guFoe = win || draw ? B.A : B.B;
+    btns = `<button class="zhu" data-act="duelWinner">挑战胜者阵容</button>` + (S.started ? '' : `<button data-act="closeBattle">开始养自己的蛊</button>`);
+  }
   B.loot = loot; window.__guB = B;
   const panel = el(`<div class="result"><div class="rseal${win ? '' : ' lose'}">${win ? '胜' : draw ? '和' : '败'}</div><p class="rtxt">${txt}</p>
   ${loot.map((l, i) => `<button class="loot" data-act="loot" data-i="${i}">${esc(l.t)}</button>`).join('')}
-  <div class="rbtns">${btns}${loot.length ? '' : '<button data-act="closeBattle">回空窍</button>'}</div></div>`);
+  <div class="rbtns">${btns}${loot.length ? '' : `<button data-act="closeBattle">${S.started ? '回空窍' : '关闭'}</button>`}<button data-act="copyReplay">复制复盘链接</button></div></div>`);
   $('#battle').appendChild(panel); save();
 }
 function closeBattle() {
@@ -384,7 +409,7 @@ function copy(text, btn) {
   if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(done, fb); else fb();
 }
 function openDuelInput() {
-  sheet(`<h3>应战</h3><p class="sm">粘贴朋友发来的界壁坐标码或战帖链接。</p><textarea id="duelIn" rows="3" placeholder="坐标码"></textarea><p class="err" id="duelErr"></p><div class="row2"><button class="zhu" data-act="duelGo">查看战帖</button></div>`);
+  sheet(`<h3>应战</h3><p class="sm">粘贴朋友发来的界壁坐标码、战帖链接或复盘链接。</p><textarea id="duelIn" rows="3" placeholder="坐标码"></textarea><p class="err" id="duelErr"></p><div class="row2"><button class="zhu" data-act="duelGo">查看战帖</button></div>`);
   setTimeout(() => { const t = $('#duelIn'); if (t) t.focus(); }, 50);
 }
 function openDuel(foe) {
@@ -396,10 +421,9 @@ function openDuel(foe) {
   <p class="vsline">— 你的${S.started && S.team.length ? '空窍' : '初始阵容'} —</p>${row(mine, '')}<div class="row2"><button class="zhu big" data-act="duelFight">应战</button></div>`);
 }
 function checkHash() {
-  const m = location.hash.match(/c=([A-Za-z0-9_-]+)/); if (!m) return;
-  const foe = decodeTeam(m[1]);
+  const h = location.hash; if (!/[#&](c|r)=/.test(h)) return;
   try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
-  if (foe) openDuel(foe);
+  openLinkText(h);
 }
 
 // ---------- 交互 ----------
@@ -440,7 +464,14 @@ const ACT = {
     else { const a = document.createElement('a'); a.href = cardURL; a.download = 'gucode-card.png'; document.body.appendChild(a); a.click(); a.remove(); }
   },
   duelInput() { openDuelInput(); },
-  duelGo() { const foe = decodeTeam($('#duelIn').value); if (!foe) { $('#duelErr').textContent = '坐标码不对，或者被截断了。'; return; } openDuel(foe); },
+  duelGo() { if (!openLinkText($('#duelIn').value)) $('#duelErr').textContent = '坐标码或复盘链接不对，或者被截断了。'; },
+  replayGo() { const rp = window.__guRp; closeSheet(); playBattle({ kind: 'replay', title: `复盘 · ${rp.B.name || '无名'} 对 ${rp.A.name || '无名'}`, res: battle(rp.A.team, rp.B.team, 'r:' + rp.seed), A: rp.A, B: rp.B, enemy: rp.B.team, replay: rp.replay }); },
+  duelWinner() { closeBattle(); startBattle('duel', window.__guFoe); },
+  copyReplay(a) {
+    const B = window.__guB, w = B.res.winner, an = B.A.name || '无名', bn = B.B.name || '无名';
+    const wt = w === 'draw' ? '打成平手' : (w === 'A' ? an : bn) + ' 胜';
+    copy(`《蛊码》复盘：${an} 对 ${bn}，${wt}。点开看整场：\n${replayURL(B.replay)}`, a);
+  },
   duelFight() { closeSheet(); startBattle('duel', window.__guFoe); },
   reset(a) {
     if (Date.now() - resetArm > 3000) { resetArm = Date.now(); a.textContent = '再点一次确认重开'; setTimeout(() => { a.textContent = '重开一局'; }, 3000); return; }
@@ -464,7 +495,7 @@ if (VSC) {
   window.addEventListener('message', e => {
     const m = e.data || {};
     if (m.type === 'init' && !booted) boot(m.save, m.pending);
-    else if (m.type === 'duel') { const foe = decodeTeam(m.code); if (foe) openDuel(foe); }
+    else if (m.type === 'duel') openLinkText(m.code);
     else if (m.type === 'share' && booted && S.started) openShare();
   });
   VSC.postMessage({ type: 'ready' });
