@@ -529,3 +529,8 @@ button.realm{cursor:pointer;border:0}
   .bst,.cs{justify-self:center}
 }
 @media (prefers-reduced-motion:reduce){*{animation-duration:.01ms!important}}
+
+/* 本命与觉醒：未到转数的灰着 */
+.natl li.off { opacity: .42; }
+.natl li.off b::after { content: ' · 未解锁'; font-weight: 400; font-size: .85em; }
+.tc.nat { outline: 1px solid currentColor; outline-offset: -1px; border-radius: 3px; }

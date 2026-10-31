@@ -69,207 +69,423 @@ const isLast = (ctx, u) => { const a = ctx.allies(u); return a[a.length - 1] ===
 const nextAlly = (ctx, u) => { const a = ctx.S[u.side]; for (let i = a.indexOf(u) + 1; i < a.length; i++) if (ctx.alive(a[i])) return a[i]; return null; };
 const status = (ctx, u, k, n = 1) => ctx.ev('status', { uid: u.uid, k, n });
 const heal = (ctx, u, n) => { if (!ctx.alive(u)) return 0; const h = Math.min(n, u.mx - u.hp); if (h <= 0) return 0; u.hp += h; ctx.ev('buff', { uid: u.uid, a: 0, h }); return h; };
-const weaken = (ctx, u, n) => { if (!ctx.alive(u)) return 0; const d = Math.min(n, u.atk - 1); if (d <= 0) return 0; u.atk -= d; ctx.ev('buff', { uid: u.uid, a: -d, h: 0 }); return d; };
-const poison = (ctx, u, n, k = 'psn') => { if (!ctx.alive(u) || n <= 0) return; u.f[k] = Math.min(12, (u.f[k] || 0) + n); status(ctx, u, k, n); };
-const stun = (ctx, u, n = 1, k = 'stun') => { if (!ctx.alive(u)) return; u.f[k] = Math.min(3, (u.f[k] || 0) + n); status(ctx, u, k, n); };
+const weaken = (ctx, u, n) => { if (!ctx.alive(u)) return 0; const d = Math.min(n, u.atk - 1, Math.ceil(u.atk * 0.4)); if (d <= 0) return 0; u.atk -= d; ctx.ev('buff', { uid: u.uid, a: -d, h: 0 }); return d; };   // 单次最多削四成
+// 中毒 / 寄生：u.f.psn = 每回合掉血量。单只身上的毒最多叠到它最大血量的 25%（至少 6），防止毒把后期大血量的蛊秒掉
+const poison = (ctx, u, n, k = 'psn') => { if (!ctx.alive(u) || n <= 0) return; u.f[k] = Math.min(Math.max(6, Math.ceil(u.mx * 0.25)), (u.f[k] || 0) + n); status(ctx, u, k, n); };
+const stun = (ctx, u, n = 1, k = 'stun') => { if (!ctx.alive(u)) return; u.f[k] = Math.min(4, (u.f[k] || 0) + n); status(ctx, u, k, n); };
 const by = (arr, key) => arr.reduce((b, x) => (b === null || key(x) > key(b) ? x : b), null);   // 取最大者，平手取靠前
 const setTr = (ctx, u) => { if (ctx.roster[u.uid]) ctx.roster[u.uid].tr = { ...u.tr }; };
+const swapPos = (ctx, x, y) => { const a = ctx.S[x.side], i = a.indexOf(x), j = a.indexOf(y); a[i] = y; a[j] = x; };
+const cnt = (u, k, max) => { if ((u.f[k] || 0) >= max) return false; u.f[k] = (u.f[k] || 0) + 1; return true; };   // 每场限次
+// 数值按成长缩放：本命、副词条、杀招、共鸣一律写成「攻 / 血的百分比」，后期攻血放大了它们照样举足轻重
+const pc = (n, p) => p > 0 ? Math.max(1, Math.round(n * p)) : 0;
+// 本命随转数增强：本命钩子执行期间 NM = 持有者的倍率，A/H/PN 自动乘上（召唤物继承到的本命按 ×1）
+export const NAT_BASE = 2, NAT_STEP = 0.85;
+export const natMulOf = r => NAT_BASE + NAT_STEP * (Math.min(5, Math.max(1, r || 1)) - 1);   // 一转 ×2、三转 ×3.7、五转及仙蛊 ×5.4（相对描述里的基准数）
+const natMul = u => u.rank ? natMulOf(u.rank) : 1;   // 召唤物没有转数，按 ×1
+let NM = 1;
+const withNM = (m, f) => { const p = NM; NM = m; try { return f(); } finally { NM = p; } };
+// 本命借势：本命钩子里，攻血按「自身」和「本方开战最高攻血的 LEAD」取大，辅蛊的本命到后期也不掉队（u.la / u.lh 在 begin 里按阵容算）
+export const LEAD = 0.4;
+const la = (u, n) => NM > 1 ? Math.max(n, u.la || 0) : n, lh = (u, n) => NM > 1 ? Math.max(n, u.lh || 0) : n;
+const A = (u, p) => pc(la(u, u.atk), p * NM);         // 当前攻 × p
+const H = (u, p) => pc(lh(u, u.mx), p * NM);          // 最大血 × p
+const A0 = (u, p) => pc(la(u, u.a0 || u.atk), p * NM); // 开战攻 × p（叠加型成长用开战值，避免越滚越大）
+const H0 = (u, p) => pc(lh(u, u.h0 || u.mx), p * NM);
+const PN = (n, p) => pc(n, p * NM);            // 按某个数（这次伤害、护体、对方攻血）× p，也随转数缩放
+const aw = (u, n) => (u.aw || 0) >= n;         // 觉醒：u.aw = 0 未觉醒，1 三转觉醒，2 五转觉醒（battle.js toUnit 按转数算）
+const isNat = k => !!(NEW_TRAITS[k] && NEW_TRAITS[k].nat);
+const SUMMON_IDS = new Set(['pupa', 'shade', 'lunar', 'antling', 'aphidling', 'spiderling', 'fuzi', 'bee', 'kuilei']);
+const copySub = (u, s) => Object.entries(u.tr).forEach(([k, l]) => { if (!isNat(k)) giveTr(s, k, l); });
 const puppetOf = (ctx, u, x, full) => {
-  const p = ctx.summon(u.side, 99, { sp: 'kuilei', atk: Math.max(1, full ? x.atk : Math.ceil(x.atk / 2)), hp: Math.max(1, full ? x.mx : Math.ceil(x.mx / 2)) }, u);
+  const p = ctx.summon(u.side, 99, { sp: 'kuilei', atk: full ? x.atk : pc(x.atk, 0.5), hp: full ? x.mx : pc(x.mx, 0.5) }, u);
   if (p) { p.tr = {}; Object.entries(x.tr).forEach(([k, l]) => { if (k !== 'strings') giveTr(p, k, l); }); setTr(ctx, p); } return p;
 };
-// 词条上限：每只蛊最多 3 个词条，五转蛊和仙蛊最多 4 个（吞噬、承嗣、拟态、傀儡加词条时都受此限）
-export const trCapOf = sp => ((SPX[sp] || {}).rank || 0) >= 5 ? 4 : 3;
-const giveTr = (u, k, l) => { if (l <= 0) return; if (u.tr[k] == null && Object.keys(u.tr).length >= trCapOf(u.sp)) return; u.tr[k] = Math.min(3, (u.tr[k] || 0) + l); };
+// 词条结构：1 个本命技（独有）+ 最多 2 个副词条，觉醒不占格子。副词条只从突变（三选一）和炼附来
+export const trCapOf = sp => 2;
+// 战斗中途得词条（吞瓮、承嗣、拟态、傀儡、吞元）：只在这一场里生效、不留存；副词条照样最多 2 个，本命不占格子
+const giveTr = (u, k, l) => { if (l <= 0) return; if (isNat(k)) { u.tr[k] = 1; return; } if (u.tr[k] == null && Object.keys(u.tr).filter(x => !isNat(x)).length >= trCapOf(u.sp)) return; u.tr[k] = Math.min(3, (u.tr[k] || 0) + l); };
 const trSum = u => Object.values(u.tr).reduce((a, b) => a + b, 0);
 
-// ---------- 新词条 ----------
-// innate: true = 物种专属，不进突变池（只能靠本体、附蛊、吞噬获得）
+// ---------- 词条 ----------
+// 本命技（nat）：每个物种独有一个，由物种推出、不进坐标码、不进突变池；三转、五转各觉醒一次（aw[0] / aw[1]），给本命追加一条效果。
+// 副词条：突变、炼附、吞噬得来，可叠层（v = 1–3），明显弱于本命。旧 14 个副词条在 core.js / battle.js，这里是新增的 6 个。
+// 描述里〔〕括住的数随转数缩放：显示值 = 基准 × 该转数的本命倍率（natMulOf）
+const fmtNat = (s, m) => s.replace(/〔(\d+)〕/g, (_, x) => String(Math.round(+x * m)));
+const N = (n, ch, trig, d, awd, hooks) => ({ n, ch, trig, innate: true, nat: true, d: (v, m = natMulOf(1)) => fmtNat(d, m), aw: awd.map(x => (m = natMulOf(1)) => fmtNat(x, m)), hooks });
 export const NEW_TRAITS = {
-  // 可突变的通用词条（7 个）
-  ripen:   { n: '蓄势', ch: '蓄', trig: '回合开始', d: v => `不在炉口时，回合开始自身 +${v}/+${v}`,
-    hooks: { onTurn(ctx, u, v, c, go) { if (ctx.alive(u) && !isFront(ctx, u)) { go(); ctx.buff(u, v, v); } } } },
-  leech:   { n: '吮血', ch: '吮', trig: '出手', d: v => `对撞出手后回复 ${v + 1} 血（不超上限）`,
-    hooks: { onAttack(ctx, u, v, c, go) { if (ctx.alive(u) && u.hp < u.mx) { go(); heal(ctx, u, v + 1); } } } },
-  venom:   { n: '蚀毒', ch: '毒', trig: '出手', d: v => `对撞出手：目标中毒 ${v} 层（每回合开始掉等同层数的血，层数不消）`,
-    hooks: { onAttack(ctx, u, v, c, go) { if (ctx.alive(c.tg)) { go(); poison(ctx, c.tg, v); } } } },
-  scale:   { n: '坚鳞', ch: '鳞', trig: '受伤', d: v => `每次受到的伤害 -${v}（至少 1）`,
-    hooks: { takeMod(ctx, u, v, amt) { return amt > 1 ? Math.max(1, amt - v) : amt; } } },
-  execute: { n: '斩首', ch: '斩', trig: '出手', d: v => `对撞时目标血量不过半，伤害 +${2 * v}`,
-    hooks: { dealMod(ctx, u, v, amt, tg, kind) { return kind === 'hit' && tg.hp * 2 <= tg.mx ? amt + 2 * v : amt; } } },
-  cleave:  { n: '横扫', ch: '扫', trig: '出手', d: v => `对撞出手：顺势扫到敌方第二只，造成 ${v + 1} 伤害`,
-    hooks: { onAttack(ctx, u, v, c, go) {
-      const fs = ctx.foes(u), wide = u.combo === 'huangzai', tg = wide ? fs.slice(1) : fs.slice(1, 2);
-      if (!tg.length) return; go(); if (wide) ctx.ev('combo', { uid: u.uid, n: u.cname, quiet: 1 }); tg.forEach(f => ctx.deal(u, f, v + (wide ? 2 : 1), 'skill'));
-    } } },
-  mourn:   { n: '食腐', ch: '腐', trig: '友亡', d: v => `有友蛊阵亡：自身 +${v}/+${v}`,
-    hooks: { onMourn(ctx, u, v, c, go) { if (ctx.alive(u)) { go(); ctx.buff(u, v, v); } } } },
+  // ===== 新增副词条（可突变；dao = 所属的道） =====
+  siphon:  { n: '吸血', ch: '吸', trig: '出手', dao: '血', d: v => `对撞出手后，回复这次伤害的 ${10 * v}%`,
+    hooks: { onAttack(ctx, u, v, c, go) { if (ctx.alive(u) && u.hp < u.mx) { go(); heal(ctx, u, pc(c.n || 1, 0.1 * v)); } } } },
+  toxin:   { n: '淬毒', ch: '淬', trig: '出手', dao: '毒', d: v => `对撞出手：目标中毒，每回合掉本蛊攻击 ${8 * v}% 的血`,
+    hooks: { onAttack(ctx, u, v, c, go) { if (ctx.alive(c.tg)) { go(); poison(ctx, c.tg, A(u, 0.08 * v)); } } } },
+  mend:    { n: '回春', ch: '春', trig: '回合开始', dao: '木', d: v => `回合开始：回复最大血量的 ${3 * v}%`,
+    hooks: { onTurn(ctx, u, v, c, go) { if (ctx.alive(u) && u.hp < u.mx) { go(); heal(ctx, u, H(u, 0.03 * v)); } } } },
+  spark:   { n: '电光', ch: '电', trig: '出手', dao: '雷', d: v => `对撞出手：电光溅到敌方下一只，造成这次攻击的 ${12 * v}%`,
+    hooks: { onAttack(ctx, u, v, c, go) { const f = ctx.foes(u).find(x => x !== c.tg); if (f) { go(); ctx.deal(u, f, pc(c.n || 1, 0.12 * v), 'skill'); } } } },
+  insight: { n: '看破', ch: '看', trig: '开战', dao: '智', d: v => `开战：敌方炉口攻击 -${5 * v}%`,
+    hooks: { onStart(ctx, u, v, c, go) { const f = ctx.foes(u)[0]; if (f) { go(); weaken(ctx, f, A(f, 0.05 * v)); } } } },
+  luck:    { n: '鸿运', ch: '运', trig: '出手', dao: '运', d: v => `对撞时有 ${6 * v}% 的机会多打一倍`,
+    hooks: { atkMod(ctx, u, v, pa) { if (pa > 0 && ctx.rng() < 0.06 * v) { status(ctx, u, 'luck'); return pa * 2; } return pa; } } },
 
-  // 物种专属词条
-  muster:  { n: '点兵', ch: '兵', trig: '开战', innate: true, d: v => `开战：身后召唤 ${v + 1} 只 1/1 兵蚁`,
-    hooks: { onStart(ctx, u, v, c, go) { go(); for (let i = 0; i < v + 1; i++) ctx.summon(u.side, idx(ctx, u) + 1, { sp: 'antling', atk: 1, hp: 1 }, u); } } },
-  ember:   { n: '余烬', ch: '烬', trig: '亡语', innate: true, d: v => `亡语：对击杀者造成 ${3 * v} 伤害（无击杀者则烧敌方炉口）`,
-    hooks: { onDeath(ctx, u, v, c, go) { const k = u.killer && ctx.alive(u.killer) && u.killer.side !== u.side ? u.killer : ctx.foes(u)[0]; if (k) { go(); ctx.deal(u, k, 3 * v, 'skill'); } } } },
-  roll:    { n: '滚丸', ch: '丸', trig: '回合开始', innate: true, d: v => `回合开始：自身 +${v} 护体，越滚越厚`,
-    hooks: { onTurn(ctx, u, v, c, go) { if (ctx.alive(u)) { go(); ctx.shield(u, v); } } } },
-  blitz:   { n: '疾袭', ch: '疾', trig: '出手', innate: true, d: v => `第一次对撞伤害 ×${v + 1}`,
-    hooks: { atkMod(ctx, u, v, pa) { if (u.f.blitz) return pa; u.f.blitz = 1; status(ctx, u, 'blitz'); return pa * (v + 1); } } },
-  web:     { n: '结网', ch: '网', trig: '开战', innate: true, d: v => `开战：敌方炉口前 ${v} 次对撞扑空`,
-    hooks: { onStart(ctx, u, v, c, go) { const f = ctx.foes(u)[0]; if (f) { go(); stun(ctx, f, v, 'web'); } } } },
-  scatter: { n: '散籽', ch: '籽', trig: '亡语', innate: true, d: v => `亡语：原地召唤 ${v + 1} 只 1/1 蚜虫`,
-    hooks: { onDeath(ctx, u, v, c, go) { go(); for (let i = 0; i < v + 1; i++) ctx.summon(u.side, c.idx, { sp: 'aphidling', atk: 1, hp: 1 }, u); } } },
-  nettle:  { n: '毒毛', ch: '毛', trig: '受击', innate: true, d: v => `被对撞打中：攻击者中毒 ${v} 层`,
-    hooks: { onHit(ctx, u, v, c, go) { if (c.src && c.kind === 'hit' && c.src.side !== u.side && ctx.alive(c.src)) { go(); poison(ctx, c.src, v); } } } },
-  prick:   { n: '点刺', ch: '刺', trig: '开战', innate: true, d: v => `开战：对敌方血最少的蛊造成 ${2 * v + 1} 伤害`,
-    hooks: { onStart(ctx, u, v, c, go) { const t = by(ctx.foes(u), f => -f.hp); if (t) { go(); ctx.deal(u, t, 2 * v + 1, 'skill'); } } } },
-  brood:   { n: '抱卵', ch: '卵', trig: '受击', innate: true, d: v => `受击存活：身后召唤 1/1 小蛛（每场最多 ${v + 1} 只）`,
-    hooks: { onHit(ctx, u, v, c, go) {
-      if (!ctx.alive(u) || (u.f.brood || 0) >= v + 1 || ctx.allies(u).length >= ctx.CAP) return;
-      u.f.brood = (u.f.brood || 0) + 1; go(); ctx.summon(u.side, idx(ctx, u) + 1, { sp: 'spiderling', atk: 1, hp: 1 }, u);
-    } } },
-  burrow:  { n: '钻地', ch: '钻', trig: '换到炉口', innate: true, d: v => `换到炉口那一刻：钻地突袭敌方末位，造成攻×${v} 伤害`,
-    hooks: { onFront(ctx, u, v, c, go) {
-      const fs = ctx.foes(u), t = fs[fs.length - 1]; if (!t || !ctx.alive(u)) return; go(); ctx.deal(u, t, u.atk * v, 'skill');
-    } } },
-  ward:    { n: '守宫', ch: '守', trig: '回合开始', innate: true, d: v => `不在炉口时，回合开始给炉口友蛊 +${v + 1} 护体`,
-    hooks: { onTurn(ctx, u, v, c, go) { if (ctx.alive(u) && !isFront(ctx, u)) { const f = ctx.allies(u)[0]; if (f) { go(); ctx.shield(f, v + 1); } } } } },
-  mother:  { n: '子母', ch: '蚨', trig: '亡语', innate: true, d: v => `亡语：原地召唤子蚨（本蛊一半攻、${2 + v} 血）`,
-    hooks: { onDeath(ctx, u, v, c, go) { go(); ctx.summon(u.side, c.idx, { sp: 'fuzi', atk: Math.max(1, Math.ceil(u.atk / 2)) + v - 1, hp: 2 + v }, u); } } },
-  burst:   { n: '爆囊', ch: '爆', trig: '亡语', innate: true, d: v => `亡语：对敌方前两只各造成 ${2 * v + 1} 伤害`,
-    hooks: { onDeath(ctx, u, v, c, go) { const fs = ctx.foes(u).slice(0, 2); if (fs.length) { go(); fs.forEach(f => ctx.deal(u, f, 2 * v + 1, 'skill')); } } } },
-  cocoon:  { n: '结茧', ch: '茧', trig: '回合开始', innate: true, d: v => `第 3 回合开始破茧：攻 +${3 * v}，血回满（每场一次）`,
-    hooks: { onTurn(ctx, u, v, c, go) { if (ctx.alive(u) && !u.f.coc && ctx.turn >= 3) { u.f.coc = 1; go(); ctx.buff(u, 3 * v, 0); heal(ctx, u, u.mx); } } } },
-  drain:   { n: '抽髓', ch: '髓', trig: '开战', innate: true, d: v => `开战：敌方攻最高的蛊 -${v + 1} 攻，偷来加给自己`,
-    hooks: { onStart(ctx, u, v, c, go) { const t = by(ctx.foes(u), f => f.atk); if (!t) return; go(); const d = weaken(ctx, t, v + 1); if (d) ctx.buff(u, d, 0); } } },
-  gild:    { n: '镀金', ch: '金', trig: '亡语', innate: true, d: v => `亡语：身后友蛊 +${3 * v} 护体`,
-    hooks: { onDeath(ctx, u, v, c, go) { const b = ctx.S[u.side][c.idx]; if (ctx.alive(b)) { go(); ctx.shield(b, 3 * v); } } } },
-  nurture: { n: '哺育', ch: '哺', trig: '召唤', innate: true, d: v => `每有友蛊被召唤：那只 +${v}/+${v}`,
-    hooks: { onSummon(ctx, u, v, c, go) { if (ctx.alive(u) && c.u && c.u.side === u.side) { go(); ctx.buff(c.u, v, v); } } } },
-  hop:     { n: '弹跳', ch: '跳', trig: '出手', innate: true, d: v => `对撞后若还活着，跳到身后友蛊的后面${v > 1 ? `，并 +${v - 1} 攻` : ''}`,
-    hooks: { onAttack(ctx, u, v, c, go) {
-      if (!ctx.alive(u)) return; const b = nextAlly(ctx, u); if (!b) return; const a = ctx.S[u.side], i = a.indexOf(u), j = a.indexOf(b);
-      a[i] = b; a[j] = u; go(); status(ctx, u, 'swap'); if (v > 1) ctx.buff(u, v - 1, 0);
-      if (u.combo === 'yixing') { ctx.ev('combo', { uid: u.uid, n: u.cname, quiet: 1 }); ctx.buff(b, 3, 3); u.f.fronted = 0; }
-    } } },
-  pair:    { n: '比翼', ch: '翼', trig: '布阵', innate: true, d: v => `开战：左右两侧友蛊是同一物种时，自身攻血翻倍${v > 1 ? `再 +${v - 1}` : ''}`,
-    hooks: { onStart(ctx, u, v, c, go) {
-      const a = ctx.allies(u), i = a.indexOf(u), L = a[i - 1], R = a[i + 1];
-      if (L && R && L.sp === R.sp) { go(); ctx.buff(u, u.atk + v - 1, u.hp + v - 1); }
-    } } },
-  lull:    { n: '催眠', ch: '眠', trig: '受击', innate: true, d: v => `被对撞打中：攻击者下次对撞不出手（每场 ${v + 1} 次）`,
-    hooks: { onHit(ctx, u, v, c, go) { if (c.src && c.kind === 'hit' && c.src.side !== u.side && ctx.alive(c.src) && (u.f.lull || 0) < v + 1) { u.f.lull = (u.f.lull || 0) + 1; go(); stun(ctx, c.src, 1); } } } },
-  gorge:   { n: '吞元', ch: '饕', trig: '击杀', innate: true, d: v => `击杀：吃下对方一半的攻${v > 1 ? `，另 +${v - 1}/+${v - 1}` : ''}`,
-    hooks: { onKill(ctx, u, v, c, go) { if (!ctx.alive(u) || !c.victim) return; go(); ctx.buff(u, Math.max(1, Math.ceil(c.victim.atk / 2)) + v - 1, v - 1); } } },
-  miasma:  { n: '瘴气', ch: '瘴', trig: '受击', innate: true, d: v => `第一次受伤：敌方全体中毒 ${v} 层`,
-    hooks: { onHit(ctx, u, v, c, go) { if (u.f.mia || c.kind === 'psn') return; u.f.mia = 1; go(); ctx.foes(u).forEach(f => poison(ctx, f, v)); } } },
-  chirp:   { n: '叫阵', ch: '叫', trig: '回合开始', innate: true, d: v => `站在炉口时，回合开始敌方炉口 -${v} 攻`,
-    hooks: { onTurn(ctx, u, v, c, go) { if (ctx.alive(u) && isFront(ctx, u)) { const f = ctx.foes(u)[0]; if (f && f.atk > 1) { go(); weaken(ctx, f, v); } } } } },
-  mirror:  { n: '镜反', ch: '镜', trig: '受击', innate: true, d: v => `受到技能伤害（开锋、杀招、亡语等非对撞伤害）：照回来源，最多 ${3 * v} 点`,
-    hooks: { onHit(ctx, u, v, c, go) {
-      const s = c.src; if (!s || s.side === u.side || !ctx.alive(s)) return;
-      if (c.kind === 'hit' && u.combo === 'jinghua' && u.f.jh !== ctx.turn) { u.f.jh = ctx.turn; ctx.ev('combo', { uid: u.uid, n: u.cname, quiet: 1 }); ctx.deal(u, s, Math.max(1, Math.ceil((c.n || 1) / 2)), 'mirror'); return true; }
-      if (!['skill', 'shot'].includes(c.kind)) return;
-      go(); ctx.deal(u, s, Math.min(c.n || 1, 3 * v), 'mirror');
-    } } },
-  hive:    { n: '蜂巢', ch: '巢', trig: '回合开始', innate: true, d: v => `回合开始：身后召唤 1/1 工蜂（每场最多 ${v + 2} 只）`,
-    hooks: { onTurn(ctx, u, v, c, go) {
-      if (!ctx.alive(u) || (u.f.hive || 0) >= v + 2 || ctx.allies(u).length >= ctx.CAP) return;
-      u.f.hive = (u.f.hive || 0) + 1; go(); ctx.summon(u.side, idx(ctx, u) + 1, { sp: 'bee', atk: 1, hp: 1 }, u);
-    } } },
-  inherit: { n: '承嗣', ch: '嗣', trig: '亡语', innate: true, d: v => `亡语：把自己其余词条全部传给身后友蛊${v > 1 ? `（各多 ${v - 1} 层）` : ''}`,
-    hooks: { onDeath(ctx, u, v, c, go) {
-      const b = ctx.S[u.side][c.idx]; if (!ctx.alive(b)) return; const give = Object.entries(u.tr).filter(([k, l]) => k !== 'inherit' && l > 0); if (!give.length) return;
-      go(); give.forEach(([k, l]) => giveTr(b, k, l + v - 1)); setTr(ctx, b); ctx.buff(b, 1, 1);
-    } } },
-  frost:   { n: '霜冻', ch: '霜', trig: '出手', innate: true, d: v => `对撞出手：目标下次对撞不出手（每场 ${v + 1} 次）`,
-    hooks: { onAttack(ctx, u, v, c, go) {
-      const bf = u.combo === 'bingfeng'; if (!ctx.alive(c.tg) || (u.f.frost || 0) >= v + 1) return; u.f.frost = (u.f.frost || 0) + 1; go(); stun(ctx, c.tg, 1);
-      if (bf) { cq(ctx, u); ctx.deal(u, c.tg, 2, 'skill'); }
-    } } },
-  lure:    { n: '引蝶', ch: '引', trig: '布阵', innate: true, d: v => `布阵：把敌方血最少的蛊引到炉口，并使其 -${v} 攻`,
-    hooks: { onPrep(ctx, u, v, c, go) {
-      const fs = ctx.foes(u); if (fs.length < 2) return; const t = by(fs, f => -f.hp); if (!t) return;
-      go(); if (t !== fs[0]) { const a = ctx.S[t.side], i = a.indexOf(fs[0]), j = a.indexOf(t); a[i] = t; a[j] = fs[0]; status(ctx, t, 'swap'); } weaken(ctx, t, v);
-    } } },
-  pit:     { n: '流沙', ch: '沙', trig: '敌换炉口', innate: true, d: v => `敌方每换上一只新的炉口，它陷进流沙受 ${2 * v} 伤害`,
-    hooks: { onFoeFront(ctx, u, v, c, go) {
-      if (!ctx.alive(u) || !ctx.alive(c.u)) return; go(); ctx.deal(u, c.u, 2 * v * (u.combo === 'liusha' ? 2 : 1), 'skill');
-    } } },
-  brief:   { n: '朝暮', ch: '暮', trig: '回合开始', innate: true, d: v => `第 ${v + 3} 回合开始寿尽凋零（触发亡语）`,
-    hooks: { onTurn(ctx, u, v, c, go) { if (ctx.alive(u) && ctx.turn >= v + 3) { go(); u.sh = 0; ctx.deal(null, u, u.hp, 'self'); } } } },
-  chain:   { n: '连雷', ch: '雷', trig: '出手', innate: true, d: v => `对撞出手后，雷光弹向下一只敌蛊，造成这次攻击的 ${v * 50}%`,
-    hooks: { onAttack(ctx, u, v, c, go) {
-      const all = u.combo === 'leigu', fs = ctx.foes(u).filter(f => f !== c.tg), tg = fs.slice(0, all ? 2 : 1); if (!tg.length) return;
-      const d = Math.max(1, Math.floor((c.n || 1) * v / 2)); go(); if (all) ctx.ev('combo', { uid: u.uid, n: u.cname, quiet: 1 }); tg.forEach(f => ctx.deal(u, f, d, 'skill'));
-    } } },
-  bulwark: { n: '玄甲', ch: '玄', trig: '受伤', innate: true, d: v => `站在炉口时，对撞挨的打减半${v > 1 ? `再 -${v - 1}` : ''}（技能、毒照常吃）`,
-    hooks: { takeMod(ctx, u, v, amt, src, kind) { if (kind !== 'hit' || !isFront(ctx, u)) return amt; return Math.max(1, Math.ceil(amt / 2) - (v - 1)); } } },
-  strings: { n: '牵丝', ch: '丝', trig: '击杀', innate: true, d: v => `击杀：把对方做成傀儡，放在己方末位（一半攻血，带它的词条；每场 ${v} 次）`,
-    hooks: { onKill(ctx, u, v, c, go) {
-      const x = c.victim; if (!x || x.f.tied || (u.f.str || 0) >= v || ctx.allies(u).length >= ctx.CAP) return; u.f.str = (u.f.str || 0) + 1; go();
-      puppetOf(ctx, u, x, false);
-    } } },
-  parasite:{ n: '寄生', ch: '寄', trig: '开战', innate: true, d: v => `开战：钻进敌方攻最高的蛊体内，它每回合开始受 ${v + 1} 伤害`,
-    hooks: { onStart(ctx, u, v, c, go) { const t = by(ctx.foes(u), f => f.atk); if (t) { go(); poison(ctx, t, v + 1, 'para'); } } } },
-  urn:     { n: '入瓮', ch: '瓮', trig: '布阵', innate: true, d: v => `布阵：吞掉身后紧挨的友蛊，得其全部攻血和词条${v > 1 ? `，另 +${2 * (v - 1)}/+${2 * (v - 1)}` : ''}`,
-    hooks: { onPrep(ctx, u, v, c, go) {
-      const n = 1; let ate = 0;
-      for (let k = 0; k < n; k++) {
-        const b = nextAlly(ctx, u); if (!b) break; const a = ctx.S[u.side], ga = b.atk, gh = Math.max(1, b.hp); a.splice(a.indexOf(b), 1); b.dead = true; b.hp = 0;
-        const bi = a.length > 0 ? Math.min(a.indexOf(u) + 1, a.length) : 0;
-        if (!ate) go(); ate++; ctx.ev('faint', { uid: b.uid, eaten: 1 }); ctx.buff(u, ga, gh);
-        if (u.combo === 'baichong') ctx.hook(b, 'faint', { idx: bi });
-        Object.entries(b.tr).forEach(([k, l]) => { if (k !== 'urn') giveTr(u, k, l); }); setTr(ctx, u);
-      }
-      if (ate && u.combo === 'baichong') ctx.ev('combo', { uid: u.uid, n: u.cname, quiet: 1 });
-      if (ate && v > 1) ctx.buff(u, 2 * (v - 1), 2 * (v - 1));
-    } } },
-  hex:     { n: '夺志', ch: '魇', trig: '布阵', innate: true, d: v => `布阵：敌方词条最厚的蛊，每个词条 -${v} 层（降到 0 即失效）`,
-    hooks: { onPrep(ctx, u, v, c, go) {
-      const t = by(ctx.foes(u), f => trSum(f)); if (!t || !trSum(t)) return; go();
-      for (const k of Object.keys(t.tr)) { t.tr[k] -= v; if (t.tr[k] <= 0) delete t.tr[k]; } setTr(ctx, t); status(ctx, t, 'hex', v);
-    } } },
-  sunder:  { n: '破甲', ch: '破', trig: '出手', innate: true, d: v => `对撞前先撕掉目标全部护体${v > 1 ? `，伤害 +${v - 1}` : ''}`,
-    hooks: { dealMod(ctx, u, v, amt, tg, kind) {
-      if (kind !== 'hit') return amt; const s = tg.sh; if (s > 0) { tg.sh = 0; status(ctx, tg, 'strip', s); }
-      if (u.combo === 'kaishan') { if (!u.f.ks) { u.f.ks = 1; ctx.ev('combo', { uid: u.uid, n: u.cname }); } return amt + v + 2; }
-      return amt + (v - 1);
-    } } },
-  storm:   { n: '霆击', ch: '霆', trig: '回合开始', innate: true, d: v => `单数回合开始：对敌方全体各造成 ${v} 伤害`,
-    hooks: { onTurn(ctx, u, v, c, go) {
-      if (!ctx.alive(u) || ctx.turn % 2 === 0) return; const fs = ctx.foes(u); if (!fs.length) return; const up = u.combo === 'jiutian';
-      go(); if (up) ctx.ev('combo', { uid: u.uid, n: u.cname, quiet: 1 }); fs.forEach((f, i) => ctx.deal(u, f, v + (up && i === 0 ? 1 : 0), 'skill'));
-    } } },
-  mimic:   { n: '拟态', ch: '拟', trig: '布阵', innate: true, d: v => `布阵：照抄敌方炉口的全部词条${v > 1 ? `，层数各 +${v - 1}` : ''}`,
-    hooks: { onPrep(ctx, u, v, c, go) {
-      const f = ctx.foes(u)[0]; if (!f) return; const src = Object.entries(f.tr).filter(([k, l]) => l > 0 && k !== 'mimic' && k !== 'rewind'); if (!src.length) return;
-      go(); src.forEach(([k, l]) => { const want = Math.min(3, l + v - 1); if ((u.tr[k] || 0) < want) giveTr(u, k, want - (u.tr[k] || 0)); }); setTr(ctx, u);
-    } } },
-  regrow:  { n: '再生', ch: '岁', trig: '回合开始', innate: true, d: v => `第一次阵亡时退到末位，以${['三', '五', '七'][v - 1]}成血重新长出来`,
-    hooks: {
-      saveDeath(ctx, u, v) {
-        if (u.f.regrow) return false; u.f.regrow = 1; const full = u.combo === 'burou';
-        const a = ctx.S[u.side]; a.splice(a.indexOf(u), 1); a.push(u); u.hp = full ? u.mx : Math.max(1, Math.ceil(u.mx * [0.3, 0.5, 0.7][v - 1])); u.killer = null;
-        ctx.ev('trig', { uid: u.uid, id: 'regrow' }); if (full) ctx.ev('combo', { uid: u.uid, n: u.cname, quiet: 1 }); return true;
+  // ===== 旧 12 种的本命技 =====
+  rage: N('越伤越狂', '猛', '受击', '被敌方打中且还活着：攻击 +〔15〕%（按开战攻，层层叠加）',
+    ['狂到 5 层时冲撞敌方第二只，造成本蛊攻击 〔100〕% 的伤害（每场一次）', '第一次受到致命伤时狂暴一回合：留 1 血、攻击翻倍，下次出手后才倒下'], {
+      onHit(ctx, u, v, c, go) {
+        if (!ctx.alive(u) || !c.src || c.src.side === u.side) return; u.f.rg = (u.f.rg || 0) + 1; go(); ctx.buff(u, A0(u, 0.15), 0);
+        if (aw(u, 1) && u.f.rg >= 5 && cnt(u, 'rgx', 1)) { const fs = ctx.foes(u), t = fs[1] || fs[0]; if (t) ctx.deal(u, t, A(u, 1), 'skill'); }
       },
-    } },
-  aegis:   { n: '镇岳', ch: '岳', trig: '光环', innate: true, d: v => `站在末位时，全体友蛊每次受到的伤害 -${v}（至少 1）`,
-    hooks: { auraTake(ctx, h, v, tg, amt) { return amt > 1 && ctx.alive(h) && isLast(ctx, h) ? Math.max(1, amt - v) : amt; } } },
-  coin:    { n: '吐宝', ch: '宝', trig: '击杀', innate: true, d: v => `击杀：全体友蛊 +${v} 护体`,
-    hooks: { onKill(ctx, u, v, c, go) { const a = ctx.allies(u); if (!a.length) return; go(); a.forEach(x => ctx.shield(x, v)); } } },
-  rewind:  { n: '光阴', ch: '光', trig: '覆灭', innate: true, d: v => `每场一次：全队将要覆灭时倒转光阴，开战时在阵的蛊全部以五成攻血复生，蝉自己只剩 1 血`, hooks: {} },
-  fate:    { n: '织命', ch: '命', trig: '布阵', innate: true, d: v => `布阵：把敌方末位拖到炉口，缠住它 ${v + 2} 合`,
-    hooks: {
+      saveDeath(ctx, u) { if (!aw(u, 2) || u.f.zb) return false; u.f.zb = ctx.turn || 1; u.hp = 1; u.killer = null; ctx.ev('trig', { uid: u.uid, id: 'rage' }); ctx.buff(u, u.atk, 0); return true; },
+      onAttack(ctx, u) { if (u.f.zb && ctx.alive(u)) { u.sh = 0; ctx.deal(null, u, u.hp, 'self'); } },
+      onTurn(ctx, u) { if (u.f.zb && ctx.alive(u) && ctx.turn >= u.f.zb + 2) { u.sh = 0; ctx.deal(null, u, u.hp, 'self'); } } }),
+  blaze: N('流火', '火', '开战', '开战：对随机一只敌蛊造成本蛊攻击 〔120〕% 的伤害',
+    ['被烧中的蛊灼伤：每回合掉本蛊攻击 〔25〕% 的血', '火势分出一股，波及敌方全体（每只本蛊攻击 〔40〕%）'], {
+      onStart(ctx, u, v, c, go) {
+        const fs = ctx.foes(u); if (!fs.length) return; go();
+        if (u.combo === 'liaoyuan') { ctx.comboEv(u); fs.forEach(f => ctx.deal(u, f, A(u, 0.3), 'skill')); }
+        else { const t = ctx.rng.pick(fs); ctx.deal(u, t, A(u, 1.2), 'skill'); if (aw(u, 1)) poison(ctx, t, A(u, 0.25)); }
+        if (aw(u, 2)) ctx.foes(u).forEach(f => ctx.deal(u, f, A(u, 0.4), 'skill'));
+      } }),
+  mirage: N('幻身', '幻', '受击', '第一次被打中还活着：身后召唤分影（本蛊攻血 〔50〕%，带本蛊的副词条）',
+    ['能分两次', '分影落地时与本体换位：分影顶到前面，本体退到它身后'], {
+      onHit(ctx, u, v, c, go) {
+        if (!ctx.alive(u) || !c.src || ctx.allies(u).length >= ctx.CAP || !cnt(u, 'mg', aw(u, 1) ? 2 : 1)) return; go();
+        const s = ctx.summon(u.side, idx(ctx, u) + 1, { sp: 'shade', atk: A(u, 0.5), hp: H(u, 0.5) }, u); if (!s) return;
+        copySub(u, s); setTr(ctx, s); if (aw(u, 2)) { swapPos(ctx, u, s); status(ctx, s, 'swap'); }
+      } }),
+  ironskin: N('铁骨', '铁', '开战', '开战：获得最大血量 〔40〕% 的护体',
+    ['护体没破时，受到的对撞伤害再 -20%', '回合开始补回最大血量 〔8〕% 的护体'], {
+      onStart(ctx, u, v, c, go) { go(); ctx.shield(u, H(u, 0.4)); },
+      takeMod(ctx, u, v, amt, src, kind) { return aw(u, 1) && kind === 'hit' && u.sh > 0 && amt > 1 ? pc(amt, 0.8) : amt; },
+      onTurn(ctx, u, v, c, go) { if (aw(u, 2) && ctx.alive(u)) { go(); ctx.shield(u, H(u, 0.08)); } } }),
+  bramble: N('荆棘', '荆', '受击', '被敌方打中：把这一下伤害的 〔50〕% 扎回攻击者（至少 1）',
+    ['站在炉口时扎回 〔80〕%', '同时扎到攻击者身后那只（〔30〕%）'], {
+      onHit(ctx, u, v, c, go) {
+        const s = c.src; if (!s || s.side === u.side || !ctx.alive(s) || ['thorn', 'mirror'].includes(c.kind)) return;
+        let p = aw(u, 1) && isFront(ctx, u) ? 0.8 : 0.5; if (u.combo === 'jinjia' && c.had) p *= 2; go();
+        ctx.deal(u, s, PN(c.n || 1, p), 'thorn');
+        if (aw(u, 2)) { const b = nextAlly(ctx, s); if (b) ctx.deal(u, b, PN(c.n || 1, 0.3), 'thorn'); }
+      } }),
+  heart: N('噬心', '心', '击杀', '击杀：攻击、最大血量各 +〔30〕%（按当前）',
+    ['击杀时回复最大血量 〔30〕%', '开战先扑向敌方血最少的蛊，造成本蛊攻击 〔80〕% 的伤害'], {
+      onKill(ctx, u, v, c, go) { if (!ctx.alive(u)) return; go(); ctx.buff(u, A(u, 0.3), H(u, 0.3)); if (aw(u, 1)) heal(ctx, u, H(u, 0.3)); },
+      onStart(ctx, u, v, c, go) { if (!aw(u, 2)) return; const t = by(ctx.foes(u), f => -f.hp); if (t) { go(); ctx.deal(u, t, A(u, 0.8), 'skill'); } } }),
+  rot: N('腐骨', '蛹', '亡语', '亡语：原地孵出蛊蛹（本蛊攻 〔60〕%、最大血 〔80〕%），蛊蛹会护卫相邻友蛊',
+    ['蛊蛹倒下时再孵一只（只孵一代）', '孵化时腐气熏到敌方炉口：中毒，每回合掉本蛊攻击 〔40〕%'], {
+      onDeath(ctx, u, v, c, go) {
+        go(); const p = ctx.summon(u.side, c.idx, { sp: 'pupa', atk: A(u, 0.6), hp: H(u, 0.8) }, u);
+        if (p) { p.tr.guard = 1; if (aw(u, 1)) p.tr.rot = 1; setTr(ctx, p); }
+        if (aw(u, 2)) { const f = ctx.foes(u)[0]; if (f) poison(ctx, f, A(u, 0.4)); }
+      } }),
+  royal: N('王令', '王', '开战', '开战：相邻友蛊攻血各 +〔15〕%；之后每有友蛊被召唤，自身攻血 +〔10〕%',
+    ['开战先召来一只工蜂（本蛊攻血 〔40〕%）', '被召唤的友蛊也 +〔20〕% 攻血'], {
+      onStart(ctx, u, v, c, go) {
+        go(); const a = ctx.S[u.side], i = a.indexOf(u); [a[i - 1], a[i + 1]].forEach(x => { if (ctx.alive(x)) ctx.buff(x, A0(x, 0.15), H0(x, 0.15)); });
+        if (aw(u, 1)) ctx.summon(u.side, i + 1, { sp: 'bee', atk: A(u, 0.4), hp: H(u, 0.4) }, u);
+      },
+      onSummon(ctx, u, v, c, go) { if (!ctx.alive(u) || !c.u || c.u.side !== u.side) return; go(); ctx.buff(u, A0(u, 0.1), H0(u, 0.1)); if (aw(u, 2)) ctx.buff(c.u, A(c.u, 0.2), H(c.u, 0.2)); } }),
+  molt: N('蜕壳', '蜕', '亡语', '亡语：身后友蛊得到本蛊攻血的 〔60〕%',
+    ['蜕给身后两只（各 〔40〕%）', '第一次阵亡时先蜕一层壳：原地以 30% 血复生，第二次阵亡才蜕给后人'], {
+      saveDeath(ctx, u) { if (!aw(u, 2) || u.f.molt) return false; u.f.molt = 1; u.killer = null; u.hp = pc(u.mx, 0.3); ctx.ev('trig', { uid: u.uid, id: 'molt' }); return true; },
+      onDeath(ctx, u, v, c, go) {
+        const a = ctx.S[u.side], tg = (aw(u, 1) ? [a[c.idx], a[c.idx + 1]] : [a[c.idx]]).filter(x => ctx.alive(x)), p = aw(u, 1) ? 0.4 : 0.6;
+        if (!tg.length) return; go(); tg.forEach(b => ctx.buff(b, A(u, p), H(u, p)));
+      } }),
+  beat: N('战鼓', '战', '回合开始', '回合开始：最前方友蛊攻击 +〔8〕%（按它当前攻）',
+    ['同时给最前方友蛊本蛊最大血量 〔8〕% 的护体', '每第 3 回合鼓声大作：全体友蛊攻击 +〔6〕%'], {
+      onTurn(ctx, u, v, c, go) {
+        if (!ctx.alive(u)) return; const a = ctx.allies(u), f = a[0]; if (!f) return; go(); ctx.buff(f, A(f, 0.08), 0);
+        if (aw(u, 1)) ctx.shield(f, H(u, 0.08)); if (aw(u, 2) && ctx.turn % 3 === 0) a.forEach(x => ctx.buff(x, A(x, 0.06), 0));
+      } }),
+  sting: N('蝎尾', '尾', '开战', '开战：一针扎敌方最末一只，造成本蛊攻击 〔250〕% 的伤害（站在炉口时减半）',
+    ['中针的蛊中毒：每回合掉本蛊攻击 〔50〕%', '回合开始若不在炉口，再扎最末一只（本蛊攻击 〔80〕%）'], {
+      onStart(ctx, u, v, c, go) { const fs = ctx.foes(u), t = fs[fs.length - 1]; if (!t) return; go(); ctx.deal(u, t, A(u, isFront(ctx, u) ? 1.25 : 2.5), 'skill'); if (aw(u, 1)) poison(ctx, t, A(u, 0.5)); },
+      onTurn(ctx, u, v, c, go) { if (!aw(u, 2) || !ctx.alive(u) || isFront(ctx, u)) return; const fs = ctx.foes(u), t = fs[fs.length - 1]; if (t) { go(); ctx.deal(u, t, A(u, 0.8), 'skill'); } } }),
+  moon: N('月照', '月', '亡语', '亡语：身后友蛊攻血各 +〔45〕%（按它的开战攻血）',
+    ['月光照到身后两只', '受照的友蛊再得到它最大血量 〔25〕% 的护体'], {
+      onDeath(ctx, u, v, c, go) {
+        const a = ctx.S[u.side], tg = (aw(u, 1) ? [a[c.idx], a[c.idx + 1]] : [a[c.idx]]).filter(x => ctx.alive(x)); if (!tg.length) return; go();
+        tg.forEach(b => { ctx.buff(b, A0(b, 0.45), H0(b, 0.45)); if (aw(u, 2)) ctx.shield(b, H(b, 0.25)); });
+      } }),
+
+  // ===== 新 52 种的本命技 =====
+  muster: N('点兵', '兵', '开战', '开战：身后召唤 2 只兵蚁（各本蛊攻血 〔35〕%）',
+    ['有兵蚁倒下时，本蛊攻击 +〔10〕%（按开战攻）', '回合开始兵蚁不足 2 只就补 1 只（每场最多 3 次）'], {
+      onStart(ctx, u, v, c, go) { go(); for (let i = 0; i < 2; i++) ctx.summon(u.side, idx(ctx, u) + 1, { sp: 'antling', atk: A(u, 0.35), hp: H(u, 0.35) }, u); },
+      onMourn(ctx, u, v, c, go) { if (aw(u, 1) && ctx.alive(u) && c.dead && c.dead.sp === 'antling') { go(); ctx.buff(u, A0(u, 0.1), 0); } },
+      onTurn(ctx, u, v, c, go) { if (aw(u, 2) && ctx.alive(u) && ctx.allies(u).filter(x => x.sp === 'antling').length < 2 && ctx.allies(u).length < ctx.CAP && cnt(u, 'mst', 3)) { go(); ctx.summon(u.side, idx(ctx, u) + 1, { sp: 'antling', atk: A(u, 0.35), hp: H(u, 0.35) }, u); } } }),
+  ember: N('余烬', '烬', '亡语', '亡语：对击杀者造成本蛊攻击 〔150〕% 的伤害（没有击杀者就烧敌方炉口）',
+    ['余烬还灼伤它：每回合掉本蛊攻击 〔30〕%', '火星溅满敌阵：敌方全体再各受本蛊攻击 〔40〕%'], {
+      onDeath(ctx, u, v, c, go) {
+        const k = u.killer && ctx.alive(u.killer) && u.killer.side !== u.side ? u.killer : ctx.foes(u)[0]; if (!k) return; go();
+        ctx.deal(u, k, A(u, 1.5), 'skill'); if (aw(u, 1)) poison(ctx, k, A(u, 0.3)); if (aw(u, 2)) ctx.foes(u).forEach(f => ctx.deal(u, f, A(u, 0.4), 'skill'));
+      } }),
+  ripen: N('蓄势', '蓄', '回合开始', '不在炉口时，回合开始攻血各 +〔10〕%（按开战攻血）',
+    ['站上炉口那一刻，获得最大血量 〔30〕% 的护体', '蓄势翻倍：每回合 +〔20〕%'], {
+      onTurn(ctx, u, v, c, go) { if (ctx.alive(u) && !isFront(ctx, u)) { go(); const p = aw(u, 2) ? 0.2 : 0.1; ctx.buff(u, A0(u, p), H0(u, p)); } },
+      onFront(ctx, u, v, c, go) { if (aw(u, 1) && ctx.alive(u)) { go(); ctx.shield(u, H(u, 0.3)); } } }),
+  leech: N('吮血', '吮', '出手', '对撞出手后，回复这次伤害的 〔50〕%（不超上限）',
+    ['回满后多出来的回复变成护体', '每次吸血都偷走目标 〔8〕% 的攻'], {
+      onAttack(ctx, u, v, c, go) {
+        if (!ctx.alive(u) || (u.hp >= u.mx && !aw(u, 1) && !aw(u, 2))) return; go(); const n = PN(c.n || 1, 0.5), h = heal(ctx, u, n);
+        if (aw(u, 1) && n > h) ctx.shield(u, n - h); if (aw(u, 2) && ctx.alive(c.tg)) { const d = weaken(ctx, c.tg, A(c.tg, 0.08)); if (d) ctx.buff(u, d, 0); }
+      } }),
+  roll: N('滚丸', '丸', '回合开始', '回合开始：获得最大血量 〔10〕% 的护体，越滚越厚',
+    ['站上炉口那一刻，护体翻倍', '对撞时额外打出自身护体的 〔30〕%'], {
+      onTurn(ctx, u, v, c, go) { if (ctx.alive(u)) { go(); ctx.shield(u, H(u, 0.1)); } },
+      onFront(ctx, u, v, c, go) { if (aw(u, 1) && ctx.alive(u) && u.sh > 0) { go(); ctx.shield(u, u.sh); } },
+      dealMod(ctx, u, v, amt, tg, kind) { return aw(u, 2) && kind === 'hit' && u.sh > 0 ? amt + PN(u.sh, 0.3) : amt; } }),
+  blitz: N('疾袭', '疾', '出手', '第一次对撞伤害 ×2',
+    ['疾袭这一下打死了对方，下一次对撞还能再疾袭', '开战先冲一次：对敌方炉口造成本蛊攻击 〔100〕% 的伤害'], {
+      atkMod(ctx, u, v, pa) { if (u.f.blitz) return pa; u.f.blitz = 1; u.f.bzT = ctx.turn; status(ctx, u, 'blitz'); return pa * 2; },
+      onKill(ctx, u) { if (aw(u, 1) && u.f.bzT === ctx.turn && cnt(u, 'bz2', 1)) u.f.blitz = 0; },
+      onStart(ctx, u, v, c, go) { if (!aw(u, 2)) return; const f = ctx.foes(u)[0]; if (f) { go(); ctx.deal(u, f, A(u, 1), 'skill'); } } }),
+  web: N('结网', '网', '开战', '开战：敌方炉口第一次对撞扑空',
+    ['敌方每换上一只新炉口，也给它结一层网（每场 2 次）', '撞进网里扑空的敌蛊，同时受本蛊攻击 〔100〕% 的伤害'], {
+      onStart(ctx, u, v, c, go) { const f = ctx.foes(u)[0]; if (f) { go(); stun(ctx, f, 1, 'web'); if (aw(u, 2)) f.f.webBy = u; } },
+      onFoeFront(ctx, u, v, c, go) { if (aw(u, 1) && ctx.alive(u) && ctx.alive(c.u) && !c.u.f.web && cnt(u, 'wb', 2)) { go(); stun(ctx, c.u, 1, 'web'); if (aw(u, 2)) c.u.f.webBy = u; } } }),
+  scatter: N('散籽', '籽', '亡语', '亡语：原地召唤 2 只蚜虫（各本蛊攻血 〔35〕%）',
+    ['召唤 3 只', '蚜虫带上本蛊的副词条'], {
+      onDeath(ctx, u, v, c, go) { go(); for (let i = 0; i < (aw(u, 1) ? 3 : 2); i++) { const s = ctx.summon(u.side, c.idx, { sp: 'aphidling', atk: A(u, 0.35), hp: H(u, 0.35) }, u); if (s && aw(u, 2)) { copySub(u, s); setTr(ctx, s); } } } }),
+  nettle: N('毒毛', '毛', '受击', '被对撞打中：攻击者中毒，每回合掉本蛊攻击 〔40〕%',
+    ['技能伤害的来源也会被扎', '中了毒毛的敌蛊攻击 -〔15〕%（每只只削一次）'], {
+      onHit(ctx, u, v, c, go) {
+        const s = c.src; if (!s || s.side === u.side || !ctx.alive(s) || !(c.kind === 'hit' || (aw(u, 1) && c.kind === 'skill'))) return; go();
+        poison(ctx, s, A(u, 0.4)); if (aw(u, 2) && !s.f.nt) { s.f.nt = 1; weaken(ctx, s, A(s, 0.15)); }
+      } }),
+  venom: N('蚀毒', '蚀', '出手', '对撞出手：目标中毒，每回合掉本蛊攻击 〔30〕% 的血（可叠）',
+    ['对中毒的目标，对撞伤害 +25%', '打死中毒的敌蛊时，毒转到下一只敌蛊身上'], {
+      onAttack(ctx, u, v, c, go) { if (ctx.alive(c.tg)) { go(); poison(ctx, c.tg, A(u, 0.3)); } },
+      dealMod(ctx, u, v, amt, tg, kind) { return aw(u, 1) && kind === 'hit' && tg.f.psn ? pc(amt, 1.25) : amt; },
+      onKill(ctx, u, v, c, go) { if (aw(u, 2) && c.victim && c.victim.f.psn) { const f = ctx.foes(u)[0]; if (f) { go(); poison(ctx, f, c.victim.f.psn); } } } }),
+  prick: N('点刺', '刺', '开战', '开战：对敌方血最少的蛊造成本蛊攻击 〔150〕% 的伤害',
+    ['点刺刺死了它，就再刺一只血最少的', '回合开始也刺一下血最少的敌蛊（本蛊攻击 〔50〕%）'], {
+      onStart(ctx, u, v, c, go) { const t = by(ctx.foes(u), f => -f.hp); if (!t) return; go(); ctx.deal(u, t, A(u, 1.5), 'skill'); if (aw(u, 1) && t.hp <= 0) { const t2 = by(ctx.foes(u), f => -f.hp); if (t2) ctx.deal(u, t2, A(u, 1.5), 'skill'); } },
+      onTurn(ctx, u, v, c, go) { if (!aw(u, 2) || !ctx.alive(u)) return; const t = by(ctx.foes(u), f => -f.hp); if (t) { go(); ctx.deal(u, t, A(u, 0.5), 'skill'); } } }),
+  brood: N('抱卵', '卵', '受击', '被打中还活着：身后召唤小蛛（本蛊攻血 〔30〕%，每场最多 2 只）',
+    ['每场最多 4 只', '小蛛倒下时，蛛母回复最大血量 〔10〕%'], {
+      onHit(ctx, u, v, c, go) { if (!ctx.alive(u) || !c.src || ctx.allies(u).length >= ctx.CAP || !cnt(u, 'brood', aw(u, 1) ? 4 : 2)) return; go(); ctx.summon(u.side, idx(ctx, u) + 1, { sp: 'spiderling', atk: A(u, 0.3), hp: H(u, 0.3) }, u); },
+      onMourn(ctx, u, v, c, go) { if (aw(u, 2) && ctx.alive(u) && c.dead && c.dead.sp === 'spiderling') { go(); heal(ctx, u, H(u, 0.1)); } } }),
+  burrow: N('钻地', '钻', '换到炉口', '换到炉口那一刻：钻地突袭敌方末位，造成本蛊攻击 〔150〕% 的伤害',
+    ['开战时若不在炉口，先钻一次（本蛊攻击 〔80〕%）', '突袭打死了末位，就再钻一次'], {
+      onFront(ctx, u, v, c, go) {
+        if (!ctx.alive(u)) return; const hit = () => { const fs = ctx.foes(u), t = fs[fs.length - 1]; if (t) ctx.deal(u, t, A(u, 1.5), 'skill'); return t; };
+        if (!ctx.foes(u).length) return; go(); const t = hit(); if (aw(u, 2) && t && t.hp <= 0) hit();
+      },
+      onStart(ctx, u, v, c, go) { if (!aw(u, 1) || isFront(ctx, u)) return; const fs = ctx.foes(u), t = fs[fs.length - 1]; if (t) { go(); ctx.deal(u, t, A(u, 0.8), 'skill'); } } }),
+  ward: N('守宫', '守', '回合开始', '不在炉口时，回合开始给炉口友蛊本蛊最大血量 〔15〕% 的护体',
+    ['有友蛊倒下时，给炉口友蛊补本蛊最大血量 〔25〕% 的护体', '护体翻倍'], {
+      onTurn(ctx, u, v, c, go) { if (ctx.alive(u) && !isFront(ctx, u)) { const f = ctx.allies(u)[0]; if (f) { go(); ctx.shield(f, H(u, aw(u, 2) ? 0.3 : 0.15)); } } },
+      onMourn(ctx, u, v, c, go) { if (!aw(u, 1) || !ctx.alive(u)) return; const f = ctx.allies(u)[0]; if (f) { go(); ctx.shield(f, H(u, 0.25)); } } }),
+  mother: N('子母', '蚨', '亡语', '亡语：原地召唤子蚨（本蛊攻、血各 〔60〕%）',
+    ['子蚨也会子母：再生一只（只再生一代）', '子蚨出生时，敌方炉口受本蛊攻击 〔100〕% 的伤害'], {
+      onDeath(ctx, u, v, c, go) {
+        go(); const s = ctx.summon(u.side, c.idx, { sp: 'fuzi', atk: A(u, 0.6), hp: H(u, 0.6) }, u); if (s && aw(u, 1)) { s.tr.mother = 1; setTr(ctx, s); }
+        if (aw(u, 2)) { const f = ctx.foes(u)[0]; if (f) ctx.deal(u, f, A(u, 1), 'skill'); }
+      } }),
+  burst: N('爆囊', '爆', '亡语', '亡语：对敌方前两只各造成本蛊攻击 〔100〕% 的伤害',
+    ['炸到敌方前三只', '按最大血量算：每只至少受本蛊最大血量 〔50〕% 的伤害'], {
+      onDeath(ctx, u, v, c, go) { const fs = ctx.foes(u).slice(0, aw(u, 1) ? 3 : 2); if (!fs.length) return; go(); const d = aw(u, 2) ? Math.max(A(u, 1), H(u, 0.5)) : A(u, 1); fs.forEach(f => ctx.deal(u, f, d, 'skill')); } }),
+  cocoon: N('结茧', '茧', '回合开始', '第 3 回合开始破茧：攻击 +〔80〕%，血回满（每场一次）',
+    ['结茧期间受到的伤害 -30%', '第 2 回合就破茧'], {
+      onTurn(ctx, u, v, c, go) {
+        const pj = u.combo === 'pojian', t = aw(u, 2) ? 2 : 3; if (!ctx.alive(u) || u.f.coc || ctx.turn < t) return;
+        u.f.coc = 1; go(); ctx.buff(u, A0(u, 0.8), 0); heal(ctx, u, u.mx);
+        if (pj) { cq(ctx, u); const a = ctx.allies(u), i = a.indexOf(u); [a[i - 1], a[i + 1]].forEach(x => x && ctx.buff(x, pc(x.a0 || x.atk, 0.15), pc(x.h0 || x.mx, 0.15))); }
+      },
+      takeMod(ctx, u, v, amt) { return aw(u, 1) && !u.f.coc && amt > 1 ? pc(amt, 0.7) : amt; } }),
+  drain: N('抽髓', '髓', '开战', '开战：敌方攻最高的蛊攻击 -〔15〕%，偷来加给自己（单次最多削四成）',
+    ['再抽敌方攻第二高的那只', '对撞出手时再偷目标 〔10〕% 的攻'], {
+      onStart(ctx, u, v, c, go) { const fs = ctx.foes(u).slice().sort((a, b) => b.atk - a.atk).slice(0, aw(u, 1) ? 2 : 1); if (!fs.length) return; go(); fs.forEach(t => { const d = weaken(ctx, t, A(t, 0.15)); if (d) ctx.buff(u, d, 0); }); },
+      onAttack(ctx, u, v, c, go) { if (aw(u, 2) && ctx.alive(c.tg) && ctx.alive(u)) { const d = weaken(ctx, c.tg, A(c.tg, 0.1)); if (d) { go(); ctx.buff(u, d, 0); } } } }),
+  scale: N('坚鳞', '鳞', '受伤', '每次受到的伤害 -30%（至少 1）',
+    ['血量不过半时，减伤提高到 45%', '每挡下一次，攻击 +〔3〕%（按开战攻）'], {
+      takeMod(ctx, u, v, amt) { if (amt <= 1) return amt; const r = pc(amt, aw(u, 1) && u.hp * 2 <= u.mx ? 0.55 : 0.7); if (aw(u, 2) && r < amt) u.atk = Math.min(999, u.atk + A0(u, 0.03)); return r; } }),
+  gild: N('镀金', '镀', '亡语', '亡语：身后友蛊获得本蛊最大血量 〔60〕% 的护体',
+    ['开战先给身后友蛊镀一层（本蛊最大血量 〔20〕%）', '镀金给全体友蛊'], {
+      onDeath(ctx, u, v, c, go) { const a = ctx.S[u.side], tg = aw(u, 2) ? a.filter(ctx.alive) : [a[c.idx]].filter(x => ctx.alive(x)); if (!tg.length) return; go(); tg.forEach(b => ctx.shield(b, H(u, 0.6))); },
+      onStart(ctx, u, v, c, go) { if (!aw(u, 1)) return; const b = nextAlly(ctx, u); if (b) { go(); ctx.shield(b, H(u, 0.2)); } } }),
+  nurture: N('哺育', '哺', '召唤', '每有友蛊被召唤：它的攻血加上本蛊攻血的 〔15〕%',
+    ['开战先召一只兵蚁（本蛊攻血 〔35〕%）', '召唤物倒下时，本蛊攻血 +〔8〕%（按开战攻血）'], {
+      onSummon(ctx, u, v, c, go) { if (ctx.alive(u) && c.u && c.u.side === u.side) { go(); ctx.buff(c.u, A(u, 0.15), H(u, 0.15)); } },
+      onStart(ctx, u, v, c, go) { if (aw(u, 1)) { go(); ctx.summon(u.side, idx(ctx, u) + 1, { sp: 'antling', atk: A(u, 0.35), hp: H(u, 0.35) }, u); } },
+      onMourn(ctx, u, v, c, go) { if (aw(u, 2) && ctx.alive(u) && c.dead && SUMMON_IDS.has(c.dead.sp)) { go(); ctx.buff(u, A0(u, 0.08), H0(u, 0.08)); } } }),
+  hop: N('弹跳', '跳', '出手', '对撞后若还活着，跳到身后友蛊的后面，并给顶上来的友蛊本蛊最大血量 〔8〕% 的护体',
+    ['每跳一次攻击 +〔10〕%（按开战攻）', '起跳时顺嘴再咬对手一口（本蛊攻击 〔50〕%）'], {
+      onAttack(ctx, u, v, c, go) {
+        if (!ctx.alive(u)) return; const b = nextAlly(ctx, u); if (!b) return; if (aw(u, 2) && ctx.alive(c.tg)) ctx.deal(u, c.tg, A(u, 0.5), 'skill');
+        swapPos(ctx, u, b); go(); status(ctx, u, 'swap'); ctx.shield(b, H(u, 0.08)); if (aw(u, 1)) ctx.buff(u, A0(u, 0.1), 0);
+        if (u.combo === 'yixing') { cq(ctx, u); ctx.buff(b, pc(b.a0 || b.atk, 0.12), pc(b.h0 || b.mx, 0.12)); u.f.fronted = 0; }
+      } }),
+  pair: N('比翼', '翼', '布阵', '开战：左右两侧友蛊是同一物种时，自身攻血翻倍',
+    ['只要左右两侧都有友蛊就算比翼（攻血 +50%）', '比翼成功时，左右友蛊也各 +〔25〕% 攻血'], {
+      onStart(ctx, u, v, c, go) {
+        const a = ctx.allies(u), i = a.indexOf(u), L = a[i - 1], R = a[i + 1]; if (!L || !R) return; const same = L.sp === R.sp; if (!same && !aw(u, 1)) return;
+        go(); const p = same ? 1 : 0.5; ctx.buff(u, pc(u.atk, p), pc(u.mx, p)); if (aw(u, 2)) [L, R].forEach(x => ctx.buff(x, A0(x, 0.25), H0(x, 0.25)));
+      } }),
+  lull: N('催眠', '眠', '受击', '被对撞打中：攻击者下次对撞不出手（每场 2 次）',
+    ['每场 3 次', '睡着的敌蛊受到的伤害 +30%'], {
+      onHit(ctx, u, v, c, go) { if (c.src && c.kind === 'hit' && c.src.side !== u.side && ctx.alive(c.src) && cnt(u, 'lull', aw(u, 1) ? 3 : 2)) { go(); stun(ctx, c.src, 1); if (aw(u, 2)) c.src.f.drowsy = 1; } } }),
+  execute: N('斩首', '斩', '出手', '对撞时目标血量不过半，伤害 +60%',
+    ['斩杀后回复最大血量 〔20〕%', '门槛放宽到七成血'], {
+      dealMod(ctx, u, v, amt, tg, kind) { return kind === 'hit' && tg.hp <= tg.mx * (aw(u, 2) ? 0.7 : 0.5) ? pc(amt, 1.6) : amt; },
+      onKill(ctx, u, v, c, go) { if (aw(u, 1) && ctx.alive(u)) { go(); heal(ctx, u, H(u, 0.2)); } } }),
+  gorge: N('吞元', '饕', '击杀', '击杀：吃下对方攻击的 〔50〕%',
+    ['同时吃下对方最大血量的 〔30〕%', '再吞下对方一个副词条'], {
+      onKill(ctx, u, v, c, go) {
+        const x = c.victim; if (!ctx.alive(u) || !x) return; go(); ctx.buff(u, PN(x.atk, 0.5), aw(u, 1) ? PN(x.mx, 0.3) : 0);
+        if (aw(u, 2)) { const k = Object.keys(x.tr).find(k => !isNat(k) && u.tr[k] == null); if (k) { giveTr(u, k, x.tr[k]); setTr(ctx, u); } }
+      } }),
+  miasma: N('瘴气', '瘴', '受击', '第一次受伤：敌方全体中毒，每回合掉本蛊最大血量 〔10〕%',
+    ['之后每第 3 回合再放一次瘴', '阵亡时再放一次瘴'], {
+      onHit(ctx, u, v, c, go) { if (u.f.mia || !c.src) return; u.f.mia = 1; go(); ctx.foes(u).forEach(f => poison(ctx, f, H(u, 0.1))); },
+      onTurn(ctx, u, v, c, go) { if (aw(u, 1) && ctx.alive(u) && u.f.mia && ctx.turn % 3 === 0) { go(); ctx.foes(u).forEach(f => poison(ctx, f, H(u, 0.1))); } },
+      onDeath(ctx, u, v, c, go) { if (aw(u, 2)) { const fs = ctx.foes(u); if (fs.length) { go(); fs.forEach(f => poison(ctx, f, H(u, 0.1))); } } } }),
+  chirp: N('叫阵', '叫', '回合开始', '站在炉口时，回合开始敌方炉口攻击 -〔12〕%',
+    ['削下来的攻加到自己身上', '叫声震慑敌方全体（炉口之外各 -〔6〕%）'], {
+      onTurn(ctx, u, v, c, go) {
+        if (!ctx.alive(u) || !isFront(ctx, u)) return; const fs = ctx.foes(u); if (!fs.length) return; go();
+        (aw(u, 2) ? fs : [fs[0]]).forEach((f, i) => { const d = weaken(ctx, f, A(f, i ? 0.06 : 0.12)); if (d && aw(u, 1)) ctx.buff(u, d, 0); });
+      } }),
+  cleave: N('横扫', '扫', '出手', '对撞出手：顺势扫到敌方下一只，造成这次攻击的 〔60〕%',
+    ['扫到敌方下两只', '横扫扫死一只，本蛊攻击 +〔10〕%（按开战攻）'], {
+      onAttack(ctx, u, v, c, go) {
+        const fs = ctx.foes(u).filter(f => f !== c.tg), wide = u.combo === 'huangzai', tg = wide ? fs : fs.slice(0, aw(u, 1) ? 2 : 1); if (!tg.length) return;
+        go(); if (wide) cq(ctx, u); const d = PN(c.n || 1, 0.6); tg.forEach(f => { ctx.deal(u, f, d, 'skill'); if (aw(u, 2) && f.hp <= 0) ctx.buff(u, A0(u, 0.1), 0); });
+      } }),
+  mirror: N('镜反', '镜', '受击', '受到技能伤害（开锋、杀招、亡语等非对撞伤害）：原样照回来源（最多本蛊最大血量 〔60〕%）',
+    ['被照回的那一下，自己只吃一半', '对撞挨的打也照回 〔25〕%'], {
+      takeMod(ctx, u, v, amt, src, kind) { return aw(u, 1) && src && src.side !== u.side && (kind === 'skill' || kind === 'shot') && amt > 1 ? pc(amt, 0.5) : amt; },
+      onHit(ctx, u, v, c, go) {
+        const s = c.src; if (!s || s.side === u.side || !ctx.alive(s)) return;
+        if (c.kind === 'hit') {
+          if (u.combo === 'jinghua' && u.f.jh !== ctx.turn) { u.f.jh = ctx.turn; cq(ctx, u); ctx.deal(u, s, pc(c.n || 1, 0.3), 'mirror'); return true; }
+          if (aw(u, 2)) { go(); ctx.deal(u, s, PN(c.n || 1, 0.25), 'mirror'); } return;
+        }
+        if (c.kind !== 'skill' && c.kind !== 'shot') return; go(); ctx.deal(u, s, Math.min(c.n || 1, H(u, 0.6)), 'mirror');
+      } }),
+  hive: N('蜂巢', '巢', '回合开始', '回合开始：身后召唤工蜂（本蛊攻血 〔25〕%，每场最多 3 只）',
+    ['每场最多 5 只', '工蜂出巢时叮敌方炉口一下（本蛊攻击 〔40〕%）'], {
+      onTurn(ctx, u, v, c, go) {
+        if (!ctx.alive(u) || ctx.allies(u).length >= ctx.CAP || !cnt(u, 'hive', aw(u, 1) ? 5 : 3)) return; go();
+        ctx.summon(u.side, idx(ctx, u) + 1, { sp: 'bee', atk: A(u, 0.25), hp: H(u, 0.25) }, u); if (aw(u, 2)) { const f = ctx.foes(u)[0]; if (f) ctx.deal(u, f, A(u, 0.4), 'skill'); }
+      } }),
+  mourn: N('食腐', '腐', '友亡', '有友蛊阵亡：自身攻血 +〔15〕%（按开战攻血）',
+    ['敌蛊阵亡也算', '友蛊阵亡时，对敌方炉口造成本蛊攻击 〔60〕% 的伤害'], {
+      onMourn(ctx, u, v, c, go) { if (!ctx.alive(u)) return; go(); ctx.buff(u, A0(u, 0.15), H0(u, 0.15)); if (aw(u, 2)) { const f = ctx.foes(u)[0]; if (f) ctx.deal(u, f, A(u, 0.6), 'skill'); } },
+      onFoeDie(ctx, u, v, c, go) { if (aw(u, 1) && ctx.alive(u)) { go(); ctx.buff(u, A0(u, 0.15), H0(u, 0.15)); } } }),
+  inherit: N('承嗣', '嗣', '亡语', '亡语：把自己的副词条和本命全部传给身后友蛊',
+    ['同时传给它本蛊攻血的 〔30〕%', '传给身后两只'], {
+      onDeath(ctx, u, v, c, go) {
+        const a = ctx.S[u.side], tg = (aw(u, 2) ? [a[c.idx], a[c.idx + 1]] : [a[c.idx]]).filter(x => ctx.alive(x)), give = Object.entries(u.tr).filter(([k, l]) => k !== 'inherit' && l > 0);
+        if (!tg.length || (!give.length && !aw(u, 1))) return; go();
+        tg.forEach(b => { give.forEach(([k, l]) => giveTr(b, k, l)); setTr(ctx, b); if (aw(u, 1)) ctx.buff(b, A(u, 0.3), H(u, 0.3)); });
+      } }),
+  frost: N('霜冻', '霜', '出手', '对撞出手：目标下次对撞不出手（每场 2 次）',
+    ['冻住时附带本蛊攻击 〔50〕% 的冰伤', '每场 3 次'], {
+      onAttack(ctx, u, v, c, go) {
+        if (!ctx.alive(c.tg) || !cnt(u, 'frost', aw(u, 2) ? 3 : 2)) return; go(); stun(ctx, c.tg, 1);
+        if (aw(u, 1)) ctx.deal(u, c.tg, A(u, 0.5), 'skill'); if (u.combo === 'bingfeng') { cq(ctx, u); ctx.deal(u, c.tg, A(u, 0.6), 'skill'); }
+      } }),
+  lure: N('引蝶', '引', '布阵', '布阵：把敌方血最少的蛊引到炉口，并使其攻击 -〔25〕%',
+    ['引来的蛊被花粉迷住，第一次对撞扑空', '引来的蛊开战先受本蛊攻击 〔150〕% 的伤害'], {
       onPrep(ctx, u, v, c, go) {
-        const fs = ctx.foes(u); if (!fs.length) return; go(); const a = ctx.S[fs[0].side], t = fs[fs.length - 1];
-        if (fs.length > 1) { const i = a.indexOf(fs[0]), j = a.indexOf(t); [a[i], a[j]] = [a[j], a[i]]; status(ctx, t, 'swap'); } stun(ctx, t, v + 2, 'web');
-      },
-    } },
-  phoenix: { n: '涅火', ch: '涅', trig: '亡语', innate: true, d: v => `第一次阵亡时化作劫火：对敌方全体各造成 ${v} 伤害，再以一半攻、三成血浴火重生`,
-    hooks: { saveDeath(ctx, u, v) {
-      if (u.f.phx) return false; u.f.phx = 1; u.killer = null; u.hp = Math.max(1, Math.ceil(u.mx / 3)); ctx.ev('trig', { uid: u.uid, id: 'phoenix' });
-      const d = v; ctx.foes(u).forEach(f => ctx.deal(u, f, d, 'skill')); u.atk = Math.max(1, Math.ceil(u.atk / 2)); return true;
-    } } },
+        const fs = ctx.foes(u), t = by(fs, f => -f.hp); if (!t) return; go();
+        if (t !== fs[0]) { swapPos(ctx, t, fs[0]); status(ctx, t, 'swap'); } weaken(ctx, t, A(t, 0.25)); if (aw(u, 1)) stun(ctx, t, 1, 'web'); if (aw(u, 2)) ctx.deal(u, t, A(u, 1.5), 'skill');
+      } }),
+  pit: N('流沙', '沙', '敌换炉口', '敌方每换上一只新炉口，它陷进流沙受本蛊攻击 〔40〕% 的伤害',
+    ['陷进去的蛊攻击 -〔10〕%', '开战时敌方炉口也先陷一次'], {
+      onFoeFront(ctx, u, v, c, go) { if (!ctx.alive(u) || !ctx.alive(c.u)) return; go(); ctx.deal(u, c.u, A(u, 0.4), 'skill'); if (aw(u, 1)) weaken(ctx, c.u, A(c.u, 0.1)); if (u.combo === 'liusha' && ctx.alive(c.u)) { cq(ctx, u); weaken(ctx, c.u, pc(c.u.atk, 0.15)); } },
+      onStart(ctx, u, v, c, go) { if (!aw(u, 2)) return; const f = ctx.foes(u)[0]; if (f) { go(); ctx.deal(u, f, A(u, 0.4), 'skill'); } } }),
+  brief: N('朝暮', '暮', '回合开始', '生来攻血很高，但第 4 回合开始寿尽凋零（会触发亡语）',
+    ['凋零时化作光雨：敌方全体各受本蛊攻击 〔50〕%', '寿命延长到第 6 回合'], {
+      onTurn(ctx, u, v, c, go) { if (!ctx.alive(u) || ctx.turn < (aw(u, 2) ? 6 : 4)) return; go(); if (aw(u, 1)) ctx.foes(u).forEach(f => ctx.deal(u, f, A(u, 0.5), 'skill')); u.sh = 0; ctx.deal(null, u, u.hp, 'self'); } }),
+  chain: N('连雷', '雷', '出手', '对撞出手后，雷光弹向下一只敌蛊，造成这次攻击的 〔35〕%',
+    ['雷光弹两只', '被雷劈中的蛊有 30% 机会麻住，下次对撞不出手'], {
+      onAttack(ctx, u, v, c, go) {
+        const lg = u.combo === 'leigu', n = (aw(u, 1) ? 2 : 1) + (lg ? 1 : 0), tg = ctx.foes(u).filter(f => f !== c.tg).slice(0, n); if (!tg.length) return;
+        go(); if (lg) cq(ctx, u); const d = PN(c.n || 1, 0.35); tg.forEach(f => { ctx.deal(u, f, d, 'skill'); if (aw(u, 2) && ctx.alive(f) && ctx.rng() < 0.3) stun(ctx, f, 1); });
+      } }),
+  bulwark: N('玄甲', '玄', '受伤', '站在炉口时，对撞挨的打减半（技能、毒照常吃）',
+    ['站在炉口时，回合开始获得最大血量 〔3〕% 的护体', '在炉口挨打时反震攻击者本蛊攻击 〔25〕%'], {
+      takeMod(ctx, u, v, amt, src, kind) { return kind === 'hit' && isFront(ctx, u) && amt > 1 ? pc(amt, 0.5) : amt; },
+      onTurn(ctx, u, v, c, go) { if (aw(u, 1) && ctx.alive(u) && isFront(ctx, u)) { go(); ctx.shield(u, H(u, 0.03)); } },
+      onHit(ctx, u, v, c, go) { if (aw(u, 2) && c.kind === 'hit' && c.src && c.src.side !== u.side && ctx.alive(c.src) && ctx.alive(u) && isFront(ctx, u)) { go(); ctx.deal(u, c.src, A(u, 0.25), 'thorn'); } } }),
+  strings: N('牵丝', '丝', '击杀', '击杀：把对方做成傀儡放到己方末位（一半攻血，带它的词条；每场 1 次）',
+    ['每场 2 次', '傀儡是完整攻血'], {
+      onKill(ctx, u, v, c, go) { const x = c.victim; if (!x || x.f.tied || ctx.allies(u).length >= ctx.CAP || !cnt(u, 'str', aw(u, 1) ? 2 : 1)) return; go(); puppetOf(ctx, u, x, aw(u, 2)); } }),
+  parasite: N('寄生', '寄', '开战', '开战：钻进敌方攻最高的蛊体内，它每回合开始受本蛊攻击 〔10〕% 的伤害',
+    ['宿主死了就钻进下一只攻最高的敌蛊', '宿主每回合攻击 -〔8〕%'], {
+      onStart(ctx, u, v, c, go) { const t = by(ctx.foes(u), f => f.atk); if (t) { go(); poison(ctx, t, A(u, 0.1), 'para'); u.f.host = t; if (aw(u, 2)) t.f.paraW = 1; } },
+      onFoeDie(ctx, u, v, c, go) { if (!aw(u, 1) || c.dead !== u.f.host) return; const t = by(ctx.foes(u), f => f.atk); if (t) { go(); poison(ctx, t, A(u, 0.1), 'para'); u.f.host = t; if (aw(u, 2)) t.f.paraW = 1; } } }),
+  urn: N('入瓮', '瓮', '布阵', '布阵：吞掉身后紧挨的友蛊，得到它全部攻血和副词条（本场有效）',
+    ['吞完再 +〔20〕% 攻血', '能吞两只'], {
+      onPrep(ctx, u, v, c, go) {
+        let ate = 0;
+        for (let k = 0; k < (aw(u, 2) ? 2 : 1); k++) {
+          const b = nextAlly(ctx, u); if (!b) break; const a = ctx.S[u.side], ga = b.atk, gh = Math.max(1, b.hp); a.splice(a.indexOf(b), 1); b.dead = true; b.hp = 0;
+          const bi = a.length > 0 ? Math.min(a.indexOf(u) + 1, a.length) : 0;
+          if (!ate) go(); ate++; ctx.ev('faint', { uid: b.uid, eaten: 1 }); ctx.buff(u, ga, gh);
+          if (u.combo === 'baichong') ctx.hook(b, 'faint', { idx: bi });
+          Object.entries(b.tr).forEach(([k2, l]) => { if (!isNat(k2)) giveTr(u, k2, l); }); setTr(ctx, u);
+        }
+        if (ate && u.combo === 'baichong') cq(ctx, u);
+        if (ate && aw(u, 1)) ctx.buff(u, A(u, 0.2), H(u, 0.2));
+      } }),
+  hex: N('夺志', '魇', '布阵', '布阵：敌方副词条最厚的那只，每个副词条 -1 层（降到 0 即失效）',
+    ['再夺一只', '被夺志的蛊攻击 -〔8〕%'], {
+      onPrep(ctx, u, v, c, go) {
+        const sub = f => Object.entries(f.tr).reduce((a, [k, l]) => a + (isNat(k) ? 0 : l), 0), fs = ctx.foes(u).filter(f => sub(f) > 0).sort((a, b) => sub(b) - sub(a)).slice(0, aw(u, 1) ? 2 : 1); if (!fs.length) return; go();
+        fs.forEach(t => { for (const k of Object.keys(t.tr)) { if (isNat(k)) continue; t.tr[k] -= 1; if (t.tr[k] <= 0) delete t.tr[k]; } setTr(ctx, t); status(ctx, t, 'hex', 1); if (aw(u, 2)) weaken(ctx, t, A(t, 0.08)); });
+      } }),
+  sunder: N('破甲', '破', '出手', '对撞前先撕掉目标全部护体，伤害 +20%',
+    ['撕下来的护体一半披到自己身上', '每次对撞再加目标最大血量 〔6〕% 的伤害'], {
+      dealMod(ctx, u, v, amt, tg, kind) {
+        if (kind !== 'hit') return amt; const s = tg.sh; if (s > 0) { tg.sh = 0; status(ctx, tg, 'strip', s); if (aw(u, 1)) ctx.shield(u, PN(s, 0.5)); }
+        let r = pc(amt, 1.2) + (aw(u, 2) ? H(tg, 0.06) : 0);
+        if (u.combo === 'kaishan') { if (!u.f.ks) { u.f.ks = 1; ctx.comboEv(u); } r = pc(r, 1.25); }
+        return r;
+      } }),
+  storm: N('霆击', '霆', '回合开始', '单数回合开始：对敌方全体各造成本蛊攻击 〔10〕% 的伤害',
+    ['霆击先劈炉口：炉口多吃一半', '劈死一只，本蛊攻击 +〔10〕%（按开战攻）'], {
+      onTurn(ctx, u, v, c, go) {
+        if (!ctx.alive(u) || ctx.turn % 2 === 0) return; const fs = ctx.foes(u); if (!fs.length) return; const up = u.combo === 'jiutian'; go(); if (up) cq(ctx, u);
+        fs.forEach((f, i) => { ctx.deal(u, f, A(u, 0.1 * (i === 0 && aw(u, 1) ? 1.5 : 1) + (up && i === 0 ? 0.05 : 0)), 'skill'); if (aw(u, 2) && f.hp <= 0) ctx.buff(u, A0(u, 0.1), 0); });
+      } }),
+  mimic: N('拟态', '拟', '布阵', '布阵：照抄敌方炉口的全部副词条',
+    ['同时抄来它 〔10〕% 的攻血', '抄来的副词条各多 1 层'], {
+      onPrep(ctx, u, v, c, go) {
+        const f = ctx.foes(u)[0]; if (!f) return; const src = Object.entries(f.tr).filter(([k, l]) => l > 0 && !isNat(k));
+        if (!src.length && !aw(u, 1)) return; go(); src.forEach(([k, l0]) => { const l = l0 + (aw(u, 2) ? 1 : 0); if ((u.tr[k] || 0) < l) giveTr(u, k, l - (u.tr[k] || 0)); }); setTr(ctx, u);
+        if (aw(u, 1)) ctx.buff(u, A(f, 0.1), H(f, 0.1));
+      } }),
+  regrow: N('再生', '岁', '免死', '第一次阵亡时退到末位，以五成血重新长出来',
+    ['长回来时攻击 +〔10〕%（按开战攻）', '能再生两次'], {
+      saveDeath(ctx, u) {
+        if (!cnt(u, 'regrow', aw(u, 2) ? 2 : 1)) return false; const full = u.combo === 'burou', a = ctx.S[u.side]; a.splice(a.indexOf(u), 1); a.push(u);
+        u.hp = pc(u.mx, full ? 0.8 : 0.5); u.killer = null; ctx.ev('trig', { uid: u.uid, id: 'regrow' }); if (full) cq(ctx, u); if (aw(u, 1)) ctx.buff(u, A0(u, 0.1), 0); return true;
+      } }),
+  aegis: N('镇岳', '岳', '光环', '站在末位时，全体友蛊每次受到的伤害 -15%（至少 1）',
+    ['在末位时，回合开始给炉口友蛊本蛊最大血量 〔8〕% 的护体', '减伤提高到 25%'], {
+      auraTake(ctx, h, v, tg, amt) { return amt > 1 && ctx.alive(h) && isLast(ctx, h) ? pc(amt, aw(h, 2) ? 0.75 : 0.85) : amt; },
+      onTurn(ctx, u, v, c, go) { if (aw(u, 1) && ctx.alive(u) && isLast(ctx, u)) { const f = ctx.allies(u)[0]; if (f && f !== u) { go(); ctx.shield(f, H(u, 0.08)); } } } }),
+  coin: N('吐宝', '宝', '击杀', '击杀：全体友蛊获得本蛊最大血量 〔15〕% 的护体',
+    ['同时回复全体友蛊各 〔10〕% 血', '击杀时本蛊攻击 +〔10〕%（按开战攻）'], {
+      onKill(ctx, u, v, c, go) { const a = ctx.allies(u); if (!a.length) return; go(); a.forEach(x => { ctx.shield(x, H(u, 0.15)); if (aw(u, 1)) heal(ctx, x, H(x, 0.1)); }); if (aw(u, 2) && ctx.alive(u)) ctx.buff(u, A0(u, 0.1), 0); } }),
+  rewind: N('光阴', '光', '覆灭', '每场一次：全队将要覆灭时倒转光阴，开战时在阵的蛊全部以五成攻血复生，蝉自己只剩 1 血',
+    ['倒回来时，蝉身边的友蛊各得最大血量 15% 的护体', '倒回来那一刻，敌方全体被光阴反噬，各掉最大血量 10%'], {}),
+  fate: N('织命', '命', '布阵', '布阵：把敌方末位拖到炉口，缠住它 3 合',
+    ['被缠住的蛊每合掉本蛊攻击 〔30〕% 的血', '缠住 4 合'], {
+      onPrep(ctx, u, v, c, go) {
+        const fs = ctx.foes(u); if (!fs.length) return; go(); const t = fs[fs.length - 1];
+        if (fs.length > 1) { swapPos(ctx, fs[0], t); status(ctx, t, 'swap'); } stun(ctx, t, aw(u, 2) ? 4 : 3, 'web'); if (aw(u, 1)) poison(ctx, t, A(u, 0.3));
+      } }),
+  phoenix: N('涅火', '涅', '免死', '第一次阵亡时化作劫火：敌方全体各受本蛊攻击 〔5〕%，再以四成攻、两成血重生',
+    ['重生时血改为三成', '劫火灼伤敌方全体：每回合掉本蛊攻击 〔1〕%'], {
+      saveDeath(ctx, u) {
+        if (u.f.phx) return false; u.f.phx = 1; u.killer = null; u.hp = pc(u.mx, aw(u, 1) ? 0.3 : 0.2); ctx.ev('trig', { uid: u.uid, id: 'phoenix' });
+        ctx.foes(u).forEach(f => { ctx.deal(u, f, A(u, 0.05), 'skill'); if (aw(u, 2)) poison(ctx, f, A(u, 0.01)); }); u.atk = pc(u.atk, 0.4); return true;
+      } }),
 };
 
 // ---------- 新物种 ----------
@@ -362,18 +578,28 @@ const FOOD_OF = {
 export const eatsOf = food => food === 'any' ? '百气不忌，什么都吃' : `${FOODS[food].verb}${FOODS[food].n}（${FOODS[food].model}）`;
 const withEats = (lore, food) => lore + (/[。！？]$/.test(lore) ? '' : '。') + eatsOf(food);
 // 旧 12 种的补充字段（集成时 Object.assign 到 core 的 SPECIES 上；lore 用 withEats 后的版本）
+// nat = 本命技；sub = 炼附/吞噬时教给本体的副词条；dup = 与本命重复、不能再得的副词条（旧存档里这些会被清掉）
 export const OLD_EXTRA = Object.fromEntries([
-  ['boar', 1, 'any'], ['fire', 1, 'claude'], ['twin', 1, 'gemini'], ['iron', 1, 'qwen'], ['thorn', 1, 'glm'], ['bone', 1, 'glm'],
-  ['mantis', 2, 'gpt'], ['queen', 2, 'gpt'], ['cicada', 2, 'claude'], ['drum', 3, 'gpt'], ['scorp', 3, 'glm'], ['moth', 3, 'gemini'],
-].map(([id, rank, food]) => [id, { rank, food, eats: eatsOf(food) }]));
+  ['boar', 1, 'any', 'rage', 'frenzy', 'frenzy'], ['fire', 1, 'claude', 'blaze', 'strike', 'strike'], ['twin', 1, 'gemini', 'mirage', 'split', 'split'],
+  ['iron', 1, 'qwen', 'ironskin', 'shell', 'shell'], ['thorn', 1, 'glm', 'bramble', 'thorn', 'thorn,vanguard'], ['bone', 1, 'glm', 'rot', 'spawn', 'spawn,guard'],
+  ['mantis', 2, 'gpt', 'heart', 'devour', 'devour'], ['queen', 2, 'gpt', 'royal', 'rally', 'rally,link'], ['cicada', 2, 'claude', 'molt', 'legacy', 'legacy'],
+  ['drum', 3, 'gpt', 'beat', 'war', 'war'], ['scorp', 3, 'glm', 'sting', 'snipe', 'snipe,strike'], ['moth', 3, 'gemini', 'moon', 'legacy', 'legacy'],
+].map(([id, rank, food, nat, sub, dup]) => [id, { rank, food, eats: eatsOf(food), nat, t: nat, v: 1, sub, dup: dup.split(',') }]));
 export const loreWithEats = withEats;
 
 // 大白话机制：trait 描述 + 战斗外效果；补转数、仙蛊标记、喂食偏好
 const TD = Object.fromEntries(Object.entries(NEW_TRAITS).map(([k, t]) => [k, t.d]));
+const SUB = { ant: 'rally', firefly: 'strike', stick: 'mend', leech: 'siphon', dung: 'shell', tiger: 'vanguard', webspider: 'insight', aphid: 'spawn', hairy: 'thorn', cent: 'toxin',
+  wasp: 'strike', spider: 'rally', mole: 'snipe', gecko: 'guard', qingfu: 'spawn', bomb: 'spark', silk: 'mend', mosq: 'siphon', rhino: 'shell', gold: 'legacy',
+  qant: 'rally', flea: 'link', bfly: 'link', sleep: 'insight', stag: 'devour', glut: 'devour', toad: 'toxin', cricket: 'insight', locust: 'spark',
+  mirror: 'thorn', hive: 'rally', fly: 'legacy', bury: 'legacy', frost: 'insight', lure: 'insight', antlion: 'snipe', mayfly: 'vanguard',
+  thunder: 'spark', tortoise: 'guard', puppet: 'split', hairworm: 'toxin', urn: 'devour', hex: 'insight', saw: 'strike',
+  dfly: 'spark', orchid: 'split', taisui: 'mend', yue: 'guard', jinchan: 'luck', guangyin: 'legacy', fate: 'insight', nirvana: 'strike' };
+const DUP = { leech: ['siphon'], cent: ['toxin'], glut: ['devour'], dung: ['shell'], thunder: ['spark'], locust: ['spark'], wasp: ['snipe'], gecko: ['guard'], taisui: ['mend'] };
 NEW_SPECIES.forEach(s => {
-  s.rank = s.legend ? 6 : Math.min(5, s.tier + 1);
+  s.rank = s.legend ? 6 : Math.min(5, s.tier + 1); s.nat = s.t; s.sub = SUB[s.id]; s.dup = DUP[s.id] || [];
   s.food = FOOD_OF[s.id]; s.eats = eatsOf(s.food); s.lore = withEats(s.lore, s.food);
-  s.how = TD[s.t](s.v) + (s.meta ? '；' + s.meta : '');
+  s.how = TD[s.t](1) + (s.meta ? '；' + s.meta : '');
 });
 
 export const NEW_SUMMONS = { antling: '兵蚁', aphidling: '蚜虫', spiderling: '小蛛', fuzi: '子蚨', bee: '工蜂', kuilei: '傀儡' };
@@ -386,41 +612,36 @@ export const LEGENDS = IMMORTALS;   // 旧称，等同 IMMORTALS
 const C = (id, n, need, d, hooks = {}) => ({ id, n, need, d, hooks });
 const cq = (ctx, u) => ctx.ev('combo', { uid: u.uid, n: u.cname, quiet: 1 });
 export const NEW_COMBOS = [
-  C('wudu', '五毒噬心', ['cent', 'scorp'], '回合开始：敌方每只中毒的蛊，毒再深一层', {
-    onTurn(ctx, u, c, go) { if (!ctx.alive(u)) return; const fs = ctx.foes(u).filter(f => f.f.psn); if (fs.length) { go(true); fs.forEach(f => poison(ctx, f, 1)); } } }),
-  C('baiyi', '百蚁噬象', ['ant', 'qant'], '开战：全体兵蚁 +2/+2', {
-    onStart(ctx, u, c, go) { const a = ctx.allies(u).filter(x => x.sp === 'antling'); if (a.length) { go(); a.forEach(x => ctx.buff(x, 2, 2)); } } }),
-  C('liuying', '流萤焚夜', ['firefly', 'fire'], '亡语：余火落满敌阵，敌方全体各受 1 伤害', {
-    onDeath(ctx, u, c, go) { const fs = ctx.foes(u); if (fs.length) { go(); fs.forEach(f => ctx.deal(u, f, 1, 'skill')); } } }),
+  C('wudu', '五毒噬心', ['cent', 'scorp'], '回合开始：敌方每只中毒的蛊，毒再深一层（加本蛊攻击 35%）', {
+    onTurn(ctx, u, c, go) { if (!ctx.alive(u)) return; const fs = ctx.foes(u).filter(f => f.f.psn); if (fs.length) { go(true); fs.forEach(f => poison(ctx, f, A(u, 0.35))); } } }),
+  C('baiyi', '百蚁噬象', ['ant', 'qant'], '开战：全体兵蚁攻血 +18%', {
+    onStart(ctx, u, c, go) { const a = ctx.allies(u).filter(x => x.sp === 'antling'); if (a.length) { go(); a.forEach(x => ctx.buff(x, A(x, 0.18), H(x, 0.18))); } } }),
+  C('liuying', '流萤焚夜', ['firefly', 'fire'], '亡语：余火落满敌阵，敌方全体各受本蛊攻击 30%', {
+    onDeath(ctx, u, c, go) { const fs = ctx.foes(u); if (fs.length) { go(); fs.forEach(f => ctx.deal(u, f, A(u, 0.3), 'skill')); } } }),
   C('tianluo', '天罗地网', ['webspider', 'spider'], '小蛛落地时，敌方炉口若没被网住，就给它补一层网', {
     onSummon(ctx, u, c) { if (c.u && c.u.side === u.side && c.u.sp === 'spiderling') { const f = ctx.foes(u)[0]; if (f && !f.f.web) { cq(ctx, u); stun(ctx, f, 1, 'web'); return true; } } } }),
-  C('pojian', '破茧成蝶', ['silk', 'bfly'], '第 2 回合就破茧，破茧时左右友蛊各 +1/+1', {
-    onTurn(ctx, u, c, go) {
-      if (!ctx.alive(u) || u.f.coc || ctx.turn < 2) return; u.f.coc = 1; go(); ctx.buff(u, 3 * (u.tr.cocoon || 1), 0); heal(ctx, u, u.mx);
-      const a = ctx.allies(u), i = a.indexOf(u); [a[i - 1], a[i + 1]].forEach(x => x && ctx.buff(x, 1, 1));
-    } }),
-  C('yixing', '移形换影', ['flea', 'mole'], '每次弹跳换位，换上炉口的友蛊 +3/+3，本蛊下次回到炉口时钻地再发动'),
+  C('pojian', '破茧成蝶', ['silk', 'bfly'], '破茧化蝶时，左右友蛊各 +15% 攻血（按开战攻血）'),
+  C('yixing', '移形换影', ['flea', 'mole'], '每次弹跳换位，换上前的友蛊 +12% 攻血，本蛊下次回到炉口时钻地再发动'),
   C('baichong', '百虫入瓮', ['urn', 'bone'], '被吞进瓮里的蛊，亡语照常发动'),
-  C('jinghua', '镜花水月', ['mirror', 'lure'], '对撞挨的打也能照回一半（每回合一次）'),
-  C('shijie', '尸解登仙', ['fly', 'bury'], '有友蛊阵亡（包括自己）：其余友蛊各 +1/+1', {
-    onMourn(ctx, u, c, go) { if (!ctx.alive(u)) return; go(true); ctx.allies(u).forEach(a => ctx.buff(a, 1, 1)); },
-    onDeath(ctx, u, c, go) { const a = ctx.allies(u); if (a.length) { go(); a.forEach(x => ctx.buff(x, 1, 1)); } } }),
-  C('bingfeng', '冰火两重', ['frost', 'fire'], '霜冻冻住目标时，再烧它 2 点'),
-  C('tixian', '提线百傀', ['puppet', 'spider'], '开战给敌方全体系上傀儡丝（各 -1 攻），它们不论死在谁手里，都完整变成我方傀儡', {
-    onStart(ctx, u, c, go) { const fs = ctx.foes(u); if (fs.length) { go(); fs.forEach(f => { f.f.tied = u; status(ctx, f, 'tie'); weaken(ctx, f, 1); }); } } }),
-  C('leigu', '雷鼓破天', ['thunder', 'drum'], '连雷一次弹两只'),
-  C('xuanwu', '玄武镇关', ['tortoise', 'gecko'], '守宫的护体不再只给别人：站在炉口时，回合开始自己 +1 护体', {
-    onTurn(ctx, u, c, go) { if (ctx.alive(u) && isFront(ctx, u)) { go(true); ctx.shield(u, 1); } } }),
-  C('kaishan', '开山断岳', ['saw', 'stag'], '对撞伤害 +3'),
-  C('burou', '肉身不朽', ['taisui', 'cicada'], '再生重新长出来时，血是满的'),
-  C('huangzai', '蝗过千里', ['locust', 'boar'], '横扫不再只扫一只，扫遍敌方整个后排，每只多 1 伤害'),
-  C('jiutian', '九天引雷', ['dfly', 'firefly'], '萤火引路：霆击劈敌方炉口时多 1 点'),
-  C('tuibao', '金蟾吐宝', ['jinchan', 'qingfu'], '击杀时全体友蛊再 +1/+1；在阵时斗蛊胜利再 +1 元石', {
-    onKill(ctx, u, c, go) { const a = ctx.allies(u); if (a.length) { go(true); a.forEach(x => ctx.buff(x, 1, 1)); } } }),
-  C('yiri', '一日千秋', ['mayfly', 'bfly'], '蜉蝣阵亡时，全体友蛊 +2/+2', {
-    onDeath(ctx, u, c, go) { const a = ctx.allies(u); if (a.length) { go(); a.forEach(x => ctx.buff(x, 2, 2)); } } }),
-  C('liusha', '流沙陷阵', ['antlion', 'mole'], '流沙翻倍：开战时敌方炉口也先陷一次，此后每次陷进去的伤害都翻倍', {
-    onStart(ctx, u, c, go) { const f = ctx.foes(u)[0]; if (f) { go(); ctx.deal(u, f, 4 * (u.tr.pit || 1), 'skill'); } } }),
+  C('jinghua', '镜花水月', ['mirror', 'lure'], '对撞挨的打也能照回三成（每回合一次）'),
+  C('shijie', '尸解登仙', ['fly', 'bury'], '有友蛊阵亡（包括自己）：其余友蛊各 +10% 攻血', {
+    onMourn(ctx, u, c, go) { if (!ctx.alive(u)) return; go(true); ctx.allies(u).forEach(a => ctx.buff(a, A0(a, 0.1), H0(a, 0.1))); },
+    onDeath(ctx, u, c, go) { const a = ctx.allies(u); if (a.length) { go(); a.forEach(x => ctx.buff(x, A0(x, 0.1), H0(x, 0.1))); } } }),
+  C('bingfeng', '冰火两重', ['frost', 'fire'], '霜冻冻住目标时，再烧它本蛊攻击 60%'),
+  C('tixian', '提线百傀', ['puppet', 'spider'], '开战给敌方前两只系上傀儡丝，它们不论死在谁手里，都变成我方傀儡（一半攻血）', {
+    onStart(ctx, u, c, go) { const fs = ctx.foes(u).slice(0, 2); if (fs.length) { go(); fs.forEach(f => { f.f.tied = u; status(ctx, f, 'tie'); }); } } }),
+  C('leigu', '雷鼓破天', ['thunder', 'drum'], '连雷多弹一只'),
+  C('xuanwu', '玄武镇关', ['tortoise', 'gecko'], '站在炉口时，回合开始自己获得最大血量 10% 的护体', {
+    onTurn(ctx, u, c, go) { if (ctx.alive(u) && isFront(ctx, u)) { go(true); ctx.shield(u, pc(u.mx, 0.1)); } } }),
+  C('kaishan', '开山断岳', ['saw', 'stag'], '破甲的对撞伤害再 +25%'),
+  C('burou', '肉身不朽', ['taisui', 'cicada'], '再生重新长出来时，血回到八成'),
+  C('huangzai', '蝗过千里', ['locust', 'boar'], '横扫不再只扫一只，扫遍敌方整个后排'),
+  C('jiutian', '九天引雷', ['dfly', 'firefly'], '萤火引路：霆击劈敌方炉口时多 5% 攻击'),
+  C('tuibao', '金蟾吐宝', ['jinchan', 'qingfu'], '击杀时全体友蛊再 +8% 攻血；在阵时斗蛊胜利再 +1 元石', {
+    onKill(ctx, u, c, go) { const a = ctx.allies(u); if (a.length) { go(true); a.forEach(x => ctx.buff(x, A0(x, 0.08), H0(x, 0.08))); } } }),
+  C('yiri', '一日千秋', ['mayfly', 'bfly'], '蜉蝣阵亡时，全体友蛊 +10% 攻血（按开战攻血）', {
+    onDeath(ctx, u, c, go) { const a = ctx.allies(u); if (a.length) { go(); a.forEach(x => ctx.buff(x, pc(x.a0 || x.atk, 0.1), pc(x.h0 || x.mx, 0.1))); } } }),
+  C('liusha', '流沙陷阵', ['antlion', 'mole'], '流沙陷阵：陷进流沙的蛊攻击再 -15%'),
   C('shousui', '守岁', ['guangyin', 'gecko'], '守宫守着那一夜：光阴回溯后，蝉自己留下三成血'),
 ];
 const NC = Object.fromEntries(NEW_COMBOS.map(c => [c.id, c]));
@@ -455,38 +676,42 @@ Object.entries(OLD_SCHOOL).forEach(([id, sc]) => { OLD_EXTRA[id].school = sc; })
 
 
 // ---------- 通用派发（battle.js 打补丁后调用） ----------
-// 天劫压阵：第 20 合起双方全体每合受 (回合-19) 伤害，杜绝回血/护体互耗的僵局（旧 12 种的对局最长 15 合，不受影响）
+// 天劫压阵：第 20 合起双方全体每合掉最大血量 (回合-19)×10%，杜绝回血/护体互耗的僵局（按百分比，后期大血量照样收得住）
 export const DOOM = 20;
 // battle.js 只引这一个对象：import { BX } from './bestiary.js'（构建脚本把各文件拼成一个脚本，用对象收口可以避免与别的文件重名）
-const HMAP = { start: 'onStart', turn: 'onTurn', hurt: 'onHit', kill: 'onKill', faint: 'onDeath', ally: 'onSummon', attack: 'onAttack', prep: 'onPrep', front: 'onFront', foeFront: 'onFoeFront', mourn: 'onMourn' };
+const HMAP = { start: 'onStart', turn: 'onTurn', hurt: 'onHit', kill: 'onKill', faint: 'onDeath', ally: 'onSummon', attack: 'onAttack', prep: 'onPrep', front: 'onFront', foeFront: 'onFoeFront', mourn: 'onMourn', foeDie: 'onFoeDie' };
 
 function dispatch(ctx, h, u, c = {}) {
   let fired = false;
   // 状态结算：每只蛊每回合一次（回响重放不重复扣）
-  if (h === 'turn' && ctx.alive(u) && u.f.tick !== ctx.turn) {
+  if (h === 'turn' && ctx.alive(u) && u.f.tick !== ctx.turn) withNM(1, () => {
     u.f.tick = ctx.turn;
     if (u.f.psn) ctx.deal(null, u, u.f.psn, 'psn');
     if (u.f.para && ctx.alive(u)) ctx.deal(null, u, u.f.para, 'para');
-    if (ctx.turn >= DOOM && ctx.alive(u)) ctx.deal(null, u, ctx.turn - DOOM + 1, 'doom');
-  }
+    if (u.f.paraW && u.f.para && ctx.alive(u)) weaken(ctx, u, A(u, 0.08));
+    if (ctx.turn >= DOOM && ctx.alive(u)) ctx.deal(null, u, H(u, 0.1 * (ctx.turn - DOOM + 1)), 'doom');
+  });
   // 友蛊阵亡广播（殉道重放不重复广播）
-  if (h === 'faint' && u.f.tied && !c.tied) { c.tied = 1; const o = u.f.tied; if (ctx.alive(o) && ctx.allies(o).length < ctx.CAP) { cq(ctx, o); puppetOf(ctx, o, u, true); } }
-  if (h === 'faint' && !c.mourned) { c.mourned = 1; for (const a of ctx.S[u.side].filter(ctx.alive)) ctx.hook(a, 'mourn', { dead: u }); }
+  if (h === 'faint' && u.f.tied && !c.tied) { c.tied = 1; const o = u.f.tied; if (ctx.alive(o) && ctx.allies(o).length < ctx.CAP) { cq(ctx, o); puppetOf(ctx, o, u, false); } }
+  if (h === 'faint' && !c.mourned) { c.mourned = 1; for (const a of ctx.S[u.side].filter(ctx.alive)) ctx.hook(a, 'mourn', { dead: u }); for (const a of ctx.S[1 - u.side].filter(ctx.alive)) if (a.tr.mourn || a.tr.parasite) ctx.hook(a, 'foeDie', { dead: u }); }
   const name = HMAP[h]; if (!name) return false;
   for (const id in u.tr) {
     const t = NEW_TRAITS[id], fn = t && t.hooks[name]; if (!fn || !u.tr[id]) continue;
-    fn(ctx, u, u.tr[id], c, () => { fired = true; ctx.ev('trig', { uid: u.uid, id }); });
+    const pn = ctx.nat; ctx.nat = t.nat ? 1 : 0;   // ctx.nat：本命技发出的事件带 nat 标记，模拟里统计本命占比
+    withNM(t.nat ? natMul(u) : 1, () => fn(ctx, u, u.tr[id], c, () => { fired = true; ctx.ev('trig', { uid: u.uid, id }); })); ctx.nat = pn;
   }
   const cb = u.combo && NC[u.combo], cf = cb && cb.hooks[name];
-  if (cf && cf(ctx, u, c, quiet => { fired = true; ctx.ev('combo', { uid: u.uid, n: u.cname, quiet: quiet ? 1 : 0 }); })) fired = true;
+  if (cf && withNM(1, () => cf(ctx, u, c, quiet => { fired = true; ctx.ev('combo', { uid: u.uid, n: u.cname, quiet: quiet ? 1 : 0 }); }))) fired = true;
   return fired;
 }
 
 // 伤害修正：攻方 dealMod → 守方 takeMod → 同侧光环 auraTake
 function dmgMod(ctx, src, tg, amt, kind) {
-  if (src && src.tr) for (const id in src.tr) { const m = NEW_TRAITS[id] && NEW_TRAITS[id].hooks.dealMod; if (m && src.tr[id]) amt = m(ctx, src, src.tr[id], amt, tg, kind); }
-  for (const id in tg.tr) { const m = NEW_TRAITS[id] && NEW_TRAITS[id].hooks.takeMod; if (m && tg.tr[id]) amt = m(ctx, tg, tg.tr[id], amt, src, kind); }
-  for (const h of ctx.S[tg.side]) { if (!ctx.alive(h) || !h.tr.aegis) continue; amt = NEW_TRAITS.aegis.hooks.auraTake(ctx, h, h.tr.aegis, tg, amt, src, kind); }
+  const nm = (u, id) => NEW_TRAITS[id].nat ? natMul(u) : 1;
+  if (src && src.tr) for (const id in src.tr) { const m = NEW_TRAITS[id] && NEW_TRAITS[id].hooks.dealMod; if (m && src.tr[id]) amt = withNM(nm(src, id), () => m(ctx, src, src.tr[id], amt, tg, kind)); }
+  for (const id in tg.tr) { const m = NEW_TRAITS[id] && NEW_TRAITS[id].hooks.takeMod; if (m && tg.tr[id]) amt = withNM(nm(tg, id), () => m(ctx, tg, tg.tr[id], amt, src, kind)); }
+  for (const h of ctx.S[tg.side]) { if (!ctx.alive(h) || !h.tr.aegis) continue; amt = withNM(natMul(h), () => NEW_TRAITS.aegis.hooks.auraTake(ctx, h, h.tr.aegis, tg, amt, src, kind)); }
+  if (tg.f.drowsy && tg.f.stun > 0 && amt > 0) amt = pc(amt, 1.3);   // 眠虫五转觉醒：睡着的敌蛊多吃三成
   return amt;
 }
 
@@ -494,8 +719,8 @@ function dmgMod(ctx, src, tg, amt, kind) {
 function atkMod(ctx, u, pa, tg) {
   u.f.swung = 0;
   if (u.f.stun > 0) { u.f.stun--; status(ctx, u, 'miss'); return 0; }
-  if (u.f.web > 0) { u.f.web--; status(ctx, u, 'miss'); return 0; }
-  for (const id in u.tr) { const m = NEW_TRAITS[id] && NEW_TRAITS[id].hooks.atkMod; if (m && u.tr[id]) pa = m(ctx, u, u.tr[id], pa, tg); }
+  if (u.f.web > 0) { u.f.web--; status(ctx, u, 'miss'); const w = u.f.webBy; if (w) { u.f.webBy = null; if (ctx.alive(w)) ctx.deal(w, u, withNM(natMul(w), () => A(w, 1)), 'skill'); } return 0; }
+  for (const id in u.tr) { const m = NEW_TRAITS[id] && NEW_TRAITS[id].hooks.atkMod; if (m && u.tr[id]) pa = withNM(NEW_TRAITS[id].nat ? natMul(u) : 1, () => m(ctx, u, u.tr[id], pa, tg)); }
   if (pa > 0) { u.f.swung = 1; u.f.lastHit = pa; }
   return pa;
 }
@@ -505,13 +730,18 @@ function afterClash(ctx, a, b) {
 
 // 免死：太岁再生、涅火重生
 function saveDeath(ctx, u) {
-  for (const id in u.tr) { const m = NEW_TRAITS[id] && NEW_TRAITS[id].hooks.saveDeath; if (m && u.tr[id] && m(ctx, u, u.tr[id])) return true; }
+  for (const id in u.tr) { const m = NEW_TRAITS[id] && NEW_TRAITS[id].hooks.saveDeath; if (m && u.tr[id] && withNM(natMul(u), () => m(ctx, u, u.tr[id]))) return true; }
   return false;
 }
 
 // 布阵：开战前（先于开锋）记下开战快照，结算换位/吞噬/照抄/夺志
 function begin(ctx) {
   ctx.BX = { front: [null, null], rew: [0, 0] };
+  for (const s of [0, 1]) {
+    ctx.S[s].forEach(u => { u.a0 = u.atk; u.h0 = u.mx; });   // 开战攻血：叠加型成长按它算
+    const ma = Math.max(0, ...ctx.S[s].map(u => u.atk)), mh = Math.max(0, ...ctx.S[s].map(u => u.mx));
+    ctx.S[s].forEach(u => { u.la = Math.ceil(ma * LEAD); u.lh = Math.ceil(mh * LEAD); });
+  }
   ctx.opening = ctx.S.map(a => a.map(u => ({ u, atk: u.atk, hp: u.hp, tr: { ...u.tr } })));
   const order = [...ctx.S[0], ...ctx.S[1]].filter(ctx.alive).sort((x, y) => y.atk - x.atk || x.side - y.side);
   for (const u of order) if (ctx.alive(u)) ctx.hook(u, 'prep', {});
@@ -534,7 +764,7 @@ function settle(ctx) {
 function rewind(ctx, s) {
   const op = ctx.opening[s], hd = op.find(o => o.tr.rewind); if (!hd) return false;
   ctx.BX.rew[s] = 1; ctx.BX.front[s] = null;
-  const tj = hd.u.combo === 'shousui', k = 0.5;
+  const tj = hd.u.combo === 'shousui', k = 0.5, aw1 = aw(hd.u, 1), aw2 = aw(hd.u, 2);
   ctx.ev('trig', { uid: hd.u.uid, id: 'rewind' }); if (tj) ctx.ev('combo', { uid: hd.u.uid, n: hd.u.cname });
   ctx.S[s].length = 0;
   for (const o of op.slice(0, ctx.CAP)) {
@@ -542,6 +772,8 @@ function rewind(ctx, s) {
     u.atk = Math.max(1, Math.ceil(o.atk * k)); u.mx = u.hp = o === hd ? (tj ? Math.max(1, Math.ceil(o.hp * 0.3)) : 1) : Math.max(1, Math.ceil(o.hp * k));   // 叫完这一声，蝉自己只剩一口气
     ctx.S[s].push(u); ctx.ev('summon', { uid: u.uid, by: hd.u.uid, rewind: 1 });
   }
+  if (aw1) { const a = ctx.S[s], i = a.indexOf(hd.u); [a[i - 1], a[i + 1]].forEach(x => { if (ctx.alive(x)) ctx.shield(x, H(x, 0.15)); }); }
+  if (aw2) ctx.S[1 - s].filter(ctx.alive).forEach(f => ctx.deal(hd.u, f, H(f, 0.1), 'skill'));
   return true;
 }
 
