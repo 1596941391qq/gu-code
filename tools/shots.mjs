@@ -6,7 +6,12 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const out = n => path.join(root, 'shots', n), url = 'file://' + path.join(root, 'index.html');
 const errs = [];
 const browser = await chromium.launch();
-async function newPage(o = {}) { const p = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, ...o }); p.on('pageerror', e => errs.push(e.message)); return p; }
+async function newPage(o = {}) {
+  const p = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, ...o }); p.on('pageerror', e => errs.push(e.message));
+  // 主流程截图跳过新手引导（引导单独截：tools/tutorial-shots.mjs）
+  await p.addInitScript(() => { try { if (!localStorage.getItem('gucode.v1')) localStorage.setItem('gucode.v1', JSON.stringify({ v: 2, started: false, tutDone: true })); } catch (e) {} });
+  return p;
+}
 const w = (p, ms) => p.waitForTimeout(ms);
 // 推进养蛊：有选择题先选，没有就点第一条可走的路
 async function grow(p, n, ms = 4300) {
