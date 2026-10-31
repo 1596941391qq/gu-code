@@ -4,7 +4,12 @@
 //     同额度下「一只高转带几只低转」对「几只中转」两种思路都有赢面、合成与蛊市。
 import { makeRng, encodeTeam, decodeTeam, newGu, placeGu, rollShop, statFor, SP, poolFor, COMBOS, daoOf, baseRank, autoPlace, arrangeTeam, NORMAL_SPECIES } from '../src/core.js';
 import { DAOS } from '../src/daos.js';
-import { battle, synergyOf, battleProfile } from '../src/battle.js';
+import * as CORE from '../src/core.js';
+import { battle as battle0, synergyOf, battleProfile, TUNE } from '../src/battle.js';
+// 数值放大十倍（design 2.8）：core.statFor 还没乘 STAT_SCALE 时，模拟这里先把攻血乘 10，和引擎里放大后的固定数对上
+const SK = CORE.STAT_SCALE ? 1 : 10, up = T => SK === 1 || !Array.isArray(T) ? T : T.map(g => g && ({ ...g, atk: g.atk * SK, hp: g.hp * SK, ...(g.hpNow != null ? { hpNow: g.hpNow * SK } : {}) }));
+const battle = (A, B, s, o) => battle0(up(A), up(B), s, o);
+if (process.env.GU_TUNE) Object.assign(TUNE, JSON.parse(process.env.GU_TUNE));   // 调参用：GU_TUNE='{"burn":0.6}' node tools/sim.mjs
 import { foeByBudget, rankCapOf, TRIP_CFG } from '../src/trip.js';
 
 const fails = [], t0 = Date.now(), Q = process.argv.includes('--quick') ? 0.4 : 1;

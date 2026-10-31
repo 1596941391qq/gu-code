@@ -70,8 +70,8 @@ const nextAlly = (ctx, u) => { const a = ctx.S[u.side]; for (let i = a.indexOf(u
 const status = (ctx, u, k, n = 1) => ctx.ev('status', { uid: u.uid, k, n });
 const heal = (ctx, u, n) => { if (!ctx.alive(u)) return 0; const h = Math.min(n, u.mx - u.hp); if (h <= 0) return 0; u.hp += h; ctx.ev('buff', { uid: u.uid, a: 0, h }); return h; };
 const weaken = (ctx, u, n) => { if (!ctx.alive(u)) return 0; const d = Math.min(n, u.atk - 1, Math.ceil(u.atk * 0.4)); if (d <= 0) return 0; u.atk -= d; ctx.ev('buff', { uid: u.uid, a: -d, h: 0 }); return d; };   // 单次最多削四成
-// 中毒 / 寄生：u.f.psn = 每回合掉血量。单只身上的毒最多叠到它最大血量的 25%（至少 6），防止毒把后期大血量的蛊秒掉
-const poison = (ctx, u, n, k = 'psn') => { if (!ctx.alive(u) || n <= 0) return; u.f[k] = Math.min(Math.max(6, Math.ceil(u.mx * 0.25)), (u.f[k] || 0) + n); status(ctx, u, k, n); };
+// 中毒 / 寄生：u.f.psn = 每回合掉血量。单只身上的毒最多叠到它最大血量的 25%（至少 60，数值放大十倍后），防止毒把后期大血量的蛊秒掉
+const poison = (ctx, u, n, k = 'psn') => { if (!ctx.alive(u) || n <= 0) return; u.f[k] = Math.min(Math.max(60, Math.ceil(u.mx * 0.25)), (u.f[k] || 0) + n); status(ctx, u, k, n); };
 const stun = (ctx, u, n = 1, k = 'stun') => { if (!ctx.alive(u)) return; u.f[k] = Math.min(4, (u.f[k] || 0) + n); status(ctx, u, k, n); };
 const by = (arr, key) => arr.reduce((b, x) => (b === null || key(x) > key(b) ? x : b), null);   // 取最大者，平手取靠前
 const setTr = (ctx, u) => { if (ctx.roster[u.uid]) ctx.roster[u.uid].tr = { ...u.tr }; };
