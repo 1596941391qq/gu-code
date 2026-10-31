@@ -58,23 +58,38 @@ i{font-style:normal}
 .top{display:flex;align-items:center;justify-content:space-between;padding:4px 0 8px}
 .brand{display:flex;align-items:baseline;gap:10px}
 .logo{font:400 30px/1 var(--kai);letter-spacing:.08em;color:var(--strong);white-space:nowrap}
-@media (max-width:400px){.sub{display:none}.logo{font-size:26px}}
+@media (max-width:400px){.sub{display:none}.logo{font-size:26px}.qhead .lbl small{display:none}}
 .sub{font:13px var(--kai);color:var(--mu)}
 .tools{display:flex;align-items:center;gap:8px}
 .realm{font:15px/1 var(--kai);color:var(--on-zhu);background:var(--zhu);padding:6px 7px;border-radius:2px;transform:rotate(-3deg);outline:1px solid rgba(243,234,214,.5);outline-offset:-4px}
 .ib{border:1px solid var(--line);border-radius:3px;padding:5px 9px;font:14px/1 var(--kai);color:var(--tx)}
 .ib:hover{border-color:var(--line2)}
 .ib.zhu{border-color:var(--zhu);color:var(--on-zhu)}
+.ib.gear{padding:4px 6px;display:grid;place-items:center;color:var(--mu)}
+.ib.gear:hover{color:var(--tx)}
 
-/* ---------- 灵脉 ---------- */
-.vein{border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin:0 -16px;padding:0 16px}
-#vein{display:block;width:100%;height:30px}
-.vinfo{display:flex;align-items:center;gap:10px;font:12px var(--mono);color:var(--qing);padding:2px 0 6px}
-.vinfo .grow{flex:1}
-#totTxt{color:var(--mu)}
-.chip{border:1px solid rgba(111,183,164,.4);border-radius:10px;padding:1px 8px;font:12px var(--sans);color:var(--qing)}
-.fire{font-family:var(--kai);font-size:13px;color:var(--mu)}
-.fire.hot{color:var(--zhu2)}
+/* ---------- 灵脉：大号读数在上，字符雨压在底下 ---------- */
+.vein{position:relative;border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin:0 -16px;padding:8px 16px 8px;overflow:hidden}
+#vein{position:absolute;inset:0;display:block;width:100%;height:100%;opacity:.22;pointer-events:none}
+:root[data-theme=light] #vein{opacity:.3}
+.vread{position:relative;z-index:1;display:flex;align-items:flex-end;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.vrate{display:flex;align-items:baseline;gap:6px;white-space:nowrap}
+#rateTxt{font:700 30px/1 var(--mono);color:var(--strong);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.vu{font:600 14px var(--mono);color:var(--tx)}
+.vlab{font:13px var(--kai);color:var(--mu);margin-left:2px}
+.fire{font:400 13px/1 var(--kai);color:var(--on-zhu);background:#8a5a2a;padding:3px 6px;border-radius:2px;margin-left:4px}
+.fire.hot{background:var(--zhu)}
+.fire.idle{background:none;color:var(--mu);border:1px solid var(--line);padding:2px 5px}
+.vtot{display:flex;align-items:center;gap:8px;font:13px var(--sans);color:var(--mu);white-space:nowrap}
+.vtot b{font:600 14px var(--mono);color:var(--tx)}
+.chip{border:1px solid var(--qing);border-radius:10px;padding:1px 8px;font:12px var(--sans);color:var(--qing);background:var(--bg)}
+.vsrc{position:relative;z-index:1;display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.vsrc[hidden]{display:none}
+.schip{font:12px var(--sans);color:var(--mu);border:1px solid var(--line);border-radius:10px;padding:1px 8px;background:var(--bg)}
+.schip b{font:600 12px var(--mono);color:var(--tx)}
+.schip.off{opacity:.5}
+@media (max-width:360px){#rateTxt{font-size:26px}.vtot{font-size:12px}}
+@media (min-width:900px){#rateTxt{font-size:36px}}
 .seg{display:grid;grid-template-columns:repeat(3,1fr);margin:10px 0 2px;border:1px solid var(--line);border-radius:3px;overflow:hidden}
 .seg[hidden]{display:none}
 .seg button{padding:7px 0;font:14px var(--kai);color:var(--mu);border-right:1px solid var(--line)}
@@ -268,6 +283,17 @@ button.mg{font:inherit;font-size:11px;border:0;cursor:pointer;position:relative;
 .pn{display:block;font-style:normal;color:var(--qing);font-size:12px;margin-top:2px}
 .foetag{font:12px var(--kai);color:var(--on-zhu);background:var(--zhu);padding:1px 4px;margin-right:6px;border-radius:2px}
 .sheet-bg.stack{background:rgba(10,9,7,.35)}
+.set{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
+.set > span{font:16px var(--kai);display:flex;flex-direction:column}
+.set small{font:12px/1.4 var(--sans);color:var(--mu);margin-top:2px}
+.segs{display:flex;border:1px solid var(--line);border-radius:3px;overflow:hidden;flex:none}
+.segs button{padding:6px 12px;font:14px var(--kai);color:var(--mu);border-right:1px solid var(--line)}
+.segs button:last-child{border-right:0}
+.segs button.on,.tog.on{background:var(--zhu);color:var(--on-zhu)}
+.tog{flex:none;min-width:58px;padding:6px 12px;border:1px solid var(--line);border-radius:3px;font:14px var(--kai);color:var(--tx)}
+.tog.on{border-color:var(--zhu)}
+:root[data-calm] .inkburst{opacity:.35}
+:root[data-calm] .cut .ink,:root[data-calm] .float.crit{animation-duration:.6s}
 .mg .art{width:100%;aspect-ratio:1}
 .mg b{font:400 13px var(--kai)}
 .mg .st{display:flex;gap:5px}

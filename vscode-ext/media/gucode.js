@@ -776,10 +776,10 @@ class TokenSource {
   constructor(cb) {
     this.cb = cb; this.live = !!VSC; this.mode = VSC ? 'vscode' : 'demo'; this.demo = 'coding';
     this.rate = 0; this.idleMs = 0; this.last = performance.now();
-    this.acc = 0; this.hotAcc = 0; this.vrate = 0; this.vidle = true;
+    this.acc = 0; this.hotAcc = 0; this.vrate = 0; this.vidle = true; this.vsrc = null;
     if (VSC) window.addEventListener('message', e => {
       const m = e.data || {};
-      if (m.type === 'tokens') { this.acc += m.delta || 0; if (m.hot) this.hotAcc += m.delta || 0; this.vrate = m.rate || 0; this.vidle = !!m.idle; }
+      if (m.type === 'tokens') { this.acc += m.delta || 0; if (m.hot) this.hotAcc += m.delta || 0; this.vrate = m.rate || 0; this.vidle = !!m.idle; this.vsrc = m.bySource || null; }
     });
     setInterval(() => this.tick(), 200);
   }
@@ -797,7 +797,7 @@ class TokenSource {
       this.cb({ delta: d, rate: this.rate, hot: this.rate >= this.hotTh, idle: this.idleMs >= 1200 });
     } else {
       const d = this.acc, hd = this.hotAcc; this.acc = 0; this.hotAcc = 0; this.rate = this.vrate;
-      this.cb({ delta: d, hotDelta: hd, rate: this.vrate, hot: this.vrate >= this.hotTh, idle: this.vidle });
+      this.cb({ delta: d, hotDelta: hd, rate: this.vrate, hot: this.vrate >= this.hotTh, idle: this.vidle, bySource: this.vsrc });
     }
   }
 }
@@ -877,7 +877,7 @@ const $ = (s, r = document) => r.querySelector(s);
 const el = html => { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstElementChild; };
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-const fresh = () => ({ v: 2, started: false, name: '', team: [], realm: 0, nodes: 0, compass: [], sel: null, prog: 0, wh: 0, bank: 0, repair: 0, will: 3, willT: 0, willK: 0, total: 0, muts: 0, wins: 0, losses: 0, seed: (Math.random() * 1e9) | 0, step: 0, sound: false, speed: 1, theme: 'auto', mute: false, stone: 5, stoneK: 0, shop: [], pending: null, marks: [], ghosts: null, floor: 1, endless: 0, codex: { sp: [], combo: [] }, healT: 0, streak: 0, bestStreak: 0, day: '', dayWin: false });
+const fresh = () => ({ v: 2, started: false, name: '', team: [], realm: 0, nodes: 0, compass: [], sel: null, prog: 0, wh: 0, bank: 0, repair: 0, will: 3, willT: 0, willK: 0, total: 0, muts: 0, wins: 0, losses: 0, seed: (Math.random() * 1e9) | 0, step: 0, sound: false, speed: 1, theme: 'auto', mute: false, stone: 5, stoneK: 0, shop: [], pending: null, marks: [], ghosts: null, floor: 1, endless: 0, codex: { sp: [], combo: [] }, healT: 0, calm: false, stats: false, log: [], todayKey: '', todayTok: 0, streak: 0, bestStreak: 0, day: '', dayWin: false });
 const today = () => { const d = new Date(); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); };
 const curCap = () => Math.max(slotCap(S.realm), S.team.length);
 const buyCost = () => S.marks.includes('shiJing') ? 2 : ECON.buy, refCost = () => S.marks.includes('shiJing') ? 0 : ECON.refresh;
@@ -964,9 +964,18 @@ function snd(kind) {
 document.addEventListener('pointerdown', () => { if (!S.mute) ac(); }, { once: true });
 
 // ---------- Token 流 ----------
+let sessTok = 0, bySrc = null;
+// bySource 兼容 { claude: 2900 } / { claude: { rate } } / [{ name, rate }] 几种写法
+function srcList(bs) {
+  if (!bs) return [];
+  const arr = Array.isArray(bs) ? bs : Object.entries(bs).map(([k, v]) => typeof v === 'number' ? { name: k, rate: v } : { name: k, ...v });
+  return arr.map(x => ({ name: String(x.label || x.name || x.src || x.id || ''), rate: +x.rate || 0 })).filter(x => x.name);
+}
+function countTok(d) { if (!(d > 0)) return; sessTok += d; if (S.todayKey !== today()) { S.todayKey = today(); S.todayTok = 0; } S.todayTok += d; }
 function onTick(t) {
-  rate = t.rate; hot = t.hot;
+  rate = t.rate; hot = t.hot; bySrc = t.bySource || null;
   if (!booted) return;
+  if (t.delta > 0 && S.started) { countTok(t.delta); onTokens(t.delta, t.rate, bySrc); }
   if (t.delta > 0 && S.started && !inBattle) feed(t.delta, t.hotDelta != null ? t.hotDelta : (t.hot ? t.delta : 0));
   else if (t.delta > 0 && S.started) S.bank = Math.min(bankCap(), S.bank + t.delta), S.total += t.delta;
   phase = t.idle ? 'yin' : 'yang';   // 只影响灵脉/呼吸动画，不影响能否斗蛊
@@ -1024,10 +1033,11 @@ function finishNode(node, pick, wu, cost) {
   S.pending = null;
   if (!nodeOk(node.type, S.team, curCap()) || (node.type === 'devour' && !(pick > 0))) { S.compass = rollCompass(R(), S.team, false, curCap()); renderPhase(); renderHint(); save(); return; }
   const res = applyNode(S.team, node, R(), { wuhuo: wu, pick, cap: curCap() });
+  onNode(node); if (node.type === 'summon' && S.team.length) onGain(S.team[S.team.length - 1], 'summon');
   const tg = node.type === 'summon' ? S.team[S.team.length - 1] : S.team[0]; if (tg) tg.fed += cost;
   S.muts += res.muts; S.nodes++; S.will = Math.min(WILL_MAX, S.will + 1); S.stone += ECON.node;
   S.compass = rollCompass(R(), S.team, false, curCap());
-  S.shop = rollShop(R(), S.realm, S.shop);
+  S.shop = rollShop(R(), S.realm, S.shop); onRefresh(S.shop, 'node');
   animResolve(res, wu); renderPhase(); renderHint(); renderShop(); snd('pluck'); save();
 }
 async function animResolve(res, wu) {
@@ -1058,8 +1068,8 @@ function startHTML() {
 }
 function mainHTML() {
   return `<header class="top"><div class="brand"><b class="logo">蛊码</b><span class="sub">烧 Token · 养蛊 · 斗道</span></div>
-  <div class="tools"><button class="realm" id="realm" data-act="path" title="修行路">${REALMS[S.realm]}</button><button class="ib" data-act="theme" id="bTheme" title="主题：自动 / 日 / 夜">${{ auto: '自', light: '日', dark: '夜' }[S.theme || 'auto']}</button><button class="ib" data-act="sound" id="bSound" title="声音开关">${S.mute ? '静' : '声'}</button><button class="ib zhu" data-act="share">战帖</button></div></header>
-  <section class="vein"><canvas id="vein"></canvas><div class="vinfo"><button class="chip" data-act="src" id="srcTag"></button><span id="rateTxt"></span><span id="fireTag" class="fire"></span><span class="grow"></span><span id="totTxt"></span></div></section>
+  <div class="tools"><button class="realm" id="realm" data-act="path" title="修行路">${REALMS[S.realm]}</button><button class="ib gear" data-act="settings" title="设置" aria-label="设置"><svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.7" d="M12 8.6a3.4 3.4 0 1 0 0 6.8 3.4 3.4 0 0 0 0-6.8zm7.4 4.6.1-1.2-.1-1.2 2-1.6-2-3.4-2.4 1a7.6 7.6 0 0 0-2-1.2L14.6 3h-4l-.4 2.6a7.6 7.6 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6-.1 1.2.1 1.2-2 1.6 2 3.4 2.4-1c.6.5 1.3.9 2 1.2l.4 2.6h4l.4-2.6c.7-.3 1.4-.7 2-1.2l2.4 1 2-3.4z"/></svg></button><button class="ib zhu" data-act="share">战帖</button></div></header>
+  <section class="vein"><canvas id="vein"></canvas><div class="vread"><div class="vrate"><b id="rateTxt">0</b><span class="vu" id="rateU"></span><span class="vlab">灵流</span><span id="fireTag" class="fire"></span></div><div class="vtot"><span id="totTxt"></span><button class="chip" data-act="src" id="srcTag"></button></div></div><div class="vsrc" id="srcRates" hidden></div></section>
   <div class="seg" id="demo">${[['coding', '写代码中'], ['wuhuo', '武火并发'], ['rest', '停手休息']].map(([m, t]) => `<button data-act="demo" data-m="${m}">${t}</button>`).join('')}</div>
   <section class="qiao" id="qiao"><div class="qhead"><span class="lbl">空窍 <small>左为炉口 · 拖动换位</small></span><span id="qmeta"></span></div><div class="slots" id="slots"></div><p class="marks" id="marks" data-act="marksInfo"></p><p class="hint" id="hint"></p></section>
   <section class="shop" id="shop"></section><section id="phase" class="phase"></section>
@@ -1159,9 +1169,11 @@ function renderHint() {
 function meters() {
   if (!S.started) return;
   const rt = $('#rateTxt'); if (!rt) return;
-  rt.textContent = rate > 0 ? `${fmtTok(rate)}/s` : '静';
-  const ft = $('#fireTag'); ft.textContent = rate <= 0 ? '' : hot ? '武火' : '文火'; ft.classList.toggle('hot', hot && rate > 0);
-  $('#totTxt').textContent = '累计 ' + fmtTok(S.total);
+  rt.textContent = rate > 0 ? fmtTok(rate) : '0'; $('#rateU').textContent = '/s';
+  const ft = $('#fireTag'); ft.textContent = rate <= 0 ? '静息' : hot ? '武火' : '文火'; ft.classList.toggle('hot', hot && rate > 0); ft.classList.toggle('idle', rate <= 0);
+  $('#totTxt').innerHTML = `今日 <b>${fmtTok(S.todayKey === today() ? S.todayTok : 0)}</b> · 本次 <b>${fmtTok(sessTok)}</b> token`;
+  const sr = $('#srcRates'), sl = srcList(bySrc); sr.hidden = sl.length < 2;
+  if (sl.length >= 2) sr.innerHTML = sl.map(x => `<span class="schip${x.rate > 0 ? '' : ' off'}">${esc(x.name)} <b>${fmtTok(x.rate)}/s</b></span>`).join('');
   const st = $('#srcTag'); st.textContent = src.mode === 'vscode' ? 'Claude 实时' : '演示';
   const dm = $('#demo'); dm.hidden = src.mode !== 'demo'; dm.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.m === src.demo));
   const bk = $('#bank'); if (bk) bk.textContent = S.bank > 0 ? `灵气存 ${fmtTok(S.bank)}` : '';
@@ -1179,7 +1191,7 @@ function applyTheme() {
     t = VSC ? ((b.contains('vscode-light') || b.contains('vscode-high-contrast-light')) ? 'light' : 'dark') : (window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
   }
   document.documentElement.dataset.theme = t; veinRGB = t === 'light' ? '44,110,94' : '111,183,164';
-  const btn = $('#bTheme'); if (btn) btn.textContent = { auto: '自', light: '日', dark: '夜' }[pref];
+  applyCalm();
 }
 if (window.matchMedia) { const mq = matchMedia('(prefers-color-scheme: light)'); if (mq.addEventListener) mq.addEventListener('change', applyTheme); }
 // ---------- 灵脉（青绿字符流）----------
@@ -1193,7 +1205,7 @@ function veinLoop(ts) {
   const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
   const lvl = rate > 0 ? Math.min(1, rate / (src.hotTh * 1.3)) : 0;
   vAcc += (rate > 0 ? 5 + 55 * lvl : 0) * dt;
-  while (vAcc >= 1) { vAcc--; VP.push({ x: -8, y: 6 + Math.floor(Math.random() * 3) * 8 + Math.random() * 2, c: '0123456789abcdef{}<>=;:/'[(Math.random() * 24) | 0], a: 0.25 + Math.random() * 0.6, z: hot && Math.random() < 0.18, v: 0.7 + Math.random() * 0.6 }); }
+  while (vAcc >= 1) { vAcc--; VP.push({ x: -8, y: 4 + Math.random() * Math.max(8, h - 10), c: '0123456789abcdef{}<>=;:/'[(Math.random() * 24) | 0], a: 0.25 + Math.random() * 0.6, z: hot && Math.random() < 0.18, v: 0.7 + Math.random() * 0.6 }); }
   const sp = 24 + 170 * lvl;
   ctx.font = '10px ui-monospace,Menlo,monospace';
   for (let i = VP.length - 1; i >= 0; i--) {
@@ -1218,7 +1230,7 @@ function stampIn(host, text, big, cls = '') {
   const s = el(`<div class="stamp ${big ? 'big' : ''} ${cls}"><span>${esc(text)}</span></div>`);
   host.appendChild(s); setTimeout(() => s.classList.add('out'), big ? 1150 : 1500); setTimeout(() => s.remove(), big ? 1600 : 2000);
 }
-function shake(px) { const a = $('#arena'); if (a) a.animate([{ transform: 'none' }, { transform: `translate(${px}px,${-px / 2}px)` }, { transform: `translate(${-px}px,${px / 3}px)` }, { transform: `translate(${px / 2}px,0)` }, { transform: 'none' }], { duration: 240 }); }
+function shake(px) { if (S.calm) px = Math.min(px, 1.5); const a = $('#arena'); if (a) a.animate([{ transform: 'none' }, { transform: `translate(${px}px,${-px / 2}px)` }, { transform: `translate(${-px}px,${px / 3}px)` }, { transform: `translate(${px / 2}px,0)` }, { transform: 'none' }], { duration: 240 }); }
 
 // ---------- 斗蛊 ----------
 // 对手：渡劫/无尽劫按规则生成，幽灵/战帖用传入阵容
@@ -1396,6 +1408,7 @@ function wound() {
 }
 function showResult(B) {
   const w = B.res.winner, win = w === 'A', draw = w === 'draw';
+  onBattleEnd(B);
   let txt = '', loot = [], btns = '';
   if (B.kind === 'replay') {}
   else if (B.kind === 'endless') {
@@ -1405,7 +1418,7 @@ function showResult(B) {
   }
   else if (B.kind === 'trib') {
     if (win) {
-      S.realm++; S.wins++; S.team.forEach(g => { g.atk++; g.hp++; }); S.ghosts = null; S.shop = rollShop(R(), S.realm, S.shop);
+      S.realm++; S.wins++; S.team.forEach(g => { g.atk++; g.hp++; }); S.ghosts = null; S.shop = rollShop(R(), S.realm, S.shop); onRealm(S.realm); onRefresh(S.shop, 'realm');
       txt = `渡劫成功，晋${REALMS[S.realm]}。全体蜕变 +1/+1${slotCap(S.realm) > slotCap(S.realm - 1) ? '，空窍多开一格' : ''}。择一道痕，伴你整局：`;
       loot = rollMarks(R(), S.marks).map(k => ({ k: 'mark', id: k, t: `道痕【${MARKS[k].n}】${MARKS[k].d}` }));
     }
@@ -1551,6 +1564,29 @@ function checkHash() {
   openLinkText(h);
 }
 
+// ---------- 设置 ----------
+const applyCalm = () => document.documentElement.toggleAttribute('data-calm', !!S.calm);
+const isCalm = () => !!S.calm;   // 表现组件读这个：减弱震屏与闪光
+function openSettings() {
+  const tog = (act, on, a = '开', b = '关') => `<button class="tog${on ? ' on' : ''}" data-act="${act}" aria-pressed="${on}">${on ? a : b}</button>`;
+  sheet(`<h3>设置</h3>
+  <div class="set"><span>主题</span><div class="segs">${[['auto', '自动'], ['light', '日'], ['dark', '夜']].map(([k, t]) => `<button data-act="setTheme" data-v="${k}" class="${(S.theme || 'auto') === k ? 'on' : ''}">${t}</button>`).join('')}</div></div>
+  <div class="set"><span>声音<small>古琴、钱币与木鱼</small></span>${tog('setMute', !S.mute)}</div>
+  <div class="set"><span>减弱震屏与闪光<small>暴击、斩杀、开茧的震动和闪白都调弱</small></span>${tog('setCalm', !!S.calm)}</div>
+  ${VSC ? '' : `<div class="set"><span>匿名统计<small>只发游玩事件计数，帮我们调数值；不含代码与对话内容，默认关闭</small></span>${tog('setStats', !!S.stats)}</div>`}
+  <div class="set"><span>导出游玩数据<small>最近 ${S.log.length} 条事件（获得、战斗、节点、升阶），只存在本机${VSC ? '，导出到剪贴板' : ''}</small></span><button class="tog" data-act="exportLog">导出</button></div>
+  <p class="sm">累计喂养 ${fmtTok(S.total)} token · 胜 ${S.wins} · 负 ${S.losses}</p>`, 'settings');
+}
+// ---------- 集成接口：合分支时替换实现（现在只往本地事件日志里记一笔）----------
+function logEv(k, o = {}) { (S.log || (S.log = [])).push({ t: Date.now(), k, ...o }); if (S.log.length > 500) S.log.splice(0, S.log.length - 500); }
+function onGain(g, from) { logEv('gain', { sp: g.sp, from }); }                       // 获得蛊：starter | summon | shop | loot
+function onRefresh(items, why) { logEv('refresh', { why, sp: items.map(w => w.sp) }); } // 蛊市刷新：manual | node | realm
+function onBattleEnd(B) { logEv('battle', { kind: B.kind, w: B.res.winner, turns: B.res.turns, tier: B.tier || null }); }
+function onTokens(d, rate, bySource) {}                                              // 每次 token 进账（约 5 次/秒）
+function onNode(n) { logEv('node', { type: n.type, n: S.nodes + 1 }); }
+function onRealm(r) { logEv('realm', { r }); }
+function onSession() { logEv('session', { total: Math.round(S.total), realm: S.realm }); }
+
 // ---------- 拖动换位 ----------
 let drag = null, dragEndT = 0;
 const moveIdx = (arr, f, t) => { const [x] = arr.splice(f, 1); arr.splice(t, 0, x); };
@@ -1585,7 +1621,7 @@ window.addEventListener('pointerup', dragEnd); window.addEventListener('pointerc
 
 // ---------- 交互 ----------
 const ACT = {
-  pick(a) { S.team = [newGu(a.dataset.sp)]; S.started = true; S.shop = rollShop(R(), 0, []); S.compass = rollCompass(R(), S.team, true, curCap()); save(); renderAll(); },
+  pick(a) { S.team = [newGu(a.dataset.sp)]; S.started = true; onGain(S.team[0], 'starter'); S.shop = rollShop(R(), 0, []); S.compass = rollCompass(R(), S.team, true, curCap()); save(); renderAll(); },
   node(a) {
     const i = +a.dataset.i; if (S.sel === i) return;
     if (S.sel != null) S.bank = Math.min(bankCap(), S.bank + S.prog);
@@ -1599,7 +1635,17 @@ const ACT = {
   demo(a) { src.demo = a.dataset.m; meters(); },
   src() { if (VSC) { src.setMode(src.mode === 'vscode' ? 'demo' : 'vscode'); renderPhase(); renderHint(); meters(); } else sheet(`<h3>真实 Token</h3><p class="sm">网页版默认是演示流。想让真实的 Claude Code / Codex 用量来养蛊，请装 VS Code 插件版（gu-code/vscode-ext），它只读会话里的 usage 数字，不读内容。</p>`); },
   theme() { S.theme = { auto: 'light', light: 'dark', dark: 'auto' }[S.theme || 'auto']; applyTheme(); save(); },
-  sound() { S.mute = !S.mute; $('#bSound').textContent = S.mute ? '静' : '声'; save(); snd('pluck'); },
+  sound() { S.mute = !S.mute; save(); snd('pluck'); },
+  settings() { openSettings(); },
+  setTheme(a) { S.theme = a.dataset.v; applyTheme(); save(); openSettings(); },
+  setMute() { S.mute = !S.mute; save(); snd('pluck'); openSettings(); },
+  setCalm() { S.calm = !S.calm; applyCalm(); save(); openSettings(); },
+  setStats() { if (!VSC) { S.stats = !S.stats; save(); openSettings(); } },
+  exportLog(a) {
+    const data = JSON.stringify({ app: 'gucode', v: 1, at: new Date().toISOString(), realm: S.realm, nodes: S.nodes, wins: S.wins, losses: S.losses, total: Math.round(S.total), log: S.log }, null, 1);
+    if (VSC) { copy(data, a); return; }
+    const u = URL.createObjectURL(new Blob([data], { type: 'application/json' })), l = document.createElement('a'); l.href = u; l.download = `gucode-log-${today()}.json`; document.body.appendChild(l); l.click(); l.remove(); setTimeout(() => URL.revokeObjectURL(u), 1000);
+  },
   share() { openShare(); },
   trib() { prep('trib'); }, ghost() { openGhosts(); }, endless() { prep('endless'); },
   path() { openPath(); }, codex() { openCodex(); },
@@ -1608,11 +1654,11 @@ const ACT = {
   buy(a) {
     const w = S.shop[+a.dataset.i], cost = buyCost(); if (!w || w.sold || S.stone < cost) return;
     const r = buyGu(S.team, w.sp, curCap(), S.marks, R()); if (!r) return; closeSheet();
-    S.stone -= cost; w.sold = true; w.frozen = false;
+    S.stone -= cost; w.sold = true; w.frozen = false; onGain(r.gu, 'shop');
     renderSlots(); renderShop(); renderPhase(); save(); snd('pluck');
     setTimeout(() => { if (r.merged.length) { const g = r.merged[r.merged.length - 1]; fxFloat(g.uid, `合炼 ★${g.star}`, 'mut'); stampIn($('#qiao'), '合炼', false, 'side'); } else fxFloat(r.gu.uid, '入窍', 'new'); }, 60);
   },
-  refresh() { const c = refCost(); if (S.stone < c) return; S.stone -= c; S.shop = rollShop(R(), S.realm, S.shop); renderMeta(); renderShop(); save(); },
+  refresh() { const c = refCost(); if (S.stone < c) return; S.stone -= c; S.shop = rollShop(R(), S.realm, S.shop); onRefresh(S.shop, 'manual'); renderMeta(); renderShop(); save(); },
   freeze(a) { const i = +a.dataset.i, w = S.shop[i]; if (w) { w.frozen = !w.frozen; renderShop(); save(); if (a.closest('.sheet')) guDetail(newGu(w.sp), { kind: 'shop', i }); } },
   sell(a) { const i = +a.dataset.i, g = S.team[i]; if (!g || S.team.length <= 1) return; S.stone += sellValue(g); S.team.splice(i, 1); closeSheet(); renderSlots(); renderShop(); renderPhase(); save(); },
   marksInfo() { if (S.marks.length) sheet(`<h3>道痕</h3><p class="sm">整局被动，渡劫成功时三选一。</p><ul>${S.marks.map(k => `<li><b>${MARKS[k].n}</b>${MARKS[k].d}</li>`).join('')}</ul>`); },
@@ -1622,7 +1668,7 @@ const ACT = {
   loot(a) {
     const l = window.__guB.loot[+a.dataset.i], L = S.team[0];
     if (l.k === 'mark') { if (!S.marks.includes(l.id)) S.marks.push(l.id); }
-    else if (l.k === 'take' && S.team.length < curCap()) S.team.push(newGu(l.sp));
+    else if (l.k === 'take' && S.team.length < curCap()) { const g = newGu(l.sp); S.team.push(g); onGain(g, 'loot'); }
     else if (l.k === 'print' && L) addTrait(L, l.id, 1);
     else if (L) { L.atk += 2; L.hp += 2; }
     closeBattle();
@@ -1667,8 +1713,8 @@ function boot(saved, pending) {
   if (!document.getElementById('gu-defs')) document.body.insertAdjacentHTML('afterbegin', `<svg id="gu-defs" width="0" height="0" style="position:absolute" aria-hidden="true"><defs>${ART_DEFS}</defs></svg>`);
   applyTheme(); if (VSC && window.MutationObserver) new MutationObserver(applyTheme).observe(document.body, { attributes: true, attributeFilter: ['class'] });
   booted = true; renderAll(); requestAnimationFrame(veinLoop);
-  if (pending && pending.tokens > 0 && S.started) { feed(pending.tokens, pending.hot || 0); renderSlots(); renderPhase(); const h = $('#hint'); if (h) h.textContent = `你不在的时候，蛊吸纳了 ${fmtTok(pending.tokens)} token。`; }
-  checkHash();
+  if (pending && pending.tokens > 0 && S.started) { countTok(pending.tokens); feed(pending.tokens, pending.hot || 0); renderSlots(); renderPhase(); const h = $('#hint'); if (h) h.textContent = `你不在的时候，蛊吸纳了 ${fmtTok(pending.tokens)} token。`; }
+  onSession(); checkHash();
 }
 if (VSC) {
   window.addEventListener('message', e => {
