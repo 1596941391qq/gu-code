@@ -287,6 +287,23 @@ textarea{font-family:var(--mono);resize:vertical}
 .tier{font:400 15px/1 var(--kai);padding:5px 6px;border-radius:2px;color:var(--on-zhu)}
 .t-easy{background:#4f6b5c}.t-mid{background:#7a5a2a}.t-hard{background:var(--zhu)}
 
+/* ---------- 修行路 / 蛊典 ---------- */
+button.realm{cursor:pointer;border:0}
+.path{list-style:none;margin:10px 0 0;padding:0}
+.pr{display:grid;grid-template-columns:52px 1fr;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
+.pn{font:400 18px/1 var(--kai);color:var(--mu);padding-top:2px}
+.pr.done .pn{color:var(--qing)} .pr.now .pn{color:var(--zhu2)}
+.pr.now{background:var(--hi);margin:0 -16px;padding:10px 16px}
+.pb > b{display:block;font:400 15px var(--kai);color:var(--tx)}
+.pb > small{display:block;color:var(--mu);font-size:12px}
+.pb em{display:block;font:13px var(--kai);font-style:normal;color:var(--zhu2);margin-top:6px}
+.codex{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:10px}
+.cx{background:var(--paper);color:var(--ink);border-radius:3px;padding:3px 3px 6px;display:flex;flex-direction:column;align-items:center}
+.cx .art{width:80%;aspect-ratio:1}
+.cx b{font:400 13px var(--kai)} .cx small{font-size:10px;color:#6b6254}
+.cx.unk .art{filter:brightness(0) opacity(.25)}
+.sheet li.unk{color:var(--mu)}
+
 /* ---------- 宽屏：横向对撞 ---------- */
 @media (min-width:900px){
   #app{padding-top:22px}

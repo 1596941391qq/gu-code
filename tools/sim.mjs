@@ -1,5 +1,5 @@
 // node tools/sim.mjs [场数]  —— 随机阵容对战压测：死循环、回合数、物种/杀招胜率、可复现性、坐标码往返
-import { makeRng, genTeam, comboOf, SP, applyNode, newGu, encodeTeam, decodeTeam, QUIRKS, COMBOS, addTrait, MARK_KEYS } from '../src/core.js';
+import { makeRng, genTeam, comboOf, SP, applyNode, newGu, encodeTeam, decodeTeam, QUIRKS, COMBOS, addTrait, MARK_KEYS, MARKS, poolFor, rollCompass, nodeChoices, rollShop, buyGu, canBuy, sellValue, tribTeam, endlessTeam, rollMarks, slotCap, ECON, ghostTrio, REALMS } from '../src/core.js';
 import { battle } from '../src/battle.js';
 
 const N = +process.argv[2] || 1000;
@@ -57,6 +57,50 @@ for (const c of COMBOS) {
   forced.push(`${c.n} ${(100 * w / M).toFixed(1)}%`);
 }
 console.log('杀招强制胜率（同阶，300 场/招）:', forced.join('  '));
+
+// ---------- 整局模拟：简单策略的玩家走罗盘、逛蛊市、斗幽灵、渡劫、挑无尽劫 ----------
+// 预算 STEPS 个节点（≈ 演示模式 30 分钟 / 真实 Vibe Coding 若干天）；每 2 节点斗一次幽灵，每 3 节点试一次渡劫/无尽劫
+const RUNS = 1000, STEPS = 150;
+const reach = new Array(6).fill(0), stepAt = [[], [], [], [], [], []], floors = []; let runCap = 0;
+const pow = g => g.atk + g.hp + g.tr.reduce((a, t) => a + t[1] * 2, 0);
+for (let run = 0; run < RUNS; run++) {
+  const rng = makeRng('run' + run); let team = [newGu(rng.pick(poolFor(0)))], realm = 0, stone = 5, marks = [], shop = rollShop(rng, 0, []), floor = 1, best = 0, endLoss = 0;
+  for (let step = 1; step <= STEPS; step++) {
+    const cap = Math.max(slotCap(realm), team.length);
+    const comp = rollCompass(rng, team, false, cap);
+    const node = comp.find(n => n.type === 'refine' && comboOf({ sp: team[0].sp, att: [...team[0].att, team[team.length - 1].sp] })) || comp.find(n => n.type === 'summon' && team.length < cap) || rng.pick(comp);
+    let pick; const opts = nodeChoices(node, team, rng, realm);
+    if (opts) pick = node.type === 'devour' ? opts.reduce((b, i) => pow(team[i]) < pow(team[b]) ? i : b, opts[0]) : rng.pick(opts);
+    applyNode(team, node, rng, { pick, cap, wuhuo: rng() < 0.2 }); stone += ECON.node + 1;
+    shop = rollShop(rng, realm, shop);
+    for (let k = 0; k < 3; k++) {   // 逛蛊市：先买能合炼的，再补空位，满了就卖最弱的换
+      const cost = marks.includes('shiJing') ? 2 : ECON.buy; if (stone < cost) break;
+      const ci = shop.findIndex(w => !w.sold && team.filter(g => g.sp === w.sp && (g.star || 1) === 1).length >= 2);
+      const fi = ci >= 0 ? ci : shop.findIndex(w => !w.sold && canBuy(team, w.sp, cap));
+      if (fi >= 0) { if (buyGu(team, shop[fi].sp, cap, marks, rng)) { stone -= cost; shop[fi].sold = true; } continue; }
+      if (team.length >= cap && stone >= cost + 2) { const wi = team.reduce((b, g, i) => pow(g) < pow(team[b]) ? i : b, 0); if (wi > 0) { stone += sellValue(team[wi]); team.splice(wi, 1); continue; } }
+      if (stone >= cost + ECON.refresh) { stone -= marks.includes('shiJing') ? 0 : ECON.refresh; shop = rollShop(rng, realm, []); } else break;
+    }
+    team.forEach(g => { g.wound = 0; });
+    if (step % 2 === 0) { const t = ghostTrio(rng, step + realm, realm)[1]; const r = battle(team, t.team, 'g' + run + ':' + step, marks); stone += r.winner === 'A' ? ECON.win.mid : ECON.lose; }
+    if (step % 3 === 0) {
+      if (realm < 5) {
+        const r = battle(team, tribTeam(realm), 't' + run + ':' + step, marks);
+        if (r.capped) runCap++;
+        if (r.winner === 'A') { reach[realm]++; stepAt[realm].push(step); realm++; team.forEach(g => { g.atk++; g.hp++; }); marks.push(rng.pick(rollMarks(rng, marks))); stone += ECON.win.trib; shop = rollShop(rng, realm, []); }
+      } else {
+        const r = battle(team, endlessTeam(floor), 'e' + run + ':' + step, marks);
+        if (r.winner === 'A') { best = floor; floor++; endLoss = 0; stone += ECON.win.endless; } else endLoss++;
+      }
+    }
+  }
+  if (realm >= 5) floors.push(best);
+}
+const med = a => a.length ? a.slice().sort((x, y) => x - y)[Math.floor(a.length / 2)] : '-';
+console.log(`== 整局模拟 ${RUNS} 局 × ${STEPS} 节点（含蛊市买卖、合炼、道痕）`);
+console.log('各阶通关率（渡劫成功占全部局）:', REALMS.slice(0, 5).map((n, r) => `${n}→${REALMS[r + 1]} ${(100 * reach[r] / RUNS).toFixed(1)}%（中位第 ${med(stepAt[r])} 节点）`).join('  '));
+console.log(`无尽劫：登顶 ${floors.length} 局，平均 ${floors.length ? (floors.reduce((a, b) => a + b, 0) / floors.length).toFixed(1) : 0} 层，最高 ${floors.length ? Math.max(...floors) : 0} 层；整局触发上限 ${runCap}`);
+if (runCap) capped += runCap;
 
 // CI 闸门：死循环 / 编解码不一致 / 同种子不复现 任何一项出现就失败退出
 const fails = [];

@@ -257,10 +257,22 @@ export function genTeam(rng, power, cap = SLOTS) {
   return team;
 }
 export const TRIB_NAMES = ['心魔劫', '雷劫', '火劫', '风劫', '天人劫'];
+// 修行路：每一阶额外解锁说明（空窍格数取 SLOT_BY_REALM，蛊池取 POOL_TIERS）
+export const REALM_NOTES = ['开局三选一本命蛊', '蛊池加入一转档', '蛊池全开，可合炼到 ★3', '敌阵开始出现杀招与怪癖', '天人劫前最后一阶', '登顶，开启无尽劫'];
+// 无尽劫：五转之后逐层变强，层数写进分享卡
+export const ENDLESS = { basePower: 80, perFloor: 3, atkPerFloor: 1, hpPerFloor: 2, baseAtk: 5, baseHp: 10 };
+export function endlessTeam(floor) {
+  const f = Math.max(1, floor | 0), rng = makeRng('endless:' + f), team = genTeam(rng, ENDLESS.basePower + f * ENDLESS.perFloor, 5);
+  team.forEach(g => { g.atk += ENDLESS.baseAtk + Math.floor(f * ENDLESS.atkPerFloor); g.hp += ENDLESS.baseHp + f * ENDLESS.hpPerFloor; });
+  team[0].boss = 1; return team;
+}
+// 天劫强度表：power = 敌阵走过的养成节点数；all = 全体加成；boss = 劫主额外加成
+export const TRIB = { power: [4, 14, 30, 52, 88], all: [[0, 0], [1, 2], [2, 4], [4, 7], [7, 13]], boss: [[1, 2], [2, 5], [4, 8], [6, 12], [12, 24]] };
 export function tribTeam(realm) {
   const r = Math.min(realm, 4), rng = makeRng('tribulation:' + r);
-  const team = genTeam(rng, 3 + r * 4, Math.min(5, slotCap(r) + 1));
-  const b = team[0]; b.atk += r + 1; b.hp += 2 * r + 2; b.boss = 1;
+  const team = genTeam(rng, TRIB.power[r], Math.min(5, slotCap(r) + 1));
+  team.forEach(g => { g.atk += TRIB.all[r][0]; g.hp += TRIB.all[r][1]; });
+  const b = team[0]; b.atk += TRIB.boss[r][0]; b.hp += TRIB.boss[r][1]; b.boss = 1;
   return team;
 }
 export function ghostTrio(rng, power, realm) {
