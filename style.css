@@ -287,6 +287,27 @@ textarea{font-family:var(--mono);resize:vertical}
 .tier{font:400 15px/1 var(--kai);padding:5px 6px;border-radius:2px;color:var(--on-zhu)}
 .t-easy{background:#4f6b5c}.t-mid{background:#7a5a2a}.t-hard{background:var(--zhu)}
 
+/* ---------- 杀招招牌演出 ---------- */
+:root{--band:#e7ddc7;--band-tx:#1c1915}
+:root[data-theme=light]{--band:#1f1b16;--band-tx:#f3ead6}
+.cut{position:fixed;inset:0;z-index:42;pointer-events:none;display:flex;align-items:center;justify-content:center;background:rgba(10,9,7,.28);animation:cutin .18s ease both}
+.cut.out{transition:opacity .35s;opacity:0}
+.band{position:relative;width:100%;padding:18px 0 20px;background:var(--band);color:var(--band-tx);text-align:center;transform:skewY(-3deg);animation:bandin .32s cubic-bezier(.2,.9,.3,1) both;box-shadow:0 0 0 1px var(--line)}
+.band::before,.band::after{content:"";position:absolute;left:0;right:0;height:6px;background:repeating-linear-gradient(90deg,var(--band) 0 7px,transparent 7px 11px)}
+.band::before{top:-5px}.band::after{bottom:-5px}
+.cby{display:block;font:14px var(--kai);opacity:.7;letter-spacing:.3em;transform:skewY(3deg)}
+.cname{display:block;font:400 clamp(40px,11vw,76px)/1.15 var(--kai);letter-spacing:.12em;transform:skewY(3deg)}
+.cname i{display:inline-block;opacity:0;animation:ink .32s ease-out both}
+.cseal{position:absolute;right:max(14px,10vw);top:calc(50% - 104px);width:72px;height:72px;background:var(--zhu);color:var(--on-zhu);display:flex;align-items:center;justify-content:center;outline:2px solid rgba(243,234,214,.75);outline-offset:-7px;transform:rotate(-8deg);animation:sealfall .3s cubic-bezier(.3,1.5,.5,1) both;opacity:0}
+.cseal b{font:400 46px/1 var(--kai)}
+.ink{position:absolute;right:max(14px,10vw);top:calc(50% - 142px);width:150px;height:150px;margin-right:-39px;border-radius:50%;background:radial-gradient(circle,rgba(28,25,21,.5) 0 30%,transparent 62%);filter:url(#wash);opacity:0;animation:splat .5s ease-out both}
+.bu.caster{z-index:5;transform:scale(1.12);transition:transform .2s;outline:2px solid var(--zhu);outline-offset:2px}
+@keyframes cutin{from{opacity:0}}
+@keyframes bandin{from{transform:skewY(-3deg) translateX(-105%)}}
+@keyframes ink{0%{opacity:0;filter:blur(6px);transform:scale(1.5)}100%{opacity:1;filter:none;transform:none}}
+@keyframes sealfall{0%{opacity:0;transform:rotate(-8deg) scale(2.6)}70%{opacity:1;transform:rotate(-8deg) scale(.92)}100%{opacity:1;transform:rotate(-8deg) scale(1)}}
+@keyframes splat{0%{opacity:0;transform:scale(.3)}40%{opacity:.9}100%{opacity:.55;transform:scale(1)}}
+
 /* ---------- 修行路 / 蛊典 ---------- */
 button.realm{cursor:pointer;border:0}
 .path{list-style:none;margin:10px 0 0;padding:0}

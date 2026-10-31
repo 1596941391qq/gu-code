@@ -1,9 +1,9 @@
 // node tools/sim.mjs [场数]  —— 随机阵容对战压测：死循环、回合数、物种/杀招胜率、可复现性、坐标码往返
-import { makeRng, genTeam, comboOf, SP, applyNode, newGu, encodeTeam, decodeTeam, QUIRKS, COMBOS, addTrait, MARK_KEYS, MARKS, poolFor, rollCompass, nodeChoices, rollShop, buyGu, canBuy, sellValue, tribTeam, endlessTeam, rollMarks, slotCap, ECON, ghostTrio, REALMS } from '../src/core.js';
+import { makeRng, genTeam, comboOf, SP, applyNode, newGu, encodeTeam, decodeTeam, QUIRKS, COMBOS, addTrait, MARK_KEYS, MARKS, playMs, tempoFor, poolFor, rollCompass, nodeChoices, rollShop, buyGu, canBuy, sellValue, tribTeam, endlessTeam, rollMarks, slotCap, ECON, ghostTrio, REALMS } from '../src/core.js';
 import { battle } from '../src/battle.js';
 
 const N = +process.argv[2] || 1000;
-const sp = {}, cb = {}, qk = {}; const turns = []; let draws = 0, capped = 0, maxEv = 0, nondet = 0, codeFail = 0, t0 = Date.now();
+const sp = {}, cb = {}, qk = {}; const turns = [], durs = []; let draws = 0, capped = 0, maxEv = 0, nondet = 0, codeFail = 0, t0 = Date.now();
 const tally = (m, k, w) => { (m[k] ||= { n: 0, w: 0 }); m[k].n++; m[k].w += w; };
 for (let i = 0; i < N; i++) {
   const rng = makeRng('sim' + i), p = rng.int(15);
@@ -15,7 +15,7 @@ for (let i = 0; i < N; i++) {
   const dec = decodeTeam(encodeTeam(ta, { name: '测试', realm: 2, marks: ma }));
   if (!dec || dec.marks.join() !== ma.join() || dec.team.length !== ta.length || dec.team.some((g, j) => g.atk !== Math.min(255, ta[j].atk) || g.hp !== Math.min(255, ta[j].hp) || (g.star || 1) !== (ta[j].star || 1) || JSON.stringify(g.tr) !== JSON.stringify(ta[j].tr) || g.att.join() !== ta[j].att.join() || g.q.join() !== ta[j].q.join())) codeFail++;
   else { const rd = battle(dec.team, decodeTeam(encodeTeam(tb, { marks: mb })).team, 'seed' + i, dec.marks, mb); if (rd.winner !== r.winner && ta.every(g => g.atk < 256 && g.hp < 256)) codeFail++; }
-  turns.push(r.turns); if (r.winner === 'draw') draws++; if (r.capped) capped++; maxEv = Math.max(maxEv, r.log.length);
+  durs.push(playMs(r.log) * tempoFor(playMs(r.log)) / 1000); turns.push(r.turns); if (r.winner === 'draw') draws++; if (r.capped) capped++; maxEv = Math.max(maxEv, r.log.length);
   [[ta, 'A'], [tb, 'B']].forEach(([t, side]) => {
     const w = r.winner === side ? 1 : r.winner === 'draw' ? 0.5 : 0;
     const set = new Set(); t.forEach(g => { set.add(g.sp); g.att.forEach(a => set.add(a)); });
@@ -30,6 +30,8 @@ const fmt = m => Object.entries(m).sort((a, b) => b[1].w / b[1].n - a[1].w / a[1
 console.log(`== ${N} 场随机对战，用时 ${Date.now() - t0}ms`);
 console.log(`回合数 中位 ${pct(0.5)} / P90 ${pct(0.9)} / 最大 ${turns[turns.length - 1]}；平局 ${draws}；触发上限 ${capped}；单场最多事件 ${maxEv}`);
 console.log(`同种子复现不一致 ${nondet}；坐标码往返失败 ${codeFail}`);
+durs.sort((a, b) => a - b); const dq = q => durs[Math.floor(q * (durs.length - 1))].toFixed(1);
+console.log(`1 倍速单局时长 P10 ${dq(0.1)}s / 中位 ${dq(0.5)}s / P90 ${dq(0.9)}s；落在 15–25 秒的 ${(100 * durs.filter(d => d >= 15 && d <= 25).length / durs.length).toFixed(0)}%`);
 console.log('物种胜率（含附蛊出场）:', fmt(sp));
 console.log('杀招胜率:', fmt(cb));
 console.log('怪癖胜率:', fmt(qk));

@@ -1,16 +1,16 @@
 // 蛊码 GuCode · 界面与流程（渲染层；逻辑都在 core/battle）
-import { makeRng, SPECIES, SP, TRAITS, QUIRKS, NODES, REALMS, TRIB_NAMES, GHOST_NAMES, SLOTS, MAXTR, MAXV, newGu, starterTeam, skillOf, comboOf, nodeOk, rollCompass, applyNode, genTeam, tribTeam, encodeTeam, decodeTeam, fmtTok, addTrait, COMBOS, hashStr, slotCap, SLOT_BY_REALM, poolFor, ECON, MARKS, rollMarks, nodeChoices, rollShop, canBuy, buyGu, sellValue, ghostTrio, trCap, REALM_NOTES, POOL_TIERS, endlessTeam, ENDLESS } from './core.js';
+import { makeRng, SPECIES, SP, TRAITS, QUIRKS, NODES, REALMS, TRIB_NAMES, GHOST_NAMES, SLOTS, MAXTR, MAXV, newGu, starterTeam, skillOf, comboOf, nodeOk, rollCompass, applyNode, genTeam, tribTeam, encodeTeam, decodeTeam, fmtTok, addTrait, COMBOS, hashStr, slotCap, SLOT_BY_REALM, poolFor, ECON, MARKS, rollMarks, nodeChoices, rollShop, canBuy, buyGu, sellValue, ghostTrio, trCap, REALM_NOTES, POOL_TIERS, endlessTeam, ENDLESS, EV_MS, playMs, tempoFor } from './core.js';
 import { battle } from './battle.js';
 import { guSVG, ART_DEFS } from './art.js';
 import { TokenSource, VSC } from './tokens.js';
 import { makeCard } from './card.js';
 
-const KEY = 'gucode.v1', REPAIR = 30, TEMPO = 1.3, WILL_MAX = 5, WILL_SEC = 120, WILL_TOK = 60;
+const KEY = 'gucode.v1', REPAIR = 30, WILL_MAX = 5, WILL_SEC = 120, WILL_TOK = 60;
 const $ = (s, r = document) => r.querySelector(s);
 const el = html => { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstElementChild; };
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-const fresh = () => ({ v: 2, started: false, name: '', team: [], realm: 0, nodes: 0, compass: [], sel: null, prog: 0, wh: 0, bank: 0, repair: 0, will: 3, willT: 0, willK: 0, total: 0, muts: 0, wins: 0, losses: 0, seed: (Math.random() * 1e9) | 0, step: 0, sound: false, speed: 1, theme: 'auto', stone: 5, stoneK: 0, shop: [], pending: null, marks: [], ghosts: null, floor: 1, endless: 0, codex: { sp: [], combo: [] } });
+const fresh = () => ({ v: 2, started: false, name: '', team: [], realm: 0, nodes: 0, compass: [], sel: null, prog: 0, wh: 0, bank: 0, repair: 0, will: 3, willT: 0, willK: 0, total: 0, muts: 0, wins: 0, losses: 0, seed: (Math.random() * 1e9) | 0, step: 0, sound: false, speed: 1, theme: 'auto', mute: false, stone: 5, stoneK: 0, shop: [], pending: null, marks: [], ghosts: null, floor: 1, endless: 0, codex: { sp: [], combo: [] } });
 const curCap = () => Math.max(slotCap(S.realm), S.team.length);
 const buyCost = () => S.marks.includes('shiJing') ? 2 : ECON.buy, refCost = () => S.marks.includes('shiJing') ? 0 : ECON.refresh;
 function migrate(s) { if (!s || !s.v) return null; if (s.v === 1) { s.v = 2; s.stone = 5 + Math.min(20, s.nodes || 0); s.will = Math.max(s.will || 0, 3); } return s.v === 2 ? s : null; }
@@ -54,24 +54,38 @@ function openPath() {
   sheet(`<h3>修行路</h3><p class="sm">凡人到五转，每渡一劫：全体 +1/+1、择一道痕，空窍与蛊市随境界扩开。</p><ol class="path">${rows}<li class="pr ${S.realm >= 5 ? 'now' : ''}"><span class="pn">无尽</span><span class="pb"><b>无尽劫 · 层数无限</b><small>每层敌阵更强（+${ENDLESS.atkPerFloor} 攻 +${ENDLESS.hpPerFloor} 血/层），最高层写进分享卡。当前最高 ${S.endless} 层</small>${S.realm >= 5 ? `<em>第 ${S.floor} 层阵容</em>${miniRow(endlessTeam(S.floor), 'foe')}` : ''}</span></li></ol>`);
 }
 // ---------- 声音（默认静音）----------
-let AC = null;
+let AC = null; const KSB = {};
+const QIN = [130.8, 146.8, 164.8, 196, 220, 261.6, 293.7, 329.6, 392, 440];   // 宫商角徵羽，两个八度
+function ac() { if (!AC) { const C = window.AudioContext || window.webkitAudioContext; if (!C) return null; AC = new C(); } if (AC.state === 'suspended') AC.resume(); return AC; }
+function ksBuf(f) {   // Karplus-Strong 拨弦：噪声入环形缓冲，平均+衰减 ≈ 琴弦
+  const k = Math.round(f); if (KSB[k]) return KSB[k];
+  const sr = AC.sampleRate, len = Math.floor(sr * 1.8), buf = AC.createBuffer(1, len, sr), d = buf.getChannelData(0), N = Math.max(2, Math.round(sr / f)), ring = new Float32Array(N);
+  for (let i = 0; i < N; i++) ring[i] = Math.random() * 2 - 1;
+  for (let i = 0, j = 0; i < len; i++) { const n = (j + 1) % N, v = ring[j]; d[i] = v * (i < 40 ? i / 40 : 1); ring[j] = 0.4985 * (v + ring[n]); j = n; }
+  return (KSB[k] = buf);
+}
+function pluck(f, at = 0, vol = 0.32) { const s = AC.createBufferSource(), g = AC.createGain(), lp = AC.createBiquadFilter(); s.buffer = ksBuf(f); lp.type = 'lowpass'; lp.frequency.value = 2400; g.gain.value = vol; s.connect(lp).connect(g).connect(AC.destination); s.start(AC.currentTime + at); }
+function thump(vol = 0.5) {
+  const t = AC.currentTime, o = AC.createOscillator(), g = AC.createGain();
+  o.type = 'sine'; o.frequency.setValueAtTime(110, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.16);
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22); o.connect(g).connect(AC.destination); o.start(t); o.stop(t + 0.25);
+  const len = AC.sampleRate * 0.05, nb = AC.createBuffer(1, len, AC.sampleRate), d = nb.getChannelData(0); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+  const n = AC.createBufferSource(), ng = AC.createGain(), bp = AC.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1800; ng.gain.value = vol * 0.35; n.buffer = nb; n.connect(bp).connect(ng).connect(AC.destination); n.start(t);
+}
+function glitch() { const len = AC.sampleRate * 0.16, b = AC.createBuffer(1, len, AC.sampleRate), d = b.getChannelData(0); for (let i = 0; i < len; i++) d[i] = (Math.floor(i / 70) % 2 ? 1 : -1) * Math.random() * (1 - i / len) * 0.45; const s = AC.createBufferSource(), g = AC.createGain(); g.gain.value = 0.22; s.buffer = b; s.connect(g).connect(AC.destination); s.start(); }
 function snd(kind) {
-  if (!S.sound) return;
+  if (S.mute) return;
   try {
-    AC = AC || new (window.AudioContext || window.webkitAudioContext)(); const t = AC.currentTime;
-    if (kind === 'glitch') {
-      const len = AC.sampleRate * 0.18, buf = AC.createBuffer(1, len, AC.sampleRate), d = buf.getChannelData(0);
-      for (let i = 0; i < len; i++) d[i] = (Math.floor(i / 90) % 2 ? 1 : -1) * Math.random() * (1 - i / len) * 0.5;
-      const s = AC.createBufferSource(), g = AC.createGain(); g.gain.value = 0.25; s.buffer = buf; s.connect(g).connect(AC.destination); s.start(t);
-    }
-    const o = AC.createOscillator(), g = AC.createGain(), f = AC.createBiquadFilter();
-    const fr = kind === 'hit' ? 98 + Math.random() * 30 : [196, 220, 262, 294, 330, 392][(Math.random() * 6) | 0];
-    o.type = 'triangle'; o.frequency.setValueAtTime(fr * 2, t); o.frequency.exponentialRampToValueAtTime(fr, t + 0.05);
-    f.type = 'lowpass'; f.frequency.value = kind === 'hit' ? 800 : 2600;
-    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(kind === 'hit' ? 0.3 : 0.18, t + 0.006); g.gain.exponentialRampToValueAtTime(0.0001, t + (kind === 'hit' ? 0.22 : 1.3));
-    o.connect(f).connect(g).connect(AC.destination); o.start(t); o.stop(t + 1.4);
+    if (!ac()) return;
+    if (kind === 'pluck') pluck(QIN[3 + ((Math.random() * 7) | 0)]);
+    else if (kind === 'hit') thump(0.45);
+    else if (kind === 'faint') pluck(QIN[0], 0, 0.28);
+    else if (kind === 'combo') { pluck(QIN[0], 0, 0.4); pluck(QIN[4], 0.05, 0.3); pluck(QIN[7], 0.1, 0.25); glitch(); }
+    else if (kind === 'win') [5, 7, 9].forEach((i, k) => pluck(QIN[i], k * 0.14, 0.3));
+    else if (kind === 'lose') [6, 3, 0].forEach((i, k) => pluck(QIN[i], k * 0.2, 0.28));
   } catch (e) {}
 }
+document.addEventListener('pointerdown', () => { if (!S.mute) ac(); }, { once: true });
 
 // ---------- Token 流 ----------
 function onTick(t) {
@@ -163,7 +177,7 @@ function startHTML() {
 }
 function mainHTML() {
   return `<header class="top"><div class="brand"><b class="logo">蛊码</b><span class="sub">烧 Token · 养蛊 · 斗道</span></div>
-  <div class="tools"><button class="realm" id="realm" data-act="path" title="修行路">${REALMS[S.realm]}</button><button class="ib" data-act="theme" id="bTheme" title="主题：自动 / 日 / 夜">${{ auto: '自', light: '日', dark: '夜' }[S.theme || 'auto']}</button><button class="ib" data-act="sound" id="bSound">${S.sound ? '声' : '静'}</button><button class="ib zhu" data-act="share">战帖</button></div></header>
+  <div class="tools"><button class="realm" id="realm" data-act="path" title="修行路">${REALMS[S.realm]}</button><button class="ib" data-act="theme" id="bTheme" title="主题：自动 / 日 / 夜">${{ auto: '自', light: '日', dark: '夜' }[S.theme || 'auto']}</button><button class="ib" data-act="sound" id="bSound" title="声音开关">${S.mute ? '静' : '声'}</button><button class="ib zhu" data-act="share">战帖</button></div></header>
   <section class="vein"><canvas id="vein"></canvas><div class="vinfo"><button class="chip" data-act="src" id="srcTag"></button><span id="rateTxt"></span><span id="fireTag" class="fire"></span><span class="grow"></span><span id="totTxt"></span></div></section>
   <div class="seg" id="demo">${[['coding', '写代码中'], ['wuhuo', '武火并发'], ['rest', '停手休息']].map(([m, t]) => `<button data-act="demo" data-m="${m}">${t}</button>`).join('')}</div>
   <section class="qiao" id="qiao"><div class="qhead"><span class="lbl">空窍 <small>左为炉口</small></span><span id="qmeta"></span></div><div class="slots" id="slots"></div><p class="marks" id="marks" data-act="marksInfo"></p><p class="hint" id="hint"></p></section>
@@ -376,35 +390,46 @@ function applySnap(s, ros) {
 }
 const bnode = uid => document.querySelector(`#arena [data-uid="${uid}"]`);
 function blog(t) { const b = $('#blog'); if (b) b.textContent = t; }
+let tempo = 1;
+// 杀招招牌演出：宣纸横幅滑入、招名逐字落墨、朱印砸下、轻震屏
+async function comboCut(name, node, r) {
+  const total = EV_MS.combo * tempo / S.speed, chars = [...name];
+  if (node) node.classList.add('caster');
+  const cut = el(`<div class="cut" style="--d:${(total / 1000).toFixed(2)}s"><div class="band"><span class="cby">${esc(r ? r.name : '')} · 杀招</span><span class="cname">${chars.map((c, i) => `<i style="animation-delay:${Math.round(total * (0.14 + i * 0.07))}ms">${esc(c)}</i>`).join('')}</span></div><span class="cseal" style="animation-delay:${Math.round(total * (0.18 + chars.length * 0.07))}ms"><b>${esc(chars[0])}</b></span><span class="ink" style="animation-delay:${Math.round(total * (0.18 + chars.length * 0.07))}ms"></span></div>`);
+  $('#battle').appendChild(cut); snd('combo');
+  await sleep(total * (0.2 + chars.length * 0.07)); shake(9); snd('hit');
+  await sleep(total * (0.8 - chars.length * 0.07)); cut.classList.add('out'); if (node) node.classList.remove('caster');
+  setTimeout(() => cut.remove(), 400);
+}
 async function animEv(e, ros, seen) {
-  const D = ms => sleep(ms * TEMPO / S.speed), nm = uid => ros[uid] ? ros[uid].name : '';
+  const D = ms => sleep(ms * tempo / S.speed), nm = uid => ros[uid] ? ros[uid].name : '';
   switch (e.t) {
-    case 'begin': blog('开战：双方开锋、护体先行'); return D(520);
-    case 'turn': $('#bturn').textContent = `第 ${e.n} 合`; return D(150);
+    case 'begin': blog('开战：双方开锋、护体先行'); return D(EV_MS.begin);
+    case 'turn': $('#bturn').textContent = `第 ${e.n} 合`; return D(EV_MS.turn);
     case 'clash': {
       const a = bnode(e.a), b = bnode(e.b); if (!a || !b) return;
-      const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect(), dx = (rb.left - ra.left) / 2, dy = (rb.top - ra.top) / 2, dur = 560 * TEMPO / S.speed;
+      const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect(), dx = (rb.left - ra.left) / 2, dy = (rb.top - ra.top) / 2, dur = EV_MS.clash * tempo / S.speed;
       const kf = (x, y) => [{ transform: 'none' }, { transform: `translate(${-x * 0.14}px,${-y * 0.14}px) scale(.95)`, offset: 0.42 }, { transform: `translate(${x * 0.72}px,${y * 0.72}px)`, offset: 0.62 }, { transform: 'none' }];
       a.animate(kf(dx, dy), { duration: dur, easing: 'ease-in-out' }); b.animate(kf(-dx, -dy), { duration: dur, easing: 'ease-in-out' });
       blog(`${nm(e.a)} ⟷ ${nm(e.b)}`);
       await sleep(dur * 0.62); shake(3); snd('hit'); await sleep(dur * 0.38); return;
     }
-    case 'dmg': { fxFloat(e.uid, e.n > 0 ? '-' + e.n : '', 'dmg', e.blk); const n = bnode(e.uid); if (n) { n.classList.remove('hit'); void n.offsetWidth; n.classList.add('hit'); } return D(e.k === 'hit' ? 50 : 190); }
-    case 'buff': fxFloat(e.uid, e.sh ? `护+${e.sh}` : `+${e.a}/+${e.h}`.replace('/+0', '').replace('+0/', ''), 'buff'); return D(100);
+    case 'dmg': { fxFloat(e.uid, e.n > 0 ? '-' + e.n : '', 'dmg', e.blk); const n = bnode(e.uid); if (n) { n.classList.remove('hit'); void n.offsetWidth; n.classList.add('hit'); } return D(e.k === 'hit' ? EV_MS.hit : EV_MS.dmg); }
+    case 'buff': fxFloat(e.uid, e.sh ? `护+${e.sh}` : `+${e.a}/+${e.h}`.replace('/+0', '').replace('+0/', ''), 'buff'); return D(EV_MS.buff);
     case 'trig': {
       const lab = e.id ? TRAITS[e.id].n : e.mk ? '道痕·' + MARKS[e.mk].n : QUIRKS[e.q].n, ch = e.id ? TRAITS[e.id].ch : e.mk ? '道' : QUIRKS[e.q].n[0];
       const n = bnode(e.uid); if (n) { const g = el(`<span class="tg">${ch}</span>`); n.appendChild(g); setTimeout(() => g.remove(), 700); }
-      blog(`${nm(e.uid)} · ${lab}`); return D(270);
+      blog(`${nm(e.uid)} · ${lab}`); return D(EV_MS.trig);
     }
     case 'combo': {
       const n = bnode(e.uid);
-      if (e.quiet || seen.has(e.uid)) { if (n) { const g = el(`<span class="tg zhu">${esc(e.n[0])}</span>`); n.appendChild(g); setTimeout(() => g.remove(), 700); } return D(170); }
+      if (e.quiet || seen.has(e.uid)) { if (n) { const g = el(`<span class="tg zhu">${esc(e.n[0])}</span>`); n.appendChild(g); setTimeout(() => g.remove(), 700); } return D(EV_MS.comboQuiet); }
       seen.add(e.uid); blog(`杀招【${e.n}】`);
-      await D(160); shake(8); stampIn($('#battle'), e.n, true); snd('glitch'); return D(1050);
+      return comboCut(e.n, n, ros[e.uid]);
     }
-    case 'summon': blog(`${nm(e.uid)} 现身`); return D(240);
-    case 'faint': { const n = bnode(e.uid); if (n) n.classList.add('die'); blog(`${nm(e.uid)} 阵亡`); return D(360); }
-    case 'end': return D(250);
+    case 'summon': blog(`${nm(e.uid)} 现身`); return D(EV_MS.summon);
+    case 'faint': { const n = bnode(e.uid); if (n) n.classList.add('die'); blog(`${nm(e.uid)} 阵亡`); snd('faint'); return D(EV_MS.faint); }
+    case 'end': return D(EV_MS.end);
   }
 }
 async function playBattle(B) {
@@ -412,7 +437,7 @@ async function playBattle(B) {
   const ov = el(`<div class="battle" id="battle"><div class="bbar"><span class="btitle">${esc(B.title)}</span><span class="bturn" id="bturn">开战</span><button class="ib" data-act="speed" id="bspd">${S.speed}×</button><button class="ib" data-act="skip">跳过</button></div>
   <div class="arena" id="arena"><div class="side sb" id="sideB"></div><div class="mid"><i></i><span>斗</span><i></i></div><div class="side sa" id="sideA"></div></div><div class="blog" id="blog"></div></div>`);
   document.body.appendChild(ov);
-  const log = B.res.log, ros = B.res.roster, seen = new Set();
+  const log = B.res.log, ros = B.res.roster, seen = new Set(); tempo = tempoFor(playMs(log));
   applySnap(log[0].s, ros);
   for (const e of log) { if (skip) break; await animEv(e, ros, seen); if (skip) break; applySnap(e.s, ros); }
   applySnap(log[log.length - 1].s, ros);
@@ -464,7 +489,7 @@ function showResult(B) {
   if (gain && S.marks.includes('shengCai')) gain = Math.ceil(gain * 1.5);
   if (gain) { S.stone += gain; txt += ` 元石 +${gain}。`; }
   if (B.kind === 'ghost') S.ghosts = null;
-  B.loot = loot; window.__guB = B;
+  B.loot = loot; window.__guB = B; snd(win ? 'win' : draw ? 'pluck' : 'lose');
   const panel = el(`<div class="result"><div class="rseal${win ? '' : ' lose'}">${win ? '胜' : draw ? '和' : '败'}</div><p class="rtxt">${txt}</p>
   ${loot.map((l, i) => `<button class="loot" data-act="loot" data-i="${i}">${esc(l.t)}</button>`).join('')}
   <div class="rbtns">${btns}${loot.length ? '' : `<button data-act="closeBattle">${S.started ? '回空窍' : '关闭'}</button>`}<button data-act="copyReplay">复制复盘链接</button></div></div>`);
@@ -556,7 +581,7 @@ const ACT = {
   demo(a) { src.demo = a.dataset.m; meters(); },
   src() { if (VSC) { src.setMode(src.mode === 'vscode' ? 'demo' : 'vscode'); renderPhase(); renderHint(); meters(); } else sheet(`<h3>真实 Token</h3><p class="sm">网页版默认是演示流。想让真实的 Claude Code / Codex 用量来养蛊，请装 VS Code 插件版（gu-code/vscode-ext），它只读会话里的 usage 数字，不读内容。</p>`); },
   theme() { S.theme = { auto: 'light', light: 'dark', dark: 'auto' }[S.theme || 'auto']; applyTheme(); save(); },
-  sound() { S.sound = !S.sound; $('#bSound').textContent = S.sound ? '声' : '静'; save(); snd('pluck'); },
+  sound() { S.mute = !S.mute; $('#bSound').textContent = S.mute ? '静' : '声'; save(); snd('pluck'); },
   share() { openShare(); },
   trib() { startBattle('trib'); }, ghost() { openGhosts(); }, endless() { startBattle('endless'); },
   path() { openPath(); }, codex() { openCodex(); },
