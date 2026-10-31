@@ -3,12 +3,17 @@
 import fs from 'node:fs'; import path from 'node:path'; import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // fx 放在 meta 前（蛊茧、宝箱删掉后已无重名）
-const order = ['core', 'battle', 'art', 'qr', 'tokens', 'card', 'fx', 'meta', 'tutorial', 'ledger', 'ui'];
+const order = ['bestiary', 'core', 'battle', 'art2', 'art', 'qr', 'tokens', 'card', 'fx', 'meta', 'tutorial', 'ledger', 'ui'];
+// 这些文件的顶层小工具名与别的文件重复（如 art2 与 art 的 INK/aE），整个包进一层函数，只把 export 的名字放出来
+const WRAP = new Set(['bestiary', 'art2']);
 let out = '/* 蛊码 GuCode —— 由 tools/build.mjs 从 src/ 生成，请改 src/ 再构建 */\n(() => {\n"use strict";\n';
 for (const n of order) {
-  const s = fs.readFileSync(path.join(root, 'src', n + '.js'), 'utf8')
-    .replace(/^import .*$/gm, '').replace(/^export (?=(const|function|class|let|async))/gm, '');
-  out += `// ---- src/${n}.js\n${s}\n`;
+  const raw = fs.readFileSync(path.join(root, 'src', n + '.js'), 'utf8');
+  const s = raw.replace(/^import .*$/gm, '').replace(/^export (?=(const|function|class|let|async))/gm, '');
+  if (WRAP.has(n)) {
+    const names = [...raw.matchAll(/^export (?:const|let|class|function|async function)\s+([A-Za-z_$][\w$]*)/gm)].map(m => m[1]);
+    out += `// ---- src/${n}.js（包一层，只放出 export）\nconst { ${names.join(', ')} } = (() => {\n${s}\nreturn { ${names.join(', ')} };\n})();\n`;
+  } else out += `// ---- src/${n}.js\n${s}\n`;
 }
 out += '})();\n';
 fs.writeFileSync(path.join(root, 'gucode.js'), out);

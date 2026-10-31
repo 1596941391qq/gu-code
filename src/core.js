@@ -1,4 +1,6 @@
 // 蛊码 GuCode · 纯逻辑：种子随机、数据表、养成、坐标码。不碰 DOM。
+import { NEW_SPECIES, NEW_TRAITS, NEW_COMBOS, NEW_SUMMONS, NEW_POOL, OLD_EXTRA, loreWithEats, trCapOf, natMulOf } from './bestiary.js';
+export const natMulFor = r => natMulOf(r);   // 本命描述里〔〕数字按转数换算（界面用）
 export function hashStr(s) { s = String(s); let h = 2166136261 >>> 0; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
 export function makeRng(seed) {
   let a = (typeof seed === 'number' ? seed : hashStr(seed)) >>> 0;
@@ -8,12 +10,13 @@ export function makeRng(seed) {
   return r;
 }
 
-export const MAXV = 3, MAXTR = 4, MAXQ = 2, MAXATT = 2, SLOTS = 7;
+export const MAXV = 3, MAXTR = 4, MAXQ = 1, MAXATT = 2, SLOTS = 7;
 export const REALMS = ['凡人', '一转', '二转', '三转', '四转', '五转'];
 export const SLOT_BY_REALM = [3, 4, 5, 6, 7, 7];   // 上阵格（空窍）按境界开放：凡人 3、一转 4、二转 5、三转 6、四转起 7
 export const slotCap = r => SLOT_BY_REALM[Math.min(5, Math.max(0, r | 0))];
-export const POOL_TIERS = [['boar', 'fire', 'twin', 'iron', 'thorn', 'bone'], ['mantis', 'queen', 'cicada'], ['drum', 'scorp', 'moth']];
-export const poolFor = r => POOL_TIERS.slice(0, Math.min(3, (r | 0) + 1)).flat();
+// 蛊池 6 档（下标 = 境界）：旧 12 种在前三档，蛊典扩充的新蛊按档追加；六转仙蛊不进任何一档
+export const POOL_TIERS = [['boar', 'fire', 'twin', 'iron', 'thorn', 'bone'], ['mantis', 'queen', 'cicada'], ['drum', 'scorp', 'moth'], [], [], []].map((t, i) => [...t, ...NEW_POOL[i]]);
+export const poolFor = r => POOL_TIERS.slice(0, Math.min(6, (r | 0) + 1)).flat();
 // 转数（向原书靠拢：一转到五转，六转仙蛊另加）。基础转数 = 物种所在蛊池档位 + 1（凡人池一转，往上依次二转、三转）；
 // 物种带 rank 字段时以它为准。三只同种同转合炼成高一转：同一只最多合炼 fuse 次，且不超过 max。
 // 驱使上限：境界 r 的蛊师只能让转数 ≤ r + over 的蛊上阵（凡人驱使一转，一转蛊师驱使二转……），超出的可以收着，不能上阵。
@@ -24,32 +27,35 @@ export const fuseLv = g => Math.max(0, rankOf(g) - baseRank(g.sp));     // 合�
 export const canWield = (g, realm) => rankOf(g) <= (realm | 0) + RANK.over;
 export const rankName = g => RANK.names[rankOf(g)] + SP[g.sp].n;          // 「一转野猪蛊」
 export const ECON = { node: 2, buy: 3, refresh: 1, tokPer: 25, lose: 1, win: { easy: 3, mid: 5, hard: 8, trib: 10, endless: 6, duel: 0 } };
-export const trCap = g => MAXTR + fuseLv(g);
 // 蛊囊（备战区）：开茧、宝箱、夺蛊得到的蛊先放这里，拖进空窍才上阵；也用来攒同种合炼。
 // cap 凡人时的格数，perRealm 每升一阶加几格（五转 18 格）；feedMul 吃灵气的比例（只吃一半）；
 // meltMul 满了选「炼化」时按卖价的倍数折元石，rarSell 按品质（凡良珍绝天）再乘；trioOff 货架三只同种一起买的折扣
 export const BAG = { cap: 8, perRealm: 2, feedMul: 0.5, meltMul: 1.5, rarSell: [1, 1.2, 1.5, 2, 3], trioOff: 0.8 };
+export const trCap = g => Math.min(MAXTR + fuseLv(g), trCapOf(g.sp));
 export const bagCap = realm => BAG.cap + BAG.perRealm * Math.min(5, Math.max(0, realm | 0));
 
-// 词条：v 为层数（1–3），同名合并即叠层
+// 副词条：突变、炼附、吞噬得来，v 为层数（1–3），同名合并即叠层；数值按本蛊攻血的百分比，后期不贬值。dao = 所属的道（突变三选一尽量不同道）
+// 本命技（每个物种独有一个，由物种推出、不进坐标码）与新增的 6 个副词条在 bestiary.js 的 NEW_TRAITS
 export const TRAITS = {
-  strike: { n: '开锋', ch: '锋', trig: '开战', d: v => `开战：对随机敌蛊造成 ${2 * v} 伤害` },
-  shell:  { n: '护体', ch: '甲', trig: '开战', d: v => `开战：获得 ${3 * v} 点护体（先挡伤害）` },
-  thorn:  { n: '反噬', ch: '棘', trig: '受击', d: v => `受击：对攻击者反噬 ${v + 1} 伤害` },
-  frenzy: { n: '狂血', ch: '狂', trig: '受击', d: v => `受击且存活：自身 +${v} 攻` },
-  split:  { n: '分影', ch: '影', trig: '受击', d: v => `首次受击存活：身后召唤 ${v + 1}/${v + 1} 分影` },
-  devour: { n: '噬魂', ch: '噬', trig: '击杀', d: v => `击杀：自身 +${2 * v}/+${2 * v}` },
-  legacy: { n: '遗泽', ch: '泽', trig: '亡语', d: v => `亡语：身后友蛊 +${2 * v}/+${2 * v}` },
-  spawn:  { n: '化生', ch: '化', trig: '亡语', d: v => `亡语：原地召唤 ${2 * v}/${2 * v} 蛊蛹` },
-  rally:  { n: '应召', ch: '召', trig: '召唤', d: v => `有友蛊被召唤时：自身 +${v}/+${v}` },
-  war:    { n: '擂鼓', ch: '鼓', trig: '回合开始', d: v => `回合开始：最前方友蛊 +${v} 攻` },
+  strike: { n: '开锋', ch: '锋', trig: '开战', dao: '炎', d: v => `开战：对随机敌蛊造成本蛊攻击 ${20 * v}% 的伤害` },
+  shell:  { n: '护体', ch: '甲', trig: '开战', dao: '金', d: v => `开战：获得最大血量 ${8 * v}% 的护体（先挡伤害）` },
+  thorn:  { n: '反噬', ch: '棘', trig: '受击', dao: '金', d: v => `被敌方打中：把这一下伤害的 ${15 * v}% 反噬回去（至少 1）` },
+  frenzy: { n: '狂血', ch: '狂', trig: '受击', dao: '力', d: v => `被打中且还活着：攻击 +${4 * v}%（按开战攻，至少 1）` },
+  split:  { n: '分影', ch: '影', trig: '受击', dao: '变化', d: v => `第一次被打中还活着：身后召唤分影（本蛊攻血 ${12 * v}%）` },
+  devour: { n: '噬魂', ch: '噬', trig: '击杀', dao: '食', d: v => `击杀：攻血各 +${6 * v}%` },
+  legacy: { n: '遗泽', ch: '泽', trig: '亡语', dao: '魂', d: v => `亡语：身后友蛊攻血 +${8 * v}%（按它的开战攻血）` },
+  spawn:  { n: '化生', ch: '化', trig: '亡语', dao: '奴', d: v => `亡语：原地召唤蛊蛹（本蛊攻血 ${15 * v}%）` },
+  rally:  { n: '应召', ch: '召', trig: '召唤', dao: '奴', d: v => `有友蛊被召唤时：攻血各 +${3 * v}%（至少 1）` },
+  war:    { n: '擂鼓', ch: '鼓', trig: '回合开始', dao: '力', d: v => `回合开始：最前方友蛊攻击 +${3 * v}%（至少 1）` },
   // 站位词条（只能往后加：坐标码按序号编码）
-  guard:    { n: '护卫', ch: '卫', trig: '开战', d: v => `开战：自身 +${2 * v} 护体；相邻友蛊第一次挨打时由它代受` },
-  link:     { n: '连心', ch: '连', trig: '开战', d: v => `开战：相邻友蛊各 +${v}/+${v}` },
-  snipe:    { n: '暗针', ch: '针', trig: '开战', d: v => `开战：不在最前时，射敌方最末一只 ${2 * v + 1} 伤害` },
-  vanguard: { n: '先登', ch: '登', trig: '开战', d: v => `开战：站最前时自身 +${v}/+${2 * v}` },
+  guard:    { n: '护卫', ch: '卫', trig: '开战', dao: '宇', d: v => `开战：获得最大血量 ${6 * v}% 的护体；相邻友蛊第一次挨打时由它代受` },
+  link:     { n: '连心', ch: '连', trig: '开战', dao: '宇', d: v => `开战：相邻友蛊攻血各 +${5 * v}%` },
+  snipe:    { n: '暗针', ch: '针', trig: '开战', dao: '宇', d: v => `开战：不在最前时，射敌方最末一只本蛊攻击 ${20 * v}% 的伤害` },
+  vanguard: { n: '先登', ch: '登', trig: '开战', dao: '宇', d: v => `开战：站最前时攻击 +${4 * v}%、血 +${8 * v}%` },
 };
-export const TRAIT_KEYS = Object.keys(TRAITS);
+Object.assign(TRAITS, NEW_TRAITS);   // 蛊典扩充的词条接在后面（序号只增不改）
+export const TRAIT_ALL = Object.keys(TRAITS);                         // 全部词条：坐标码按这个序号编码
+export const TRAIT_KEYS = TRAIT_ALL.filter(k => !TRAITS[k].innate);   // 突变池（副词条）：本命技不进
 
 // 物种：每只一个直白词条。ab = 附蛊简字
 export const SPECIES = [
@@ -66,9 +72,20 @@ export const SPECIES = [
   { id: 'scorp',  n: '蝎尾蛊', ab: '蝎', atk: 1, hp: 2, t: 'strike', v: 2, t2: 'snipe', v2: 1, lore: '一针定生死' },
   { id: 'moth',   n: '月蛾蛊', ab: '蛾', atk: 1, hp: 2, t: 'legacy', v: 2, lore: '燃尽自己照亮后人' },
 ];
+// 旧 12 种补上转数 / 喂食偏好 / 流派；蛊典扩充的 52 种接在后面（坐标码按下标编码，只能往后加）
+SPECIES.forEach(s => { Object.assign(s, OLD_EXTRA[s.id]); s.lore = loreWithEats(s.lore, s.food); });
+SPECIES.push(...NEW_SPECIES);
+export const NORMAL_SPECIES = SPECIES.filter(s => !s.immortal);   // 随机池（幽灵、天劫、招蛊）：六转仙蛊只能开茧获得
 export const SP = Object.fromEntries(SPECIES.map(s => [s.id, s]));
-export const spTraits = id => { const s = SP[id]; return s.t2 ? [[s.t, s.v], [s.t2, s.v2]] : [[s.t, s.v]]; };
-export const SUMMON_NAMES = { pupa: '蛊蛹', shade: '分影', lunar: '月影' };
+export const spTraits = id => [];   // 新蛊出生不带副词条：物种的本事在本命技里（natOf），副词条靠突变、炼附、吞噬
+// 本命与转数：本命由物种推出；单只蛊的转数 = 物种基础转数 + 每升一星两转（最高五转，仙蛊六转）。三转、五转各觉醒一次本命
+export const natOf = sp => (SP[sp] && SP[sp].nat) || null;
+export const guRank = g => { const s = SP[g.sp]; if (!s) return 1; return s.immortal ? 6 : rankOf(g); };
+export const awOf = g => { const r = guRank(g); return r >= 5 ? 2 : r >= 3 ? 1 : 0; };
+// 副词条能不能上这只蛊：本命技不行，与本命重复的（dup）不行
+export const subOk = (g, id) => !!TRAITS[id] && !TRAITS[id].innate && !((SP[g.sp] || {}).dup || []).includes(id);
+export function cleanTr(g) { if (g && g.tr) g.tr = g.tr.filter(([id]) => subOk(g, id)); return g; }   // 旧存档、旧码：去掉与本命重复的词条
+export const SUMMON_NAMES = { pupa: '蛊蛹', shade: '分影', lunar: '月影', ...NEW_SUMMONS };
 
 // 怪癖：武火超频的双刃剑
 export const QUIRKS = {
@@ -78,35 +95,36 @@ export const QUIRKS = {
   echo:     { n: '回响', d: '词条触发后 35% 再触发一次；生命 -2' },
   timid:    { n: '怯阵', d: '居最前时攻 -2；在后排时每回合 +1 血' },
   martyr:   { n: '殉道', d: '亡语触发两次；生命 -2' },
-  greedy:   { n: '贪噬', d: '击杀额外 +2/+2；受到伤害 +1' },
+  greedy:   { n: '贪噬', d: '击杀额外攻血 +10%；受到伤害 +1' },
 };
 export const QUIRK_KEYS = Object.keys(QUIRKS);
 
 // 杀招：本体 + 附蛊 的物种集合命中配方即成（三蛊配方优先）
 export const COMBOS = [
-  { id: 'sanzhu',   n: '烈火三豕冲', need: ['boar', 'fire', 'twin'], d: '开战：冲阵，对敌方前三只各造成本蛊攻击一半的伤害' },
-  { id: 'jinjia',   n: '金甲不坏身', need: ['iron', 'thorn'],  d: '开战再得 2 护体；护体未破时受击，反噬翻倍' },
-  { id: 'wangu',    n: '万蛊朝宗',   need: ['queen', 'bone'],  d: '首次受击存活：身后召唤一只 1/1 蛊蛹；任一友蛊被召唤时，全体友蛊 +1/+1' },
-  { id: 'tuoke',    n: '金蝉脱壳',   need: ['cicada', 'twin'], d: '首次阵亡时，以一半攻血原地蜕生' },
+  { id: 'sanzhu',   n: '烈火三豕冲', need: ['boar', 'fire', 'twin'], d: '开战：冲阵，对敌方前三只各造成本蛊攻击 25% 的伤害' },
+  { id: 'jinjia',   n: '金甲不坏身', need: ['iron', 'thorn'],  d: '开战再得最大血量 15% 的护体；护体未破时受击，反噬与荆棘翻倍' },
+  { id: 'wangu',    n: '万蛊朝宗',   need: ['queen', 'bone'],  d: '首次受击存活：身后召唤蛊蛹（本蛊攻血 12%）；任一友蛊被召唤时，全体友蛊攻血 +3%' },
+  { id: 'tuoke',    n: '金蝉脱壳',   need: ['cicada', 'twin'], d: '首次阵亡时原地蜕生：攻击不变，血回一半' },
   { id: 'duopo',    n: '噬心夺魄',   need: ['mantis', 'scorp'], d: '击杀后，立刻对下一只敌蛊造成等同攻击的伤害（每回合一次）' },
-  { id: 'pozhen',   n: '擂鼓破阵',   need: ['drum', 'boar'],   d: '回合开始：全体友蛊 +1/+1' },
-  { id: 'shishan',  n: '尸山月影',   need: ['moth', 'bone'],   d: '亡语：再召唤一只继承本蛊一半攻击的月影' },
-  { id: 'fenshen',  n: '焚身诀',     need: ['fire', 'mantis'], d: '击杀：对敌方全体造成 3 伤害' },
-  { id: 'jingji',   n: '荆棘王座',   need: ['thorn', 'queen'], d: '受击：全体友蛊获得 1 点护体' },
-  { id: 'liaoyuan', n: '天火燎原',   need: ['fire', 'scorp'],  d: '开战：开锋改为波及敌方全体（每只伤害减半）' },
+  { id: 'pozhen',   n: '擂鼓破阵',   need: ['drum', 'boar'],   d: '回合开始：全体友蛊攻血 +3%（按开战攻血）' },
+  { id: 'shishan',  n: '尸山月影',   need: ['moth', 'bone'],   d: '亡语：再召唤一只月影（本蛊一半攻击、40% 血）' },
+  { id: 'fenshen',  n: '焚身诀',     need: ['fire', 'mantis'], d: '击杀：对敌方全体造成本蛊攻击 20% 的伤害' },
+  { id: 'jingji',   n: '荆棘王座',   need: ['thorn', 'queen'], d: '被敌方打中：全体友蛊获得本蛊最大血量 4% 的护体' },
+  { id: 'liaoyuan', n: '天火燎原',   need: ['fire', 'scorp'],  d: '开战：流火与开锋改为波及敌方全体（流火每只按四分之一算，开锋每只减半）' },
 ];
+COMBOS.push(...NEW_COMBOS);   // 新杀招都是两蛊配方，排在旧配方之后
 export const COMBO = Object.fromEntries(COMBOS.map(c => [c.id, c]));
 
 // 道痕：整局被动，渡劫成功三选一。顺序固定（坐标码按位编码），只能往后加
 export const MARKS = {
-  luKou:     { n: '炉口淬锋', d: '开战：炉口（最前）的蛊 +2 攻' },
-  tieBi:     { n: '铁壁',     d: '开战：全体友蛊 +2 护体' },
+  luKou:     { n: '炉口淬锋', d: '开战：炉口（最前）的蛊攻击 +20%' },
+  tieBi:     { n: '铁壁',     d: '开战：全体友蛊获得最大血量 10% 的护体' },
   buMie:     { n: '不灭',     d: '每场第一只阵亡的友蛊以 1 血复生' },
-  shaZhao:   { n: '杀招开光', d: '身负杀招的蛊开战 +3/+3' },
-  qunGu:     { n: '群蛊',     d: '召唤出的蛊蛹、分影、月影 +2/+2' },
-  fanShi:    { n: '反噬加深', d: '反噬伤害 +1' },
-  shiHun:    { n: '噬魂入骨', d: '击杀时额外 +1/+1' },
-  xianSheng: { n: '先声夺人', d: '开锋伤害 +2' },
+  shaZhao:   { n: '杀招开光', d: '身负杀招的蛊开战攻血 +20%' },
+  qunGu:     { n: '群蛊',     d: '召唤出来的蛊攻血 +30%' },
+  fanShi:    { n: '反噬加深', d: '反噬伤害 +50%' },
+  shiHun:    { n: '噬魂入骨', d: '击杀时攻血额外 +5%' },
+  xianSheng: { n: '先声夺人', d: '开锋伤害 +50%' },
   yiZe:      { n: '遗泽绵长', d: '遗泽与化生多算一层' },
   heLian:    { n: '合炼得道', d: '合炼升转时额外觉醒一个词条' },
   shengCai:  { n: '生财有道', d: '斗蛊所得元石 +50%' },
@@ -121,6 +139,7 @@ export function newGu(sp) { const s = SP[sp]; return { uid: nuid(), sp, rank: ba
 export function starterTeam() { return ['boar', 'fire', 'twin'].map(newGu); }
 
 export function addTrait(g, id, v, bonus) {
+  if (!subOk(g, id)) return false;
   const e = g.tr.find(x => x[0] === id);
   if (e) { e[1] = Math.min(MAXV, e[1] + v + (bonus ? 1 : 0)); return true; }
   if (g.tr.length >= trCap(g)) return false;
@@ -143,11 +162,19 @@ export function skillOf(g) {
   return null;
 }
 export function mutateGu(g, rng) {
-  const fresh = TRAIT_KEYS.filter(k => !g.tr.some(t => t[0] === k));
+  const fresh = TRAIT_KEYS.filter(k => subOk(g, k) && !g.tr.some(t => t[0] === k));
   if (g.tr.length < trCap(g) && fresh.length) { const t = rng.pick(fresh); g.tr.push([t, 1]); return t; }
   const up = g.tr.filter(t => t[1] < MAXV);
   if (up.length) { const t = rng.pick(up); t[1]++; return t[0]; }
-  g.atk++; g.hp++; return g.tr[0][0];
+  g.atk++; g.hp++; return g.tr.length ? g.tr[0][0] : fresh[0] || TRAIT_KEYS[0];
+}
+// 三选一尽量来自不同的道：先按道分组，随机挑三个不同的道，每道出一个；道不够三个再从剩下的补
+export function pickDiverse(keys, rng, n = 3) {
+  const by = {}; keys.forEach(k => { const d = (TRAITS[k] && TRAITS[k].dao) || k; (by[d] ||= []).push(k); });
+  const daos = Object.keys(by), out = [];
+  while (out.length < n && daos.length) { const d = daos.splice(rng.int(daos.length), 1)[0]; out.push(by[d].splice(rng.int(by[d].length), 1)[0]); }
+  const rest = keys.filter(k => !out.includes(k)); while (out.length < n && rest.length) out.push(rest.splice(rng.int(rest.length), 1)[0]);
+  return out;
 }
 export function addQuirk(g, rng) {
   if (g.q.length >= MAXQ) return null;
@@ -164,9 +191,9 @@ export const NODES = {
   temper: { n: '淬体', ch: '淬', cost: 45, d: '最左蛊 +2 攻 +2 血' },
   mutate: { n: '突变', ch: '变', cost: 55, d: '最左蛊觉醒一个词条（三选一）' },
   split:  { n: '分裂', ch: '裂', cost: 60, d: '最左蛊裂出六成之力的分身，紧贴其右，词条全带' },
-  devour: { n: '吞噬', ch: '吞', cost: 55, d: '最左蛊吞下你挑的一只：得其六成攻血、全部词条与附蛊' },
+  devour: { n: '吞噬', ch: '吞', cost: 55, d: '最左蛊吞下你挑的一只：得其六成攻血与附蛊（副词条不随吞噬转移）' },
   summon: { n: '招蛊', ch: '招', cost: 40, d: '三选一：招来一只新蛊，入最右空窍' },
-  refine: { n: '炼附', ch: '炼', cost: 60, d: '把最右蛊炼成最左蛊的附蛊：得其四成攻血，同名词条质变 +1，配方成杀招' },
+  refine: { n: '炼附', ch: '炼', cost: 60, d: '把最右蛊炼成最左蛊的附蛊：得其四成攻血，学到它教的副词条（同名质变 +1，副词条最多 2 个），配方成杀招' },
 };
 export function nodeOk(type, team, cap = SLOTS) {
   const n = team.length;
@@ -181,7 +208,7 @@ export function nodeOk(type, team, cap = SLOTS) {
 }
 export function mkNode(type, rng) {
   const n = { type, cost: NODES[type].cost + rng.int(3) * 5 };
-  if (type === 'summon') n.sp = rng.pick(SPECIES).id;
+  if (type === 'summon') n.sp = rng.pick(NORMAL_SPECIES).id;
   return n;
 }
 export function rollCompass(rng, team, first, cap = SLOTS) {
@@ -204,7 +231,7 @@ export function applyNode(team, node, rng, opt = {}) {
       const vi = typeof opt.pick === 'number' && opt.pick > 0 && team[opt.pick] ? opt.pick : 1;
       const v = team.splice(vi, 1)[0]; gone.push(v.uid);
       L.atk += Math.ceil(v.atk * 0.6); L.hp += Math.ceil(v.hp * 0.6);
-      v.tr.forEach(([id, val]) => addTrait(L, id, val));
+      // 副词条只从突变和炼附来：吞噬只得攻血、怪癖与附蛊，词条不随之转移
       v.q.forEach(q => { if (!L.q.includes(q) && L.q.length < MAXQ) L.q.push(q); });
       const before = comboOf(L);
       v.att.forEach(a => { if (L.att.length < MAXATT) L.att.push(a); });
@@ -212,11 +239,11 @@ export function applyNode(team, node, rng, opt = {}) {
       const c = comboOf(L); if (c && c !== before) combo = { uid: L.uid, n: c.n };
       fx.push({ uid: L.uid, txt: '吞·' + SP[v.sp].ab, k: 'eat' }); break;
     }
-    case 'summon': { const g = newGu((opt.pick && SP[opt.pick]) ? opt.pick : node.sp || rng.pick(SPECIES).id); team.push(g); fx.push({ uid: g.uid, txt: '招来', k: 'new' }); break; }
+    case 'summon': { const g = newGu((opt.pick && SP[opt.pick]) ? opt.pick : node.sp || rng.pick(NORMAL_SPECIES).id); team.push(g); fx.push({ uid: g.uid, txt: '招来', k: 'new' }); break; }
     case 'refine': {
       const s = team.pop(); gone.push(s.uid); const before = comboOf(L);
       L.att.push(s.sp); L.atk += Math.ceil(s.atk * 0.4); L.hp += Math.ceil(s.hp * 0.4);
-      s.tr.forEach(([id, val]) => addTrait(L, id, val, true));
+      if (SP[s.sp] && SP[s.sp].sub) addTrait(L, SP[s.sp].sub, 1, true); s.tr.forEach(([id, val]) => addTrait(L, id, val, true));   // 炼附：先学附蛊教的那一个，再合流它的副词条（同名质变 +1，满 2 个就不再加新的）
       L.fed += s.fed; L.mut += s.mut;
       const c = comboOf(L); if (c && c !== before) combo = { uid: L.uid, n: c.n };
       fx.push({ uid: L.uid, txt: '附·' + SP[s.sp].ab, k: 'eat' }); break;
@@ -233,7 +260,7 @@ export function applyNode(team, node, rng, opt = {}) {
 // 三选一：突变给 3 个词条，招蛊给 3 只蛊，吞噬给全部可吃的（下标）
 export function nodeChoices(node, team, rng, realm = 5) {
   const L = team[0], pick3 = arr => { const a = [...arr], o = []; while (o.length < 3 && a.length) o.push(a.splice(rng.int(a.length), 1)[0]); return o; };
-  if (node.type === 'mutate' && L) return pick3(TRAIT_KEYS.filter(k => { const e = L.tr.find(t => t[0] === k); return e ? e[1] < MAXV : L.tr.length < trCap(L); }));
+  if (node.type === 'mutate' && L) return pickDiverse(TRAIT_KEYS.filter(k => { if (!subOk(L, k)) return false; const e = L.tr.find(t => t[0] === k); return e ? e[1] < MAXV : L.tr.length < trCap(L); }), rng);
   if (node.type === 'summon') return pick3(poolFor(realm));
   if (node.type === 'devour') return team.map((g, i) => i).slice(1);
   return null;
@@ -277,7 +304,7 @@ export const meltValue = g => Math.round(sellValue(g) * BAG.meltMul * BAG.rarSel
 
 // 程序生成同阶阵容（幽灵 / 天劫），用同一套养成规则随机走路
 export function genTeam(rng, power, cap = SLOTS) {
-  const team = [newGu(rng.pick(SPECIES).id)];
+  const team = [newGu(rng.pick(NORMAL_SPECIES).id)];
   for (let i = 0; i < power; i++) {
     const types = Object.keys(NODES).filter(t => nodeOk(t, team, cap));
     const t = (team.length < 3 && types.includes('summon') && rng() < 0.6) ? 'summon' : rng.pick(types);
@@ -286,7 +313,7 @@ export function genTeam(rng, power, cap = SLOTS) {
     const tg = t === 'summon' ? team[team.length - 1] : team[0];
     if (tg) tg.fed += node.cost * 1000;
   }
-  while (team.length < 2) team.push(newGu(rng.pick(SPECIES).id));
+  while (team.length < 2) team.push(newGu(rng.pick(NORMAL_SPECIES).id));
   return arrangeTeam(team);
 }
 // ---------- 布阵：站位效果与敌方排阵 ----------
@@ -295,12 +322,12 @@ export function posLinks(team) {
   const out = [], n = team.length, tv = (g, id) => { const e = g.tr.find(t => t[0] === id); return e ? e[1] : 0; };
   team.forEach((g, i) => {
     let v;
-    if ((v = tv(g, 'legacy')) && i + 1 < n) out.push({ to: i + 1, from: i, id: 'legacy', txt: `+${2 * v}/+${2 * v}` });
-    if ((v = tv(g, 'war'))) out.push({ to: 0, from: i, id: 'war', txt: `+${v}攻/回合` });
-    if ((v = tv(g, 'link'))) [i - 1, i + 1].forEach(j => { if (j >= 0 && j < n) out.push({ to: j, from: i, id: 'link', txt: `+${v}/+${v}` }); });
+    if ((v = tv(g, 'legacy')) && i + 1 < n) out.push({ to: i + 1, from: i, id: 'legacy', txt: `攻血 +${8 * v}%` });
+    if ((v = tv(g, 'war'))) out.push({ to: 0, from: i, id: 'war', txt: `攻 +${3 * v}%/回合` });
+    if ((v = tv(g, 'link'))) [i - 1, i + 1].forEach(j => { if (j >= 0 && j < n) out.push({ to: j, from: i, id: 'link', txt: `攻血 +${5 * v}%` }); });
     if (tv(g, 'guard')) [i - 1, i + 1].forEach(j => { if (j >= 0 && j < n) out.push({ to: j, from: i, id: 'guard', txt: '代受一击' }); });
-    if ((v = tv(g, 'vanguard')) && i === 0) out.push({ to: 0, from: 0, id: 'vanguard', txt: `+${v}/+${2 * v}` });
-    if ((v = tv(g, 'snipe')) && i > 0) out.push({ to: -1, from: i, id: 'snipe', txt: `敌末位 -${2 * v + 1}` });
+    if ((v = tv(g, 'vanguard')) && i === 0) out.push({ to: 0, from: 0, id: 'vanguard', txt: `攻 +${4 * v}% 血 +${8 * v}%` });
+    if ((v = tv(g, 'snipe')) && i > 0) out.push({ to: -1, from: i, id: 'snipe', txt: `射敌末位 ${20 * v}% 攻` });
   });
   return out;
 }
@@ -347,7 +374,7 @@ export function arrangeTeam(team) {
 }
 export const TRIB_NAMES = ['心魔劫', '雷劫', '火劫', '风劫', '天人劫'];
 // 修行路：每一阶额外解锁说明（空窍格数取 SLOT_BY_REALM，蛊池取 POOL_TIERS）
-export const REALM_NOTES = ['开局三选一本命蛊', '蛊池加入一转档', '蛊池全开，可合炼到 ★3', '敌阵开始出现杀招与怪癖', '天人劫前最后一阶', '登顶，开启无尽劫'];
+export const REALM_NOTES = ['开局三选一本命蛊', '蛊池加入一转档', '蛊池加入二转档，可合炼到 ★3', '蛊池加入三转档，敌阵开始出现杀招与怪癖', '蛊池加入四转档，天人劫前最后一阶', '蛊池加入五转档，登顶开启无尽劫'];
 // 无尽劫：五转之后逐层变强，层数写进分享卡
 export const ENDLESS = { basePower: 80, perFloor: 3, atkPerFloor: 1, hpPerFloor: 2, baseAtk: 5, baseHp: 10 };
 export function endlessTeam(floor) {
@@ -373,7 +400,7 @@ export const GHOST_NAMES = ['夜码人', '零点蛊师', '断点散人', '递归
 // ---------- 界壁坐标码：阵容 → 位流 → base64url ----------
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 const SPI = Object.fromEntries(SPECIES.map((s, i) => [s.id, i]));
-const TRI = Object.fromEntries(TRAIT_KEYS.map((k, i) => [k, i]));
+const TRI = Object.fromEntries(TRAIT_ALL.map((k, i) => [k, i]));
 const QUI = Object.fromEntries(QUIRK_KEYS.map((k, i) => [k, i]));
 function utf8(s) { return typeof TextEncoder !== 'undefined' ? new TextEncoder().encode(s) : Buffer.from(s, 'utf8'); }
 function unutf8(b) { return typeof TextDecoder !== 'undefined' ? new TextDecoder().decode(new Uint8Array(b)) : Buffer.from(b).toString('utf8'); }
@@ -431,7 +458,7 @@ export const WOUND = { max: 3, healTok: 60000, healSec: 240, loseNodePct: 0.3 };
 // 战斗手感：暴击概率与倍数（种子随机，复盘可复现）
 export const BATTLE = { crit: 0.10, critMul: 2 };
 // 战斗回放节奏（毫秒，1 倍速基准）。界面按 playMs 自动缩放，使一局约 15–25 秒
-export const EV_MS = { begin: 900, turn: 220, clash: 640, hit: 60, dmg: 200, buff: 110, trig: 300, combo: 1700, comboQuiet: 180, summon: 260, faint: 400, end: 300 };
+export const EV_MS = { begin: 900, turn: 220, clash: 640, hit: 60, dmg: 200, buff: 110, trig: 300, combo: 1700, comboQuiet: 180, summon: 260, faint: 400, status: 160, end: 300 };
 export function playMs(log) {
   const seen = new Set(); let t = 0;
   for (const e of log) t += e.t === 'dmg' ? (e.k === 'hit' ? EV_MS.hit : EV_MS.dmg) : e.t === 'combo' ? ((e.quiet || seen.has(e.uid)) ? EV_MS.comboQuiet : (seen.add(e.uid), EV_MS.combo)) : (EV_MS[e.t] || 0);

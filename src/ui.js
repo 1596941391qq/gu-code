@@ -1,5 +1,5 @@
 // 蛊码 GuCode · 界面与流程（渲染层；逻辑都在 core/battle）
-import { mergeAll, makeRng, SPECIES, SP, TRAITS, QUIRKS, NODES, REALMS, TRIB_NAMES, GHOST_NAMES, SLOTS, MAXTR, MAXV, newGu, starterTeam, skillOf, comboOf, nodeOk, rollCompass, applyNode, genTeam, tribTeam, encodeTeam, decodeTeam, fmtTok, addTrait, COMBOS, hashStr, slotCap, SLOT_BY_REALM, poolFor, ECON, MARKS, rollMarks, nodeChoices, rollShop, canBuy, buyGu, sellValue, ghostTrio, trCap, REALM_NOTES, POOL_TIERS, endlessTeam, ENDLESS, EV_MS, playMs, tempoFor, fmtNum, spTraits, posLinks, posNote, WOUND, RANK, baseRank, rankOf, fuseLv, canWield, rankName, BAG, bagCap, canTake, placeGu, meltValue, sameRank } from './core.js';
+import { natMulFor, natOf, awOf, guRank, cleanTr, mergeAll, makeRng, SPECIES, SP, TRAITS, QUIRKS, NODES, REALMS, TRIB_NAMES, GHOST_NAMES, SLOTS, MAXTR, MAXV, newGu, starterTeam, skillOf, comboOf, nodeOk, rollCompass, applyNode, genTeam, tribTeam, encodeTeam, decodeTeam, fmtTok, addTrait, COMBOS, hashStr, slotCap, SLOT_BY_REALM, poolFor, ECON, MARKS, rollMarks, nodeChoices, rollShop, canBuy, buyGu, sellValue, ghostTrio, trCap, REALM_NOTES, POOL_TIERS, endlessTeam, ENDLESS, EV_MS, playMs, tempoFor, fmtNum, spTraits, posLinks, posNote, WOUND, RANK, baseRank, rankOf, fuseLv, canWield, rankName, BAG, bagCap, canTake, placeGu, meltValue, sameRank } from './core.js';
 import { battle } from './battle.js';
 import { guSVG, ART_DEFS } from './art.js';
 import { TokenSource, VSC } from './tokens.js';
@@ -98,6 +98,8 @@ let S = fresh(), phase = 'yang', rate = 0, hot = false, inBattle = false, booted
 const src = new TokenSource(onTick);
 const R = () => makeRng(S.seed + ':' + (S.step++));
 const effA = g => Math.max(1, g.atk - (g.wound || 0)), effH = g => Math.max(1, g.hp - (g.wound || 0));
+const natDesc = sp => { const k = natOf(sp); return k ? `本命·${TRAITS[k].n}：${TRAITS[k].d(1, natMulFor(SP[sp].rank))}` : ''; };
+const natChip = g => { const k = natOf(g.sp); return k ? `<span class="tc nat" data-tip="${esc('本命·' + TRAITS[k].n + '：' + TRAITS[k].d(1, natMulFor(guRank(g))))}">${TRAITS[k].ch}</span>` : ''; };
 const trChars = tr => (Array.isArray(tr) ? tr : Object.entries(tr)).map(([id, v]) => `<span class="tc" data-tip="${esc(TRAITS[id].n + (v > 1 ? ` ${v}层` : '') + '：' + TRAITS[id].d(v))}">${TRAITS[id].ch}${v > 1 ? `<sup>${v}</sup>` : ''}</span>`).join('');
 
 // ---------- 存档 ----------
@@ -125,7 +127,7 @@ function openCodex() {
 }
 function openPath() {
   const rows = REALMS.map((rn, r) => {
-    const newSp = r <= 2 ? POOL_TIERS[r].map(id => SP[id].n).join('、') : '';
+    const newSp = POOL_TIERS[r] ? POOL_TIERS[r].map(id => SP[id].n).join('、') : '';
     const state = r < S.realm ? 'done' : r === S.realm ? 'now' : '';
     const boss = r < 5 ? `渡${TRIB_NAMES[r]} → 晋${REALMS[r + 1]}` : '无尽劫';
     return `<li class="pr ${state}" data-tip="${esc(`${rn}：空窍 ${slotCap(r)} 格；${REALM_NOTES[r]}。${r < 5 ? `渡${TRIB_NAMES[r]}晋${REALMS[r + 1]}：全体 +1/+1、择一道痕。` : ''}`)}"><span class="pn">${rn}</span><span class="pb"><b>空窍 ${slotCap(r)} 格${newSp ? ' · 蛊市新蛊：' + newSp : ''}</b><small>${REALM_NOTES[r]} · ${boss}</small>${r === S.realm && r < 5 ? `<em>下一劫阵容 · 点开看详情</em>${miniRow(tribTeam(r), 'foe', 'trib')}` : ''}</span></li>`;
@@ -357,7 +359,7 @@ function startHTML() {
   while (picks.length < 3) { const s = pool.splice(r.int(pool.length), 1)[0]; picks.push(s); }
   return `<div class="start"><div class="hero"><h1 class="title">蛊码</h1><p class="tag">烧 Token，养蛊，斗道。</p>
   <p class="lead">万物皆可为蛊，蛊即是道。你写代码烧掉的每一个 token，都在喂这一窝蛊；停手的时候，它们替你去斗。</p></div>
-  <h2 class="step">三选一，结本命蛊</h2><div class="starters">${picks.map(id => { const s = SP[id]; return `<button class="starter" data-act="pick" data-sp="${id}"><div class="sart">${guSVG(id)}</div><b>${s.n}</b><span class="sst"><i class="a">${s.atk}</i><i class="h">${s.hp}</i></span><span class="strig">${spTraits(id).map(([t, v]) => TRAITS[t].d(v)).join('；')}</span><em>${s.lore}</em></button>`; }).join('')}</div>
+  <h2 class="step">三选一，结本命蛊</h2><div class="starters">${picks.map(id => { const s = SP[id]; return `<button class="starter" data-act="pick" data-sp="${id}"><div class="sart">${guSVG(id)}</div><b>${s.n}</b><span class="sst"><i class="a">${s.atk}</i><i class="h">${s.hp}</i></span><span class="strig">${natDesc(id)}</span><em>${s.lore}</em></button>`; }).join('')}</div>
   <p class="fine">${VSC ? '插件模式：读取本机 Claude Code / Codex 会话的 token 用量数字（不读内容）。' : '演示模式会模拟写代码的 token 流。存档只在本机。'}</p></div>`;
 }
 function mainHTML() {
@@ -685,6 +687,7 @@ async function comboCut(name, node, r) {
   await sleep(total * (0.8 - chars.length * 0.07)); cut.classList.add('out'); if (node) node.classList.remove('caster');
   setTimeout(() => cut.remove(), 400);
 }
+const STATUS_N = { psn: '中毒', para: '寄生', stun: '定身', web: '落网', miss: '扑空', swap: '换位', strip: '破甲', tie: '系丝', blitz: '疾袭', luck: '鸿运', hex: '夺志' };
 async function animEv(e, ros, seen) {
   const D = ms => sleep(ms * tempo / S.speed), nm = uid => ros[uid] ? ros[uid].name : '';
   switch (e.t) {
@@ -705,7 +708,8 @@ async function animEv(e, ros, seen) {
       if (e.src >= 0 && e.n > 0) { chain = chain.side === e.src ? { side: e.src, n: chain.n + 1 } : { side: e.src, n: 1 }; if (chain.n >= 3) showChain(chain.n, e.src); }
       return D(e.k === 'hit' ? EV_MS.hit : EV_MS.dmg);
     }
-    case 'buff': fxFloat(e.uid, e.sh ? `护+${e.sh}` : `+${e.a}/+${e.h}`.replace('/+0', '').replace('+0/', ''), 'buff'); return D(EV_MS.buff);
+    case 'buff': fxFloat(e.uid, e.sh ? `护+${e.sh}` : e.a < 0 ? `${e.a} 攻` : `+${e.a}/+${e.h}`.replace('/+0', '').replace('+0/', ''), e.a < 0 ? 'dmg' : 'buff'); return D(EV_MS.buff);
+    case 'status': { const lab = STATUS_N[e.k]; if (lab) { fxFloat(e.uid, lab, 'dmg skill'); blog(`${nm(e.uid)} · ${lab}`); } return D(EV_MS.status); }   // 蛊典扩充的状态：中毒/寄生/定身/落网/扑空/换位/破甲/系丝
     case 'trig': {
       const lab = e.id ? TRAITS[e.id].n : e.mk ? '道痕·' + MARKS[e.mk].n : QUIRKS[e.q].n, ch = e.id ? TRAITS[e.id].ch : e.mk ? '道' : QUIRKS[e.q].n[0];
       const n = bnode(e.uid); if (n) { const g = el(`<span class="tg">${ch}</span>`); n.appendChild(g); setTimeout(() => g.remove(), 700); }
@@ -717,7 +721,7 @@ async function animEv(e, ros, seen) {
       seen.add(e.uid); blog(`杀招【${e.n}】`);
       return comboCut(e.n, n, ros[e.uid]);
     }
-    case 'summon': blog(`${nm(e.uid)} 现身`); return D(EV_MS.summon);
+    case 'summon': { if (e.rewind) { const n = bnode(e.uid); if (n) n.classList.remove('die'); blog(`${nm(e.uid)} 随光阴倒回`); return D(EV_MS.summon); } blog(`${nm(e.uid)} 现身`); return D(EV_MS.summon); }
     case 'faint': {
       const n = bnode(e.uid);
       if (e === finalBlow && n) {   // 斩杀特写：慢放、墨迹炸开
@@ -846,6 +850,12 @@ function sheet(html, cls = '', stack = false) {
 }
 function closeSheet() { const a = document.querySelectorAll('.sheet-bg'); if (a.length) a[a.length - 1].remove(); }
 // 统一详情面板：自己的蛊、蛊市货架、敌蛊都用它。ctx.kind = mine | shop | foe | view
+// 本命 / 三转觉醒 / 五转觉醒：未到转数的灰着
+function natHTML(g) {
+  const k = natOf(g.sp), t = k && TRAITS[k]; if (!t) return '';
+  const a = awOf(g), r = guRank(g), L = (on, b, d) => `<li class="${on ? '' : 'off'}"><b>${b}</b>${esc(d)}</li>`;
+  return `<h4>本命 · ${t.n} <small>${r >= 6 ? '仙蛊' : REALMS[r]}蛊</small></h4><ul class="natl">${L(true, '本命', t.d(1, natMulFor(r)))}${L(a >= 1, '三转觉醒', t.aw[0](natMulFor(r)))}${L(a >= 2, '五转觉醒', t.aw[1](natMulFor(r)))}</ul>`;
+}
 function guDetail(g, ctx = {}) {
   const s = SP[g.sp], sk = skillOf(g), team = ctx.team, i = ctx.i | 0, kind = ctx.kind || 'view';
   const recv = team ? posLinks(team).filter(l => l.to === i && l.from !== i) : [];

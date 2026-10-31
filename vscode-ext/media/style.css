@@ -978,3 +978,7 @@ body:has(#lgx) :is(.float,.inkburst,.cut,.stamp,.chain){visibility:hidden}   /* 
 .fx-rkn{display:flex;align-items:baseline;gap:10px;margin-top:8px;font:400 20px var(--kai);color:var(--strong);letter-spacing:.12em}
 .fx-rkn small{font-size:15px;color:var(--rcol,var(--zhu2));letter-spacing:.3em}
 .fx-rkn.on i{display:inline-block;font-style:normal;animation:fx-inkin .36s ease-out both}
+/* 本命与觉醒：未到转数的灰着 */
+.natl li.off { opacity: .42; }
+.natl li.off b::after { content: ' · 未解锁'; font-weight: 400; font-size: .85em; }
+.tc.nat { outline: 1px solid currentColor; outline-offset: -1px; border-radius: 3px; }
