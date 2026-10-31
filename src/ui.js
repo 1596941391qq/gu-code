@@ -11,6 +11,7 @@ import { ledgerInit, openLedger, ledgerLimitRows, ledgerBindLimits } from './led
 import { DAOS, DAO } from './daos.js';
 import { FOODS, FOOD, FOOD_KIND } from './foods.js';
 import { resoHTML, resoGain, resoOf, daoChar, daoColor } from './reso.js';
+import { foodSVG } from './art-food.js';
 import { TRIP } from './hooks.js';
 
 const KEY = 'gucode.v1';
@@ -296,11 +297,14 @@ function mainHTML() {
   <footer class="foot"><button data-act="duelInput">粘贴坐标码应战</button><button data-act="tryOpen">试阵</button><button data-act="codex">蛊典</button><button data-act="path">道途</button><button data-act="ledger">履历</button><button data-act="reset" id="bReset">重开一局</button></footer>`;
 }
 // 卡面只放攻、血、速三个数，加被动技、主动技两个小印（没有主动技就不显示）；杀招成形时右上角亮朱印
+// 食物小图（art-food.js）：名字旁边都配图；fi(id) 行内小图，gearHTML(g) 蛊卡左下角的挂件小印
+const fi = id => `<span class="fi">${foodSVG(id)}</span>`;
+const gearHTML = g => (g && g.food && FOOD[g.food] ? `<span class="gear" title="${esc('挂件「' + FOOD[g.food].n + '」：' + FOOD[g.food].d)}">${foodSVG(g.food)}</span>` : '');
 const dzHTML = sp => { const c = daoChar(sp); return c ? `<span class="dz" style="--dc:${daoColor(sp)}">${esc(c)}</span>` : ''; };
 function guCard(g, combo) {
   const nat = natOfG(g), act = actOfG(g), k = cellOf(g), over = rankOf(g) > driveCap(S.realm);
   return `<button class="gu${over ? ' over' : ''}" data-act="gu" data-uid="${g.uid}" data-drag="${k}" data-tip-fn="gu">
-  <span class="art">${guSVG(g.sp, { rank: rankOf(g) })}</span><span class="rk rk${rankOf(g)}">${RANK.ch[rankOf(g)]}</span>${combo ? `<span class="mseal">${esc(combo.n[0])}</span>` : ''}${dzHTML(g.sp)}
+  <span class="art">${guSVG(g.sp, { rank: rankOf(g) })}</span><span class="rk rk${rankOf(g)}">${RANK.ch[rankOf(g)]}</span>${combo ? `<span class="mseal">${esc(combo.n[0])}</span>` : ''}${dzHTML(g.sp)}${gearHTML(g)}
   <span class="nm">${SP[g.sp].n}</span><span class="st"><i class="a">${g.atk}</i><i class="h">${g.hp}</i><i class="v">${spdG(g)}</i></span>
   <span class="tr">${nat ? `<span class="tc nat">${esc(nat.ch)}</span>` : ''}${act ? `<span class="tc act">${esc(act.ch)}</span>` : ''}</span></button>`;
 }
@@ -331,7 +335,7 @@ function renderSlots() {
 function renderBagLine() {
   const b = $('#bagline'); if (!b) return;
   b.innerHTML = `<div class="bhead" data-tip-fn="bag"><span class="lbl">${TXT.bagHead} <small>${TXT.bagSub}</small></span><span class="qmeta">${S.bag.length}/${BC()}</span></div>
-  <div class="mini bagrow" data-sort="bag" data-group="main">${Array.from({ length: BC() }, (_, i) => { const g = S.bag[i]; return g ? `<div class="mg" data-drag="${i}" data-act="bagGu" data-i="${i}" data-tip-fn="bg"><span class="art">${guSVG(g.sp, { rank: rankOf(g) })}</span><span class="rk rk${rankOf(g)}">${RANK.ch[rankOf(g)]}</span>${dzHTML(g.sp)}<b>${SP[g.sp].n}</b><span class="st"><i class="a">${g.atk}</i><i class="h">${g.hp}</i></span></div>` : `<div class="mg empty" data-drag="${i}"></div>`; }).join('')}</div>`;
+  <div class="mini bagrow" data-sort="bag" data-group="main">${Array.from({ length: BC() }, (_, i) => { const g = S.bag[i]; return g ? `<div class="mg" data-drag="${i}" data-act="bagGu" data-i="${i}" data-tip-fn="bg"><span class="art">${guSVG(g.sp, { rank: rankOf(g) })}</span><span class="rk rk${rankOf(g)}">${RANK.ch[rankOf(g)]}</span>${dzHTML(g.sp)}${gearHTML(g)}<b>${SP[g.sp].n}</b><span class="st"><i class="a">${g.atk}</i><i class="h">${g.hp}</i></span></div>` : `<div class="mg empty" data-drag="${i}"></div>`; }).join('')}</div>`;
 }
 // 道共鸣和杀招常驻在空窍上方（reso.js，秘境队伍上方用同一套）
 function renderReso() {
@@ -350,7 +354,7 @@ const owned = sp => [...S.team, ...S.bag].filter(g => g.sp === sp && rankOf(g) =
 function wareHTML(w, i) {
   if (w.kind === 'food') {
     const f = FOOD[w.id], c = price(foodCost(w.id));
-    return `<div class="ware food${w.frozen ? ' frozen' : ''}${w.sold ? ' sold' : ''}"><button class="wbuy" data-act="ware" data-i="${i}" data-tip-fn="ware"${w.sold ? ' disabled' : ''}><span class="fart">${esc(f.n[0])}</span><b>${esc(f.n)}</b><small>${FOOD_KIND[f.kind]}</small><span class="tag">${w.sold ? '已购' : fmtTok(c)}</span></button></div>`;
+    return `<div class="ware food${w.frozen ? ' frozen' : ''}${w.sold ? ' sold' : ''}"><button class="wbuy" data-act="ware" data-i="${i}" data-tip-fn="ware"${w.sold ? ' disabled' : ''}><span class="fart">${foodSVG(w.id)}</span><b>${esc(f.n)}</b><small>${FOOD_KIND[f.kind]}</small><span class="tag">${w.sold ? '已购' : fmtTok(c)}</span></button></div>`;
   }
   const s = SP[w.sp], st = statFor(w.sp, baseRank(w.sp)), c = price(PRICE.gu), merge = !w.sold && owned(w.sp) >= 2, gain = !w.sold && !merge ? resoGain(S.team, w.sp) : null;
   return `<div class="ware${w.frozen ? ' frozen' : ''}${w.sold ? ' sold' : ''}${merge ? ' merge' : ''}"><button class="wbuy" data-act="ware" data-i="${i}" data-tip-fn="ware"${w.sold ? ' disabled' : ''}><span class="art">${guSVG(w.sp)}</span>${dzHTML(w.sp)}<b>${s.n}</b><span class="st"><i class="a">${st.atk}</i><i class="h">${st.hp}</i></span><span class="tag">${w.sold ? '已购' : (merge ? '合成 · ' : '') + fmtTok(c)}</span>${merge ? '<span class="fu">可合成</span>' : gain ? `<span class="fu rzg">${TXT.resoGain}</span>` : ''}</button></div>`;
@@ -359,7 +363,7 @@ function renderShop() {
   const box = $('#shop'); if (!box) return;
   if (!S.shop.length) newShop();
   box.innerHTML = `<div class="shead"><span class="lbl" data-tip="${esc(TXT.shopTip)}">${TXT.shopHead}</span><button class="mini-b" data-act="refresh">${TXT.refresh(fmtTok(price(PRICE.refresh)))}</button></div>
-  <div class="wares">${S.shop.map(wareHTML).join('')}</div>${S.pantry.length ? `<div class="pantry"><span class="lbl">带回的食物</span>${S.pantry.map((id, i) => `<button class="pfood" data-act="pantry" data-i="${i}" data-tip="${esc(FOOD[id] ? FOOD[id].d + (notYet(id) ? '\n' + TXT.tripLocked : '') : '')}"${notYet(id) ? ' disabled' : ''}>${esc(FOOD[id] ? FOOD[id].n : id)}</button>`).join('')}</div>` : ''}${(() => { const l = notYetList(); return l.length ? `<p class="sm tlocked" data-tip="${esc(l.map(id => `${FOOD[id].n}：${FOOD[id].d}`).join('\n'))}">${esc(TXT.tripLockedLine(l.map(id => '「' + FOOD[id].n + '」').join('')))}</p>` : ''; })()}${S.tripFood.length ? `<p class="sm">下一次渡劫带着：${S.tripFood.map(id => FOOD[id] ? FOOD[id].n : id).join('、')}</p>` : ''}`;
+  <div class="wares">${S.shop.map(wareHTML).join('')}</div>${S.pantry.length ? `<div class="pantry"><span class="lbl">带回的食物</span>${S.pantry.map((id, i) => `<button class="pfood" data-act="pantry" data-i="${i}" data-tip="${esc(FOOD[id] ? FOOD[id].d + (notYet(id) ? '\n' + TXT.tripLocked : '') : '')}"${notYet(id) ? ' disabled' : ''}>${fi(id)}${esc(FOOD[id] ? FOOD[id].n : id)}</button>`).join('')}</div>` : ''}${(() => { const l = notYetList(); return l.length ? `<p class="sm tlocked" data-tip="${esc(l.map(id => `${FOOD[id].n}：${FOOD[id].d}`).join('\n'))}">${esc(TXT.tripLockedLine(l.map(id => '「' + FOOD[id].n + '」').join('')))}</p>` : ''; })()}${S.tripFood.length ? `<p class="sm">下一次渡劫带着：${S.tripFood.map(id => fi(id) + esc(FOOD[id] ? FOOD[id].n : id)).join('、')}</p>` : ''}`;
 }
 // 新得一只蛊：能合成先合成；蛊市买的先进空窍再进蛊囊；战利品只进蛊囊
 function placeNew(g, mode = 'shop') {
@@ -405,7 +409,7 @@ function useFood(id, from, i) {
     feedStat(id, tg); note(TXT.fed(f, tg)); tg.forEach(g => fxFloat(g.uid, `+${f.atk || 0}/+${f.hp || 0}`, 'buff')); achieve('feeds', 1); return true;
   }
   FEED = { id, from, i };
-  sheet(`<h3>${esc(f.kind === 'gear' ? TXT.gearPick(f) : TXT.foodPick(f))}</h3><p class="sm">${esc(f.d)}</p><div class="mini pick">${[...S.team, ...S.bag].map((g, k) => `<button class="mg" data-act="feedTo" data-k="${k}"${f.kind === 'stat' && !canEat(g) ? ' disabled' : ''}><span class="art">${guSVG(g.sp, { rank: rankOf(g) })}</span><b>${SP[g.sp].n}</b><span class="st"><i class="a">${g.atk}</i><i class="h">${g.hp}</i></span>${f.kind === 'stat' ? `<small>${canEat(g) ? `已吃 ${ateOf(g)}/${ATE_MAX}` : '吃满了'}</small>` : g.food ? `<small>挂着${esc(FOOD[g.food] ? FOOD[g.food].n : '')}</small>` : ''}</button>`).join('')}</div>`);
+  sheet(`<div class="fhead"><span class="fbig">${foodSVG(f.id)}</span><div><h3>${esc(f.kind === 'gear' ? TXT.gearPick(f) : TXT.foodPick(f))}</h3><p class="sm">${esc(f.d)}</p></div></div><div class="mini pick">${[...S.team, ...S.bag].map((g, k) => `<button class="mg" data-act="feedTo" data-k="${k}"${f.kind === 'stat' && !canEat(g) ? ' disabled' : ''}><span class="art">${guSVG(g.sp, { rank: rankOf(g) })}</span><b>${SP[g.sp].n}</b><span class="st"><i class="a">${g.atk}</i><i class="h">${g.hp}</i></span>${f.kind === 'stat' ? `<small>${canEat(g) ? `已吃 ${ateOf(g)}/${ATE_MAX}` : '吃满了'}</small>` : g.food ? `<small>${fi(g.food)}挂着${esc(FOOD[g.food] ? FOOD[g.food].n : '')}</small>` : ''}</button>`).join('')}</div>`);
   return null;   // 等玩家挑
 }
 function feedTo(g) {
@@ -815,7 +819,7 @@ function sheet(html, cls = '', stack = false) {
   document.body.appendChild(bg); return bg.querySelector('.sheet');
 }
 function closeSheet() { const a = document.querySelectorAll('.sheet-bg'); if (a.length) a[a.length - 1].remove(); }
-function miniRow(t) { return `<div class="mini">${t.map(g => `<div class="mg${g.boss ? ' boss' : ''}"><span class="art">${guSVG(g.sp, { rank: rankOf(g) })}</span><span class="rk rk${rankOf(g)}">${RANK.ch[rankOf(g)]}</span><b>${SP[g.sp] ? SP[g.sp].n : ''}</b><span class="st"><i class="a">${g.atk}</i><i class="h">${g.hp}</i></span></div>`).join('')}</div>`; }
+function miniRow(t) { return `<div class="mini">${t.map(g => `<div class="mg${g.boss ? ' boss' : ''}"><span class="art">${guSVG(g.sp, { rank: rankOf(g) })}</span><span class="rk rk${rankOf(g)}">${RANK.ch[rankOf(g)]}</span>${dzHTML(g.sp)}${gearHTML(g)}<b>${SP[g.sp] ? SP[g.sp].n : ''}</b><span class="st"><i class="a">${g.atk}</i><i class="h">${g.hp}</i></span></div>`).join('')}</div>`; }
 // 技能说明（battle.js 的 skillText）：带这一转的实际数字。skNum 取「（这一转约 …）」里的话，skDmg 取第一个数（合成预览用）
 const skills = (sp, r) => { try { return skillText(sp, r) || []; } catch (e) { return []; } };
 const skNum = t => { const m = String(t || '').match(/（这一转([^（）]*)）\s*$/); return m ? m[1].trim() : ''; };
@@ -845,7 +849,7 @@ function guDetail(g, ctx = {}) {
   sheet(`<div class="detail"><div class="dart">${guSVG(g.sp, { rank: rankOf(g) })}</div><div><h3>${rankName(g)}</h3><p class="lore">${esc(s.lore)}</p><p class="dst"><i class="a">${g.atk}</i><i class="h">${g.hp}</i><i class="v">${spdG(g)}</i> <small>${DAO[daoOf(g.sp)] ? DAO[daoOf(g.sp)].n : ''} · ${reachG(g)}</small></p>${team && resoOf(team, g) ? `<p class="sm rs">${esc(resoOf(team, g))}</p>` : ''}</div></div>
   ${nat ? `<h4>被动技能</h4><p><b>${esc((skP || nat).n)}</b> ${esc(skP ? skP.text : nat.d)}</p>` : ''}${actOfG(g) ? `<h4>主动技能</h4><p><b>${esc((skA || actOfG(g)).n)}</b> ${esc(skA ? skA.text : actOfG(g).d)}<br><small>蛊力攒满自动放</small></p>` : ''}
   ${c ? `<h4>杀招</h4><div class="skill"><span class="seal">${esc(c.n)}</span><p>${esc(c.d)}<br><small>配方：${c.need.map(x => SP[x].n).join(' + ')}</small></p></div>` : ''}
-  ${f ? `<h4>挂件</h4><p><b>${esc(f.n)}</b> ${esc(f.d)}</p>` : ''}
+  ${f ? `<h4>挂件</h4><p>${fi(f.id)}<b>${esc(f.n)}</b> ${esc(f.d)}</p>` : ''}
   ${g.xing ? `<h4>蛊性</h4><p><b>${esc(xingName(g.xing))}</b> ${esc(xingDesc(g.xing))}</p>` : ''}
   <h4>${TXT.statHead}</h4><p class="sm">${esc(TXT.statSub)}</p>${growHTML(g)}<p class="sm">${esc(TXT.ateLine(g))}${g.bonusA || g.bonusH ? `（已加攻 ${g.bonusA || 0}、血 ${g.bonusH || 0}）` : ''}</p>
   ${recipes.length ? `<h4>能凑的杀招</h4><ul>${recipes.map(x => `<li><b>${esc(x.n)}</b> ${x.need.map(y => SP[y].n).join(' + ')}${unlocked(x.id, 'combo') ? '' : ' <small>道途解锁</small>'}</li>`).join('')}</ul>` : ''}
@@ -885,14 +889,14 @@ function guTip(g, team, i) {
   const act = actOfG(g), p = g.pos, sk = skills(g.sp, rankOf(g)), skP = sk.find(k => k.kind === 'passive'), skA = sk.find(k => k.kind === 'active'), rs = team ? resoOf(team, g) : '';
   return `<b>${rankName(g)}</b> <i class="a">${g.atk}</i> <i class="h">${g.hp}</i> <i class="v">${spdG(g)}</i><br><small>${esc(SP[g.sp].lore)}${team && p ? ` · 第 ${p.r + 1} 行${COL_NAMES[p.c]}列` : ''} · ${reachG(g)} · 攻 / 血 / 速</small>`
     + (rankOf(g) > driveCap(S.realm) ? `<p class="warn">${esc(TXT.overDrive)}</p>` : '') + (rs ? `<p class="rs"><b>${esc(rs.split('：')[0])}</b> ${esc(rs.slice(rs.indexOf('：') + 1))}</p>` : '') + (nat ? `<p><b>被动·${esc((skP || nat).n)}</b> ${esc(skP ? skP.text : nat.d)}</p>` : '') + (act ? `<p><b>主动·${esc((skA || act).n)}</b> ${esc(skA ? skA.text : act.d)}<br><small>蛊力攒满自动放</small></p>` : '') + (c ? `<p><b>杀招·${esc(c.n)}</b> ${esc(c.d)}<br><small>配方：${c.need.map(x => SP[x].n).join(' + ')}</small></p>` : '')
-    + (f ? `<p><b>挂件·${esc(f.n)}</b> ${esc(f.d)}</p>` : '') + (g.xing ? `<p><b>蛊性·${esc(xingName(g.xing))}</b> ${esc(xingDesc(g.xing))}</p>` : '') + `<small>${esc(TXT.ateLine(g))} · 点开看完整详情</small>`;
+    + (f ? `<p>${fi(f.id)}<b>挂件·${esc(f.n)}</b> ${esc(f.d)}</p>` : '') + (g.xing ? `<p><b>蛊性·${esc(xingName(g.xing))}</b> ${esc(xingDesc(g.xing))}</p>` : '') + `<small>${esc(TXT.ateLine(g))} · 点开看完整详情</small>`;
 }
 const TIPS = {
   qi: () => `<b>元气 ${fmtTok(S.bank)}</b><br><small>${esc(TXT.qiTip)}${VSC ? '' : esc(TXT.qiTrial)}</small>`,
   gu: t => { const i = S.team.findIndex(g => g.uid === t.dataset.uid); return guTip(S.team[i], S.team, i); },
   bag: () => esc(TXT.bagTip()),
   bg: t => { const g = S.bag[+t.dataset.i]; return g ? guTip(g) + '<small>在蛊囊里：不上场、不跟去渡劫，拖进空窍才上场</small>' : ''; },
-  ware: t => { const w = S.shop[+t.dataset.i]; if (!w) return ''; if (w.kind === 'food') { const f = FOOD[w.id]; return `<b>${esc(f.n)}</b> · ${FOOD_KIND[f.kind]}<br>${esc(f.d)}<br><small>价格 ${fmtTok(price(foodCost(w.id)))} 元气</small>`; } const n = owned(w.sp); return guTip(newGu(w.sp)).replace('<small>点开看完整详情</small>', '') + `<small>价格 ${fmtTok(price(PRICE.gu))} 元气 · 点开看完整详情</small>` + (n >= 2 ? `<p>你已有 ${n} 只${RANK.names[baseRank(w.sp)]}${SP[w.sp].n}，买下当场合成${RANK.names[baseRank(w.sp) + 1]}</p><p>${esc(TXT.mergeAfter(mergePreview(w.sp, baseRank(w.sp))))}</p>` : '' + (n < 2 && resoGain(S.team, w.sp) ? `<p>${esc(TXT.resoGainTip(resoGain(S.team, w.sp)))}</p>` : '')); },
+  ware: t => { const w = S.shop[+t.dataset.i]; if (!w) return ''; if (w.kind === 'food') { const f = FOOD[w.id]; return `${fi(f.id)}<b>${esc(f.n)}</b> · ${FOOD_KIND[f.kind]}<br>${esc(f.d)}<br><small>价格 ${fmtTok(price(foodCost(w.id)))} 元气</small>`; } const n = owned(w.sp); return guTip(newGu(w.sp)).replace('<small>点开看完整详情</small>', '') + `<small>价格 ${fmtTok(price(PRICE.gu))} 元气 · 点开看完整详情</small>` + (n >= 2 ? `<p>你已有 ${n} 只${RANK.names[baseRank(w.sp)]}${SP[w.sp].n}，买下当场合成${RANK.names[baseRank(w.sp) + 1]}</p><p>${esc(TXT.mergeAfter(mergePreview(w.sp, baseRank(w.sp))))}</p>` : '' + (n < 2 && resoGain(S.team, w.sp) ? `<p>${esc(TXT.resoGainTip(resoGain(S.team, w.sp)))}</p>` : '')); },
 };
 let tipT = 0, tipEl = null, tipFor = null, tipLongT = 0, tipLongAt = -1e9;
 function tipShow(t) {
@@ -993,7 +997,7 @@ const ACT = {
   dao(a) { S.dao = a.dataset.d; S.compass = null; S.shop = S.shop.filter(w => w.frozen && !w.sold); newShop(); note(TXT.daoLine(S.dao)); renderHome(); save(); },
   ware(a) {
     const i = +a.dataset.i, w = S.shop[i]; if (!w) return;
-    if (w.kind === 'food') { const f = FOOD[w.id]; sheet(`<h3>${esc(f.n)} <small>${FOOD_KIND[f.kind]}</small></h3><p>${esc(f.d)}</p><div class="row2"><button data-act="freeze" data-i="${i}">${TXT.freeze(w.frozen)}</button><button class="zhu" data-act="buy" data-i="${i}"${!w.sold && canPay(foodCost(w.id)) ? '' : ' disabled'}>买下 ${fmtTok(price(foodCost(w.id)))}</button></div><p class="sm">余 ${fmtTok(S.bank)} 元气</p>`); return; }
+    if (w.kind === 'food') { const f = FOOD[w.id]; sheet(`<div class="fhead"><span class="fbig">${foodSVG(f.id)}</span><div><h3>${esc(f.n)} <small>${FOOD_KIND[f.kind]}</small></h3><p>${esc(f.d)}</p></div></div><div class="row2"><button data-act="freeze" data-i="${i}">${TXT.freeze(w.frozen)}</button><button class="zhu" data-act="buy" data-i="${i}"${!w.sold && canPay(foodCost(w.id)) ? '' : ' disabled'}>买下 ${fmtTok(price(foodCost(w.id)))}</button></div><p class="sm">余 ${fmtTok(S.bank)} 元气</p>`); return; }
     const g = newGu(w.sp); guDetail(g, { kind: 'shop' });
     const sh = $('.sheet'); if (sh) sh.insertAdjacentHTML('beforeend', `<div class="row2"><button data-act="freeze" data-i="${i}">${TXT.freeze(w.frozen)}</button><button class="zhu" data-act="buy" data-i="${i}"${!w.sold && canPay(PRICE.gu) ? '' : ' disabled'}>${owned(w.sp) >= 2 ? '买下并合成 ' : '买下 '}${fmtTok(price(PRICE.gu))}</button></div><p class="sm">余 ${fmtTok(S.bank)} 元气</p>`);
   },

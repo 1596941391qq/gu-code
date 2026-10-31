@@ -533,7 +533,14 @@ button.mg{font:inherit;font-size:11px;border:0;cursor:pointer;position:relative;
 .hlog{list-style:none;margin:8px 0 0;padding:0;font:13px var(--kai);color:var(--mu);min-height:1.4em}
 .hlog li{line-height:1.6}.hlog li.new{color:var(--tx)}
 .ware.food .wbuy{background:var(--paper2)}
-.wbuy .fart{display:grid;place-items:center;width:44px;height:44px;margin:6px 0 2px;border:1.5px solid var(--ink);border-radius:50%;font:22px var(--kai)}
+.wbuy .fart{display:block;width:52px;height:52px;margin:2px 0 0}.wbuy .fart svg{width:100%;height:100%}
+/* 食物小图（art-food.js）：行内跟在名字前；蛊卡左下角挂件小印；喂食 / 食物详情页头上一幅大的 */
+.fi{display:inline-block;width:1.5em;height:1.5em;vertical-align:-.45em;margin-right:2px}.fi svg{width:100%;height:100%;display:block}
+.gu .gear,.mg .gear{position:absolute;left:2px;bottom:2px;width:22px;height:22px;background:var(--paper);border:1px solid var(--line2);border-radius:50%;padding:1px}.gear svg{width:100%;height:100%;display:block}
+.mg .gear{width:18px;height:18px;top:19px;bottom:auto}
+.fhead{display:flex;gap:10px;align-items:center}.fhead .fbig{flex:0 0 auto;width:60px;height:60px}.fhead .fbig svg{width:100%;height:100%}.fhead h3{margin:0}
+.pfood{display:inline-flex;align-items:center}
+.tu-tag.fimg{width:18px;height:18px;padding:0;display:inline-block;vertical-align:middle}.tu-tag.fimg svg{width:100%;height:100%;display:block}
 .wbuy small{font-size:11px;color:#5b5244}
 .wbuy .tag{font:600 13px var(--mono)}.wbuy .tag.poor{color:var(--atk);opacity:.75}
 .wbuy .fu{font:11px var(--kai);color:var(--zhu2)}
