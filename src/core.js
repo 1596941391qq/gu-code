@@ -55,7 +55,7 @@ export const bagCap = () => BAG.cap;
 // 攻血成长表：同一种蛊每一转的攻血固定。G[r] = 该转相对一转的倍数；物种的 atk/hp 是它基础转数时的数值。
 // 物种可带 st: [[攻,血] × 6]（下标 = 转数）直接覆盖这张表。
 // 单只蛊封顶（design 第 0 节）：攻血按「每种蛊每一转」的固定表，五转封顶；加攻血的食物每只最多吃 ATE_MAX 次
-export const RANK_GROW = [0, 1.15, 2.1, 2.7, 3.4, 3.7, 6.4];   // 和 bestiary2.ST_GROW 同一行（物种都带 st，这张只是兜底）
+export const RANK_GROW = [0, 1.15, 2.05, 2.6, 3.25, 3.75, 6.35];   // 和 bestiary2.ST_GROW 同一行（物种都带 st，这张只是兜底）
 // 数值放大十倍（design 2.8）：物种表里的攻血是小数字，statFor 统一乘 STAT_SCALE 再给出去（一转约攻 20、血 40），百分比加成才看得出来。
 // 食物加的攻血在 foods.js 里已经是放大后的数，不再乘。
 export const STAT_SCALE = 10;
