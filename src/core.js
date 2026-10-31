@@ -1,6 +1,8 @@
 // 蛊码 GuCode · 纯逻辑：种子随机、数据表、洞府养成（蛊市、合成、食物、道、杀招）、坐标码。不碰 DOM。规则见 docs/design.md
 import { NEW_SPECIES, NEW_TRAITS, NEW_COMBOS, NEW_SUMMONS, NEW_POOL, OLD_EXTRA, natMulOf } from './bestiary.js';
 import { DAOS, DAO, DAO_BY_SCHOOL } from './daos.js';
+import { SPECIES2, PATCH64, NATS, NAT_OF, SUMMONS2 } from './bestiary2.js';
+import { COMBOS2 } from './combos2.js';
 import { FOODS, FOOD } from './foods.js';
 export const natMulFor = r => natMulOf(r);   // 本命描述里〔〕数字按转数换算（界面用）
 export function hashStr(s) { s = String(s); let h = 2166136261 >>> 0; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
@@ -94,6 +96,17 @@ export const SPECIES = [
 // 旧 12 种补上转数 / 喂食偏好 / 流派；蛊典扩充的 52 种接在后面（坐标码按下标编码，只能往后加）
 SPECIES.forEach(s => { Object.assign(s, OLD_EXTRA[s.id]); });
 SPECIES.push(...NEW_SPECIES);
+// 蛊典第二卷（120 种）：旧 64 种打补丁（道、速、远近、主动技、每转攻血表、少数换成原著名），基础转数以攻血表为准；新 56 种接在后面
+SPECIES.forEach(s => { const p = PATCH64[s.id]; if (!p) return; Object.assign(s, p); s.nat = NAT_OF(s.id) || s.nat; const b = (s.st || []).findIndex(Boolean); if (b > 0) s.rank = b; if (b >= 6) s.immortal = true; });
+SPECIES.push(...SPECIES2.filter(s => !SPECIES.some(x => x.id === s.id)));
+// 蛊池按基础转数重排（下标 = 境界，基础 r 转进第 r−1 档；六转仙蛊不进任何一档）
+POOL_TIERS.forEach((t, i) => { t.length = 0; t.push(...SPECIES.filter(s => !s.immortal && !s.legend && (s.rank || 1) - 1 === i).map(s => s.id)); });
+// 120 种的被动技能换成声明式（战斗引擎读 NEW_TRAITS 的 eff / awEff）；keepHooks 的只换描述
+Object.entries(NATS).forEach(([k, t]) => {
+  if (t.keepHooks && NEW_TRAITS[k]) Object.assign(NEW_TRAITS[k], { n: t.n, ch: t.ch, trig: t.trig, d: t.d, aw: t.aw });
+  else NEW_TRAITS[k] = t;
+  TRAITS[k] = NEW_TRAITS[k];
+});
 export const NORMAL_SPECIES = SPECIES.filter(s => !s.immortal);   // 随机池（幽灵、天劫、招蛊）：六转仙蛊只能开茧获得
 export const SP = Object.fromEntries(SPECIES.map(s => [s.id, s]));
 export const spTraits = id => [];   // 新蛊出生不带副词条：物种的本事在本命技里（natOf），副词条靠突变、炼附、吞噬
@@ -102,7 +115,7 @@ export const natOf = sp => (SP[sp] && SP[sp].nat) || null;
 export const guRank = g => { const s = SP[g.sp]; if (!s) return 1; return s.immortal ? 6 : rankOf(g); };
 export const awOf = g => { const r = guRank(g); return r >= 5 ? 2 : r >= 3 ? 1 : 0; };
 SPECIES.forEach(s => { if (!s.dao) s.dao = DAO_BY_SCHOOL[s.school] || 'li'; });   // 物种属于哪一道（占位口径见 daos.js）
-export const SUMMON_NAMES = { pupa: '蛊蛹', shade: '分影', lunar: '月影', ...NEW_SUMMONS };
+export const SUMMON_NAMES = { pupa: '蛊蛹', shade: '分影', lunar: '月影', ...NEW_SUMMONS, ...SUMMONS2 };
 
 // 杀招：配方里的几种蛊同时在空窍，杀招就自动成形，挂在配方第一种蛊（站得最靠前的那只）身上
 export const COMBOS = [
@@ -118,6 +131,9 @@ export const COMBOS = [
   { id: 'liaoyuan', n: '天火燎原',   need: ['fire', 'scorp'],  d: '开战：流火与开锋改为波及敌方全体（流火每只按四分之一算，开锋每只减半）' },
 ];
 COMBOS.push(...NEW_COMBOS);   // 新杀招都是两蛊配方，排在旧配方之后
+// 杀招第二版（combos2.js：核心蛊、时机、声明式效果、进阶）整表替换上面的旧配方；配方里有还不存在的物种的先跳过
+export const COMBOS_SKIPPED = COMBOS2.filter(c => !c.need.every(x => SP[x])).map(c => c.id);
+COMBOS.length = 0; COMBOS.push(...COMBOS2.filter(c => c.need.every(x => SP[x])));
 export const COMBO = Object.fromEntries(COMBOS.map(c => [c.id, c]));
 
 let UIDN = 1;
@@ -141,13 +157,6 @@ export function comboOf(g, team) { if (!team) return null; const i = team.indexO
 export function skillOf(g, team) { const c = comboOf(g, team); return c ? { id: c.id, n: c.n, d: c.d, named: true } : null; }
 // 配方还差哪几种（蛊典用）：have = 当前空窍物种
 export const comboMissing = (c, have) => c.need.filter(x => !have.includes(x));
-
-// ---------- 道共鸣 ----------
-// 空窍里各道有几只；返回 [{ dao, n, tier: 0/2/4, eff }]，eff = 正在生效的那档（r2 / r4）
-export function daoCount(team) {
-  const c = {}; team.forEach(g => { const d = daoOf(g.sp); c[d] = (c[d] || 0) + 1; });
-  return DAOS.filter(d => c[d.id]).map(d => { const n = c[d.id], tier = n >= 4 ? 4 : n >= 2 ? 2 : 0; return { dao: d.id, n, tier, eff: tier ? d['r' + tier] : null }; });
-}
 
 // ---------- 蛊市 ----------
 // 货架：蛊位 n 个、食物位 2 个。罗盘选中的道只让它出现的概率 +daoP（每个货位先以 daoP 的几率从这一道里挑，否则从全部里挑），
