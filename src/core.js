@@ -171,14 +171,16 @@ export const comboMissing = (c, have) => c.need.filter(x => !have.includes(x));
 // ---------- 蛊市 ----------
 // 货架：蛊位 n 个、食物位 2 个。罗盘选中的道只让它出现的概率 +daoP（每个货位先以 daoP 的几率从这一道里挑，否则从全部里挑），
 // 蛊市照样什么道都会刷，不锁阵容。foeDaoP：程序生成的对手偏向某一道的几率（秘境房间的主题）
-export const SHOP = { guSlots: [3, 3, 4, 4, 5, 5], foodSlots: 2, daoP: 0.05, foeDaoP: 0.6 };
+// 食物位开局 2 个，随境界加到 4 个（foodSlots[境界]）
+export const SHOP = { guSlots: [3, 3, 4, 4, 5, 5], foodSlots: [2, 2, 3, 3, 4, 4], daoP: 0.05, foeDaoP: 0.6 };
+export const foodSlotsOf = realm => (Array.isArray(SHOP.foodSlots) ? SHOP.foodSlots[Math.min(SHOP.foodSlots.length - 1, realm | 0)] : SHOP.foodSlots);
 export function shopSpecies(realm, unlocked) { return poolFor(realm).filter(sp => SP[sp] && !SP[sp].immortal && (!unlocked || unlocked(sp, 'species'))); }
 export function shopFoods(unlocked) { return FOODS.filter(f => !unlocked || unlocked(f.id, 'food')).map(f => f.id); }
 function pickDao(rng, list, dao, of, p = SHOP.daoP) { const main = dao ? list.filter(x => of(x) === dao) : []; return main.length && rng() < p ? rng.pick(main) : rng.pick(list); }
 export function rollShop(rng, realm, dao, old = [], unlocked) {
   const sps = shopSpecies(realm, unlocked), fds = shopFoods(unlocked), keep = w => w && w.frozen && !w.sold;
   const gu = Array.from({ length: SHOP.guSlots[Math.min(5, realm | 0)] }, (_, i) => { const o = old.filter(w => w.kind === 'gu')[i]; return keep(o) ? o : { kind: 'gu', sp: pickDao(rng, sps, dao, daoOf), frozen: false, sold: false }; });
-  const fd = Array.from({ length: SHOP.foodSlots }, (_, i) => { const o = old.filter(w => w.kind === 'food')[i]; return keep(o) ? o : (fds.length ? { kind: 'food', id: pickDao(rng, fds, dao, id => FOOD[id].dao), frozen: false, sold: false } : null); }).filter(Boolean);
+  const fd = Array.from({ length: foodSlotsOf(realm) }, (_, i) => { const o = old.filter(w => w.kind === 'food')[i]; return keep(o) ? o : (fds.length ? { kind: 'food', id: pickDao(rng, fds, dao, id => FOOD[id].dao), frozen: false, sold: false } : null); }).filter(Boolean);
   return [...gu, ...fd];
 }
 export const foodCost = id => (FOOD[id] ? FOOD[id].cost : 3) * PRICE.food;   // 单位同 PRICE
@@ -200,7 +202,7 @@ export function sortTeam(team) { team.sort((a, b) => (a.pos ? a.pos.c * 3 + a.po
 
 // ---------- 收蛊与合成 ----------
 export const sameRank = (list, sp, rk) => list.filter(g => g.sp === sp && rankOf(g) === rk).length;
-const fusable = (team, bag, g) => rankOf(g) < RANK.max && !(SP[g.sp] || {}).immortal && sameRank([...team, ...bag], g.sp, rankOf(g)) >= 2;
+const fusable = (team, bag, g) => rankOf(g) < RANK.max && !(SP[g.sp] || {}).immortal && [...team, ...bag].filter(x => x.sp === g.sp && rankOf(x) === rankOf(g)).reduce((n, x) => n + fuseW(x), 0) >= 2;   // 吃过合炼丹的多算几份
 // 能否再收一只：空窍或蛊囊有空位，或者它能和已有的同种同转凑成合成
 export function canTake(team, bag, g, cap, bc = BAG.cap) { return team.length < cap || bag.length < bc || fusable(team, bag, g); }
 export function canBuy(team, sp, cap, bag = [], bc = BAG.cap) { return canTake(team, bag, { sp, rank: baseRank(sp) }, cap, bc); }
@@ -215,21 +217,30 @@ export function placeGu(team, bag, g, cap, bc = BAG.cap, mode = 'shop', pick) {
 // 挂件食物保留第一只的；蛊性从三只里挑一个：pick(候选蛊性数组) → 选中的那个（不给 pick 就取第一个）。返回合成出的蛊
 // 三只同种同转合成高一转：攻血换成新一转的表值，再加上三只里吃得最多的那只的食物加成（吃的次数一并继承，所以不会超过 ATE_MAX 次）。
 // 蛊性：三只材料里有不同的蛊性时，pick(候选) 同步选一个；没给 pick 就先传第一个，并在新蛊上留 xingAsk = 候选，等界面问玩家。
+// 合成：同种同转凑够三份合成高一转。一只蛊算 1 份，吃过合炼丹（g.fz）的再多算 fz 份；五转和仙蛊不合。
+// 凑材料时先拿吃过合炼丹的那只当底，再补只算 1 份的，尽量不浪费；合成后 fz 清零（那几份是低一转的材料）
+export const fuseW = g => 1 + ((g && g.fz) | 0);
 export function mergeAll(team, bag = [], pick) {
   const done = [], rm = x => { const l = team.includes(x) ? team : bag; l.splice(l.indexOf(x), 1); };
   for (let guard = 0; guard < 12; guard++) {
     let grp = null; const all = [...team, ...bag];
-    for (const g of all) { const rk = rankOf(g), same = all.filter(x => x.sp === g.sp && rankOf(x) === rk); if (same.length >= 3 && rk < RANK.max && !(SP[g.sp] || {}).immortal) { grp = same.slice(0, 3); break; } }
+    for (const g of all) {
+      const rk = rankOf(g); if (rk >= RANK.max || (SP[g.sp] || {}).immortal) continue;
+      const same = all.filter(x => x.sp === g.sp && rankOf(x) === rk); if (same.reduce((n, x) => n + fuseW(x), 0) < 3) continue;
+      const order = same.slice().sort((x, y) => fuseW(y) - fuseW(x)), base = order[0], pickd = [base]; let w = fuseW(base);
+      for (const x of order.slice(1).sort((x, y) => fuseW(x) - fuseW(y))) { if (w >= 3) break; pickd.push(x); w += fuseW(x); }
+      grp = pickd; break;
+    }
     if (!grp) break;
-    const [a, b, c] = grp, xs = [...new Set(grp.map(x => x.xing).filter(Boolean))];
+    const a = grp[0], rest = grp.slice(1), xs = [...new Set(grp.map(x => x.xing).filter(Boolean))];
     const fed = grp.reduce((m, x) => (ateOf(x) > ateOf(m) ? x : m), a);
     const bA = fed.bonusA || 0, bH = fed.bonusH || 0, ate = ateOf(fed);
     a.rank = rankOf(a) + 1; const st = statFor(a.sp, a.rank);
-    a.bonusA = bA; a.bonusH = bH; a.ate = ate; a.atk = st.atk + bA; a.hp = st.hp + bH;
+    a.bonusA = bA; a.bonusH = bH; a.ate = ate; a.atk = st.atk + bA; a.hp = st.hp + bH; delete a.fz;
     delete a.xingAsk;
     if (xs.length > 1 && pick) a.xing = pick(xs); else { a.xing = xs[0] || null; if (xs.length > 1) a.xingAsk = xs; }
-    a.food = a.food || b.food || c.food || null;
-    [b, c].forEach(rm);
+    a.food = a.food || rest.map(x => x.food).find(Boolean) || null;
+    rest.forEach(rm);
     done.push(a);
   }
   return done;

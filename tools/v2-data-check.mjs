@@ -3,7 +3,7 @@
 import * as B2 from '../src/bestiary2.js';
 const errs = [], warn = [], say = (...a) => console.log(...a);
 const DAO_IDS = ['li', 'yan', 'bing', 'jin', 'mu', 'tu', 'lei', 'guang', 'an', 'xue', 'du', 'zhi', 'hun', 'nu', 'yu', 'zhou'];
-const OPS = new Set(['dmg', 'heal', 'shield', 'buff', 'st', 'summon', 'gp', 'adv', 'delay', 'pull', 'push', 'knock', 'draw', 'swap', 'eat', 'cleanse', 'endure', 'mul', 'copyNat']);
+const OPS = new Set(['dmg', 'heal', 'shield', 'buff', 'st', 'summon', 'gp', 'adv', 'delay', 'pull', 'push', 'knock', 'draw', 'swap', 'eat', 'cleanse', 'endure', 'mul', 'copyNat', 'echo']);
 const WHEN = new Set(['prep', 'start', 'round', 'pre', 'attack', 'cast', 'hit', 'lethal', 'death', 'kill', 'allyDeath', 'foeDeath', 'summon', 'front', 'foeFront', 'low', 'inflict', 'allyInflict', 'deal', 'take']);
 const PICK = new Set(['front', 'last', 'low', 'lowp', 'top', 'fast', 'rand', 'all', 'adj', 'near', 'row', 'col', 'behind', 'ahead']);
 const ALLY_ONLY = new Set(['adj', 'near', 'row', 'col', 'behind', 'ahead']);
@@ -106,7 +106,17 @@ try {
 } catch (e) { warn.push('combos2.js: ' + e.message); }
 try {
   const F = await import('../src/foods.js'), L = F.FOOD_ITEMS || F.FOODS;
-  const kinds = {}; L.forEach(f => { kinds[f.kind] = (kinds[f.kind] || 0) + 1; (f.eff || []).forEach((e, i) => chkEff(`food.${f.id}.${i}`, e, true)); });
+  const kinds = {}, KIND = { stat: ['to'], fight: ['to', 'eff'], gear: [], func: ['func'], shop: ['shop'], trip: ['trip'] }, fids = new Set();
+  L.forEach(f => {
+    kinds[f.kind] = (kinds[f.kind] || 0) + 1; (f.eff || []).forEach((e, i) => chkEff(`food.${f.id}.${i}`, e, true));
+    if (fids.has(f.id)) errs.push(`食物 id 重复 ${f.id}`); fids.add(f.id);
+    if (!KIND[f.kind]) errs.push(`食物 ${f.id}: 类别 ${f.kind}`); else KIND[f.kind].forEach(k => { if (f[k] == null) errs.push(`食物 ${f.id}: 缺 ${k}`); });
+    if (f.kind === 'gear' && !f.eff && !f.gear) errs.push(`食物 ${f.id}: 挂件没有效果`);
+    if (!f.look || !f.d || !DAO_IDS.includes(f.dao) || !(f.cost >= 1)) errs.push(`食物 ${f.id}: 缺 look / d / dao / cost`);
+    if (/出征/.test(f.d)) errs.push(`食物 ${f.id}: 说明里还写着「出征」`);
+  });
+  const old26 = ['meat', 'dew', 'egg', 'scale', 'tea', 'map', 'yuelan', 'zhujiu', 'huotan', 'shuangye', 'lingzhi', 'leizao', 'duzhen', 'huorong', 'bingpo', 'yeming', 'taoya', 'shanjiao', 'xuelian', 'jifeng', 'xuming', 'dinghun', 'jingleifu', 'guangyinxiang', 'houtufu', 'fengxingfu'];
+  old26.forEach((id, i) => { if ((L[i] || {}).id !== id) errs.push(`食物下标变了：第 ${i} 个应是 ${id}（坐标码按下标）`); });
   say(`食物 ${L.length} 种：` + Object.entries(kinds).map(([k, n]) => `${k} ${n}`).join(' '));
 } catch (e) { warn.push('foods.js: ' + e.message); }
 try {
@@ -114,6 +124,7 @@ try {
   const lockedSp = new Set(T.LOCKED.species), unlock = new Set(T.TIMELINE.flatMap(t => t.unlock.filter(u => u.k === 'species').map(u => u.id)));
   lockedSp.forEach(id => { if (!B2.DAO120[id]) errs.push(`道途锁了不存在的蛊 ${id}`); if (!unlock.has(id)) errs.push(`锁住的蛊 ${id} 没有成就能解锁`); });
   const K2 = await import('../src/combos2.js'), TR = await import('../src/trip.js'), FD = await import('../src/foods.js');
+  T.TIMELINE.forEach(t => { if (/出征/.test(t.d + t.n + t.g)) errs.push(`道途 ${t.id}: 还写着「出征」`); });
   T.TIMELINE.forEach(t => t.unlock.forEach(u => {
     const ok = u.k === 'species' ? B2.DAO120[u.id] : u.k === 'food' ? FD.FOOD[u.id] : u.k === 'combo' ? K2.COMBO2[u.id] : u.k === 'trip' ? TR.LAND[u.id] : u.k === 'feature' ? ['kalpa'].includes(u.id) : false;
     if (!ok) errs.push(`道途 ${t.id} 解锁了不存在的 ${u.k}:${u.id}`);

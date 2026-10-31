@@ -536,10 +536,14 @@ button.mg{font:inherit;font-size:11px;border:0;cursor:pointer;position:relative;
 .wbuy .fart{display:block;width:52px;height:52px;margin:2px 0 0}.wbuy .fart svg{width:100%;height:100%}
 /* 食物小图（art-food.js）：行内跟在名字前；蛊卡左下角挂件小印；喂食 / 食物详情页头上一幅大的 */
 .fi{display:inline-block;width:1.5em;height:1.5em;vertical-align:-.45em;margin-right:2px}.fi svg{width:100%;height:100%;display:block}
-.gu .gear,.mg .gear{position:absolute;left:2px;bottom:2px;width:22px;height:22px;background:var(--paper);border:1px solid var(--line2);border-radius:50%;padding:1px}.gear svg{width:100%;height:100%;display:block}
+.gu .gear,.mg .gear,.ware .gear{position:absolute;left:2px;bottom:2px;width:22px;height:22px;background:var(--paper);border:1px solid var(--line2);border-radius:50%;padding:1px}.gear svg{width:100%;height:100%;display:block}
 .mg .gear{width:18px;height:18px;top:19px;bottom:auto}
 .fhead{display:flex;gap:10px;align-items:center}.fhead .fbig{flex:0 0 auto;width:60px;height:60px}.fhead .fbig svg{width:100%;height:100%}.fhead h3{margin:0}
 .pfood{display:inline-flex;align-items:center}
+/* 引蛊香挑道 */
+.dpick{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:10px}.dpick button{display:flex;align-items:center;gap:4px;font:13px var(--kai);padding:5px 6px;border:1px solid var(--line2);border-radius:3px}.dpick b{font-weight:400;color:var(--dc);border:1px solid currentColor;border-radius:2px;padding:0 2px;font-size:12px}
+.ware .rk{position:absolute;top:3px;left:22px}
+.ware .gear{top:22px;left:3px;bottom:auto}
 .tu-tag.fimg{width:18px;height:18px;padding:0;display:inline-block;vertical-align:middle}.tu-tag.fimg svg{width:100%;height:100%;display:block}
 .wbuy small{font-size:11px;color:#5b5244}
 .wbuy .tag{font:600 13px var(--mono)}.wbuy .tag.poor{color:var(--atk);opacity:.75}

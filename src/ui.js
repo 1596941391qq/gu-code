@@ -1,5 +1,5 @@
 // 蛊码 GuCode · 界面与流程：洞府（养成）、斗幽灵与战帖（切磋）、战斗回放、秘境接口。规则只认 docs/design.md
-import { SPECIES, SP, TRAITS, REALMS, SLOTS, RANK, COMBOS, COMBO, COMBOS_ALL, setComboLocks, makeRng, hashStr, newGu, starterTeam, baseRank, rankOf, rankName, statFor, STAT_SCALE, natOf, natMulFor, awOf, QUOTA, quotaOf, ARENAS, arenaOf, GHOST_NAMES, ATE_MAX, ateOf, canEat, statTable, XING, driveCap, quotaTeam, poolFor, BAG, bagCap, canBuy, placeGu, mergeAll, sellValue, comboMissing, COL_NAMES, cellOf, cellPos, freeCell, autoPlace, sortTeam, daoOf, rollShop, foodCost, feedStat, PRICE, genTeam, posLinks, encodeTeam, decodeTeam, EV_MS, playMs, tempoFor, fmtNum, fmtTok } from './core.js';
+import { SPECIES, SP, TRAITS, REALMS, SLOTS, RANK, COMBOS, COMBO, COMBOS_ALL, setComboLocks, makeRng, hashStr, newGu, starterTeam, baseRank, rankOf, rankName, statFor, STAT_SCALE, fuseW, natOf, natMulFor, awOf, QUOTA, quotaOf, ARENAS, arenaOf, GHOST_NAMES, ATE_MAX, ateOf, canEat, statTable, XING, driveCap, quotaTeam, poolFor, BAG, bagCap, canBuy, placeGu, mergeAll, sellValue, comboMissing, COL_NAMES, cellOf, cellPos, freeCell, autoPlace, sortTeam, daoOf, rollShop, foodCost, feedStat, PRICE, genTeam, posLinks, encodeTeam, decodeTeam, EV_MS, playMs, tempoFor, fmtNum, fmtTok } from './core.js';
 import { battle, synergyOf, battleProfile, skillText } from './battle.js';
 import { guSVG, ART_DEFS } from './art.js';
 import { TokenSource, VSC } from './tokens.js';
@@ -79,6 +79,20 @@ const TXT = {
   foodPick: f => `把「${f.n}」喂给哪一只？`,
   gearPick: f => `把「${f.n}」挂在哪一只身上？每只最多挂 1 个，换新的旧的就没了。`,
   tripFood: f => `「${f.n}」收好了，下一次渡劫生效`,
+  fightFood: f => `「${f.n}」收好了，下一场渡劫里的战斗生效`,
+  shopFood: f => `「${f.n}」收好了，下一次转市生效`,
+  fightPick: f => `「${f.n}」给哪一只？只管下一场战斗（要在空窍里上阵）`,
+  funcPick: f => ({ fuse: `把「${f.n}」喂给哪一只？算作一份同种同转的合成材料，凑够三份就合成`, swap: `「${f.n}」贴给哪一只？它的攻和血对调`, echo: `「${f.n}」点给哪一只？下一场开战它先放一次亡语`, wash: `「${f.n}」倒给哪一只？洗掉它的蛊性` })[f.func] || TXT.foodPick(f),
+  daoFoodPick: f => `「${f.n}」：下一次转市哪一道的蛊多出 ${f.pct || 0}%？`,
+  fightLine: '下一场战斗带着', shopLine: '下一次转市',
+  fuseDone: (f, g) => `${SP[g.sp].n} 吃下「${f.n}」，现在算作 ${fuseW(g)} 份合成材料`,
+  fuseNo: g => `${rankName(g)}不能再合成`,
+  swapDone: g => `${SP[g.sp].n} 攻血对调：攻 ${g.atk}、血 ${g.hp}`,
+  washDone: g => `${SP[g.sp].n} 的蛊性洗掉了，去秘境里打出新的`,
+  washNo: '这只蛊没有蛊性',
+  fightUsed: names => `这一场用掉了：${names}`,
+  refreshFree: '转市 · 免费',
+  fuseTip: g => `吃过合炼丹：合成时算作 ${fuseW(g)} 份`,
   tripLocked: '下个版本开放',
   tripLockedLine: names => `${names}：下个版本开放`,
   fed: (f, gs) => `${f.n}：${gs.map(g => SP[g.sp].n).join('、')} 攻 +${f.atk || 0} 血 +${f.hp || 0}`,
@@ -129,7 +143,7 @@ const trialTag = on => on ? `<span class="trialtag">${TXT.trial}</span>` : '';
 // bank = 元气（token），没有上限；所有价格都是 token 数
 const BAK_KEY = 'gucode.v1.bak-v2';
 const fresh = () => ({ v: 3, sx: STAT_SCALE, started: false, name: '', realm: 0, bank: 0, total: 0, team: [], bag: [], shop: [], dao: null, compass: null, tripFood: [], pantry: [], trip: null, land: null,
-  seed: (Math.random() * 1e9) >>> 0, step: 0, speed: 1, mute: true, theme: 'auto', calm: false, codex: {}, combosSeen: [], log: [], hlog: [], meta: null, todayKey: '', todayTok: 0, sim: null, trial: false, sotaAt: 0 });
+  seed: (Math.random() * 1e9) >>> 0, step: 0, speed: 1, mute: true, theme: 'auto', calm: false, codex: {}, combosSeen: [], log: [], hlog: [], meta: null, todayKey: '', todayTok: 0, sim: null, fightFood: [], shopBuff: [], trial: false, sotaAt: 0 });
 const today = () => { const d = new Date(); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); };
 const curCap = () => SLOTS, BC = () => Math.max(bagCap(S.realm), S.bag.length);
 // sx = 存档里的攻血按几倍存的。没有 sx 的是放大十倍之前的存档：空窍、蛊囊、秘境里的血量和战利品蛊一律乘 STAT_SCALE（只做一次）
@@ -258,7 +272,7 @@ const allCombos = f => { setComboLocks(); try { return f(); } finally { applyLoc
 
 // ---------- 渲染 ----------
 // 洞府还没接好的食物类别：先不上架，界面写明「下个版本开放」。渡劫用的（trip）秘境一侧已全部接上
-const FOOD_READY = { stat: 1, gear: 1, trip: 1 };
+const FOOD_READY = { stat: 1, gear: 1, trip: 1, fight: 1, func: 1, shop: 1 };
 const notYet = id => { const f = FOOD[id]; return !f || !FOOD_READY[f.kind]; };
 const notYetList = () => FOODS.filter(f => !FOOD_READY[f.kind] && isUnlocked(M(), f.id, 'food')).map(f => f.id);
 const unlocked = (id, k) => !(k === 'food' && notYet(id)) && isUnlocked(M(), id, k);
@@ -356,21 +370,42 @@ function compassHTML() {
 }
 const shopSpeciesOf = d => poolFor(S.realm).filter(sp => SP[sp] && !SP[sp].immortal && daoOf(sp) === d && unlocked(sp, 'species'));
 // ---------- 蛊市 ----------
-function newShop() { S.shop = rollShop(R(), S.realm, S.dao, S.shop, unlocked); }
-const owned = sp => [...S.team, ...S.bag].filter(g => g.sp === sp && rankOf(g) === baseRank(sp)).length;
+// 转市：影响蛊市的食物（百宝囊、引蛊香、升转露）在这一次转市生效后清掉；转市令在「转市」按钮那里免钱
+function newShop() {
+  S.shop = rollShop(R(), S.realm, S.dao, S.shop, unlocked);
+  const bf = (S.shopBuff || []).filter(b => b.shop !== 'free'); if (!bf.length) return;
+  const r = R(), gears = FOODS.filter(f => f.kind === 'gear' && unlocked(f.id, 'food')).map(f => f.id);
+  S.shop.forEach(w => {
+    if (w.kind !== 'gu' || w.sold || w.frozen) return;
+    bf.forEach(b => { if (b.shop === 'dao' && b.dao && r() < b.pct / 100) { const pool = shopSpeciesOf(b.dao); if (pool.length) w.sp = pool[r.int(pool.length)]; } });
+    bf.forEach(b => {
+      if (b.shop === 'up' && r() < b.pct / 100 && baseRank(w.sp) < RANK.max) w.rank = baseRank(w.sp) + 1;
+      if (b.shop === 'gear' && gears.length) w.gear = gears[r.int(gears.length)];
+    });
+  });
+  S.shopBuff = (S.shopBuff || []).filter(b => b.shop === 'free');
+}
+const owned = (sp, rk = baseRank(sp)) => [...S.team, ...S.bag].filter(g => g.sp === sp && rankOf(g) === rk).reduce((n, g) => n + fuseW(g), 0);
 function wareHTML(w, i) {
   if (w.kind === 'food') {
     const f = FOOD[w.id], c = price(foodCost(w.id));
     return `<div class="ware food${w.frozen ? ' frozen' : ''}${w.sold ? ' sold' : ''}"><button class="wbuy" data-act="ware" data-i="${i}" data-tip-fn="ware"${w.sold ? ' disabled' : ''}><span class="fart">${foodSVG(w.id)}</span><b>${esc(f.n)}</b><small>${FOOD_KIND[f.kind]}</small><span class="tag">${w.sold ? '已购' : fmtTok(c)}</span></button></div>`;
   }
-  const s = SP[w.sp], st = statFor(w.sp, baseRank(w.sp)), c = price(PRICE.gu), merge = !w.sold && owned(w.sp) >= 2, gain = !w.sold && !merge ? resoGain(S.team, w.sp) : null;
-  return `<div class="ware${w.frozen ? ' frozen' : ''}${w.sold ? ' sold' : ''}${merge ? ' merge' : ''}"><button class="wbuy" data-act="ware" data-i="${i}" data-tip-fn="ware"${w.sold ? ' disabled' : ''}><span class="art">${guSVG(w.sp)}</span>${dzHTML(w.sp)}<b>${s.n}</b><span class="st"><i class="a">${st.atk}</i><i class="h">${st.hp}</i></span><span class="tag">${w.sold ? '已购' : (merge ? '合成 · ' : '') + fmtTok(c)}</span>${merge ? '<span class="fu">可合成</span>' : gain ? `<span class="fu rzg">${TXT.resoGain}</span>` : ''}</button></div>`;
+  const s = SP[w.sp], wr = w.rank || baseRank(w.sp), st = statFor(w.sp, wr), c = price(PRICE.gu), merge = !w.sold && owned(w.sp, wr) >= 2, gain = !w.sold && !merge ? resoGain(S.team, w.sp) : null;
+  return `<div class="ware${w.frozen ? ' frozen' : ''}${w.sold ? ' sold' : ''}${merge ? ' merge' : ''}"><button class="wbuy" data-act="ware" data-i="${i}" data-tip-fn="ware"${w.sold ? ' disabled' : ''}><span class="art">${guSVG(w.sp, { rank: wr })}</span>${dzHTML(w.sp)}${w.rank ? `<span class="rk rk${wr}">${RANK.ch[wr]}</span>` : ''}${gearHTML({ food: w.gear })}<b>${s.n}</b><span class="st"><i class="a">${st.atk}</i><i class="h">${st.hp}</i></span><span class="tag">${w.sold ? '已购' : (merge ? '合成 · ' : '') + fmtTok(c)}</span>${merge ? '<span class="fu">可合成</span>' : gain ? `<span class="fu rzg">${TXT.resoGain}</span>` : ''}</button></div>`;
+}
+// 收着还没生效的食物：下一场战斗带着的、下一次转市的
+function pendingHTML() {
+  const ff = (S.fightFood || []).filter(x => FOOD[x.id]), sb = (S.shopBuff || []).filter(x => FOOD[x.id]);
+  const who = x => { const g = x.uid && S.team.concat(S.bag).find(y => y.uid === x.uid); return g ? `（${SP[g.sp].n}）` : x.uid ? '' : '（全体）'; };
+  return (ff.length ? `<p class="sm">${TXT.fightLine}：${ff.map(x => fi(x.id) + esc(FOOD[x.id].n + who(x))).join('、')}</p>` : '')
+    + (sb.length ? `<p class="sm">${TXT.shopLine}：${sb.map(x => fi(x.id) + esc(FOOD[x.id].n + (x.dao && DAO[x.dao] ? `（${DAO[x.dao].n}）` : ''))).join('、')}</p>` : '');
 }
 function renderShop() {
   const box = $('#shop'); if (!box) return;
   if (!S.shop.length) newShop();
-  box.innerHTML = `<div class="shead"><span class="lbl" data-tip="${esc(TXT.shopTip)}">${TXT.shopHead}</span><button class="mini-b" data-act="refresh">${TXT.refresh(fmtTok(price(PRICE.refresh)))}</button></div>
-  <div class="wares">${S.shop.map(wareHTML).join('')}</div>${S.pantry.length ? `<div class="pantry"><span class="lbl">带回的食物</span>${S.pantry.map((id, i) => `<button class="pfood" data-act="pantry" data-i="${i}" data-tip="${esc(FOOD[id] ? FOOD[id].d + (notYet(id) ? '\n' + TXT.tripLocked : '') : '')}"${notYet(id) ? ' disabled' : ''}>${fi(id)}${esc(FOOD[id] ? FOOD[id].n : id)}</button>`).join('')}</div>` : ''}${(() => { const l = notYetList(); return l.length ? `<p class="sm tlocked" data-tip="${esc(l.map(id => `${FOOD[id].n}：${FOOD[id].d}`).join('\n'))}">${esc(TXT.tripLockedLine(l.map(id => '「' + FOOD[id].n + '」').join('')))}</p>` : ''; })()}${S.tripFood.length ? `<p class="sm">下一次渡劫带着：${S.tripFood.map(id => fi(id) + esc(FOOD[id] ? FOOD[id].n : id)).join('、')}</p>` : ''}`;
+  box.innerHTML = `<div class="shead"><span class="lbl" data-tip="${esc(TXT.shopTip)}">${TXT.shopHead}</span><button class="mini-b" data-act="refresh">${(S.shopBuff || []).some(b => b.shop === 'free') ? TXT.refreshFree : TXT.refresh(fmtTok(price(PRICE.refresh)))}</button></div>
+  <div class="wares">${S.shop.map(wareHTML).join('')}</div>${S.pantry.length ? `<div class="pantry"><span class="lbl">带回的食物</span>${S.pantry.map((id, i) => `<button class="pfood" data-act="pantry" data-i="${i}" data-tip="${esc(FOOD[id] ? FOOD[id].d + (notYet(id) ? '\n' + TXT.tripLocked : '') : '')}"${notYet(id) ? ' disabled' : ''}>${fi(id)}${esc(FOOD[id] ? FOOD[id].n : id)}</button>`).join('')}</div>` : ''}${(() => { const l = notYetList(); return l.length ? `<p class="sm tlocked" data-tip="${esc(l.map(id => `${FOOD[id].n}：${FOOD[id].d}`).join('\n'))}">${esc(TXT.tripLockedLine(l.map(id => '「' + FOOD[id].n + '」').join('')))}</p>` : ''; })()}${pendingHTML()}${S.tripFood.length ? `<p class="sm">下一次渡劫带着：${S.tripFood.map(id => fi(id) + esc(FOOD[id] ? FOOD[id].n : id)).join('、')}</p>` : ''}`;
 }
 // 新得一只蛊：能合成先合成；蛊市买的先进空窍再进蛊囊；战利品只进蛊囊
 function placeNew(g, mode = 'shop') {
@@ -406,28 +441,67 @@ function floorCheck() {
 }
 // ---------- 食物 ----------
 let FEED = null;   // 正在挑目标的食物 { id, from: 'shop'|'pantry', i }
+// 食物要不要先挑一只蛊（或挑一道）：挂件、选一只的加攻血 / 只管这一场、功能类全部、引蛊香（挑道）
+const needsPick = f => f.kind === 'gear' || f.kind === 'func' || ((f.kind === 'stat' || f.kind === 'fight') && f.to === 'one') || (f.kind === 'shop' && f.shop === 'dao');
+// 这只蛊能不能吃这份食物（挑选页上灰掉不能选的）
+function canFeed(f, g) {
+  if (f.kind === 'stat') return canEat(g);
+  if (f.kind === 'fight' || (f.kind === 'func' && f.func === 'echo')) return S.team.includes(g);
+  if (f.kind === 'func' && f.func === 'fuse') return rankOf(g) < RANK.max && !(SP[g.sp] || {}).immortal;
+  if (f.kind === 'func' && f.func === 'wash') return !!g.xing;
+  return true;
+}
 function useFood(id, from, i) {
   const f = FOOD[id]; if (!f) return false;
   if (notYet(id)) { note(`「${f.n}」${TXT.tripLocked}`); return false; }
   if (f.kind === 'trip') { S.tripFood.push(id); note(TXT.tripFood(f)); achieve('feeds', 1); return true; }
   if (f.kind === 'stat' && f.to !== 'one') {
     const can = S.team.filter(canEat); if (!can.length) { note(TXT.ateFull); return false; }
-    const r = R(), tg = f.to === 'all' ? can : can.sort(() => r() - 0.5).slice(0, 2);
+    const r = R(), n = f.to === 'all' ? can.length : f.to === 'rand3' ? 3 : 2, tg = can.sort(() => r() - 0.5).slice(0, n);
     feedStat(id, tg); note(TXT.fed(f, tg)); tg.forEach(g => fxFloat(g.uid, `+${f.atk || 0}/+${f.hp || 0}`, 'buff')); achieve('feeds', 1); return true;
   }
+  if (f.kind === 'fight' && f.to !== 'one') { (S.fightFood = S.fightFood || []).push({ id }); note(TXT.fightFood(f)); achieve('feeds', 1); return true; }
+  if (f.kind === 'shop' && f.shop !== 'dao') { (S.shopBuff = S.shopBuff || []).push({ id, shop: f.shop, pct: f.pct || 0 }); note(TXT.shopFood(f)); achieve('feeds', 1); return true; }
   FEED = { id, from, i };
-  sheet(`<div class="fhead"><span class="fbig">${foodSVG(f.id)}</span><div><h3>${esc(f.kind === 'gear' ? TXT.gearPick(f) : TXT.foodPick(f))}</h3><p class="sm">${esc(f.d)}</p></div></div><div class="mini pick">${[...S.team, ...S.bag].map((g, k) => `<button class="mg" data-act="feedTo" data-k="${k}"${f.kind === 'stat' && !canEat(g) ? ' disabled' : ''}><span class="art">${guSVG(g.sp, { rank: rankOf(g) })}</span><b>${SP[g.sp].n}</b><span class="st"><i class="a">${g.atk}</i><i class="h">${g.hp}</i></span>${f.kind === 'stat' ? `<small>${canEat(g) ? `已吃 ${ateOf(g)}/${ATE_MAX}` : '吃满了'}</small>` : g.food ? `<small>${fi(g.food)}挂着${esc(FOOD[g.food] ? FOOD[g.food].n : '')}</small>` : ''}</button>`).join('')}</div>`);
+  if (f.kind === 'shop') {   // 引蛊香：挑一道
+    sheet(`<div class="fhead"><span class="fbig">${foodSVG(f.id)}</span><div><h3>${esc(TXT.daoFoodPick(f))}</h3><p class="sm">${esc(f.d)}</p></div></div><div class="dpick">${DAOS.map(d => `<button data-act="feedDao" data-d="${d.id}" style="--dc:${d.color}"><b>${esc(d.n.replace(/道$/, '')[0])}</b>${esc(d.n)}</button>`).join('')}</div>`);
+    return null;
+  }
+  const list = f.kind === 'fight' || (f.kind === 'func' && f.func === 'echo') ? S.team : [...S.team, ...S.bag], all = [...S.team, ...S.bag];
+  const head = f.kind === 'gear' ? TXT.gearPick(f) : f.kind === 'fight' ? TXT.fightPick(f) : f.kind === 'func' ? TXT.funcPick(f) : TXT.foodPick(f);
+  sheet(`<div class="fhead"><span class="fbig">${foodSVG(f.id)}</span><div><h3>${esc(head)}</h3><p class="sm">${esc(f.d)}</p></div></div><div class="mini pick">${list.map(g => { const k = all.indexOf(g); return `<button class="mg" data-act="feedTo" data-k="${k}"${canFeed(f, g) ? '' : ' disabled'}><span class="art">${guSVG(g.sp, { rank: rankOf(g) })}</span><span class="rk rk${rankOf(g)}">${RANK.ch[rankOf(g)]}</span><b>${SP[g.sp].n}</b><span class="st"><i class="a">${g.atk}</i><i class="h">${g.hp}</i></span>${f.kind === 'stat' ? `<small>${canEat(g) ? `已吃 ${ateOf(g)}/${ATE_MAX}` : '吃满了'}</small>` : f.kind === 'func' && f.func === 'fuse' ? `<small>算作 ${fuseW(g)} 份</small>` : f.kind === 'func' && f.func === 'wash' ? `<small>${g.xing ? esc(xingName(g.xing)) : '没有蛊性'}</small>` : g.food ? `<small>${fi(g.food)}挂着${esc(FOOD[g.food] ? FOOD[g.food].n : '')}</small>` : ''}</button>`; }).join('')}</div>`);
   return null;   // 等玩家挑
+}
+// 挑完之后先付钱（货架）或从食物架拿走（带回的食物）
+function takeFed(fr) {
+  if (fr.from === 'shop') { const w = S.shop[fr.i]; if (!w || w.sold || !pay(foodCost(w.id))) return false; w.sold = true; w.frozen = false; return true; }
+  S.pantry.splice(fr.i, 1); return true;
 }
 function feedTo(g) {
   const f = FEED && FOOD[FEED.id]; if (!f || !g) return;
   if (f.kind === 'stat' && !canEat(g)) { note(TXT.ateNo(g)); return; }
+  if (!canFeed(f, g)) { note(f.kind === 'func' && f.func === 'fuse' ? TXT.fuseNo(g) : f.kind === 'func' && f.func === 'wash' ? TXT.washNo : TXT.fightPick(f)); return; }
   const fr = FEED; FEED = null;
-  if (fr.from === 'shop') { const w = S.shop[fr.i]; if (!w || w.sold || !pay(foodCost(w.id))) { closeSheet(); return; } w.sold = true; w.frozen = false; }
-  else S.pantry.splice(fr.i, 1);
+  if (!takeFed(fr)) { closeSheet(); return; }
+  let float = f.n, merged = [];
   if (f.kind === 'gear') { g.food = f.id; note(TXT.geared(f, g)); }
-  else { feedStat(f.id, [g]); note(TXT.fed(f, [g])); }
-  achieve('feeds', 1); closeSheet(); renderHome(); save(); fxFloat(g.uid, f.kind === 'gear' ? f.n : `+${f.atk || 0}/+${f.hp || 0}`, 'buff');
+  else if (f.kind === 'fight' || (f.kind === 'func' && f.func === 'echo')) { (S.fightFood = S.fightFood || []).push({ id: f.id, uid: g.uid }); note(TXT.fightFood(f)); }
+  else if (f.kind === 'func' && f.func === 'fuse') {   // 合炼丹：多算几份材料，凑够就当场走合成
+    g.fz = (g.fz | 0) + (f.n || 1); note(TXT.fuseDone(f, g));
+    merged = mergeAll(S.team, S.bag, null); merged.forEach(x => { note(TXT.merge(x)); achieve('merges', 1); });
+  }
+  else if (f.kind === 'func' && f.func === 'swap') { [g.atk, g.hp] = [g.hp, g.atk]; [g.bonusA, g.bonusH] = [g.bonusH || 0, g.bonusA || 0]; note(TXT.swapDone(g)); float = `攻 ${g.atk} 血 ${g.hp}`; }
+  else if (f.kind === 'func' && f.func === 'wash') { g.xing = null; delete g.xingAsk; note(TXT.washDone(g)); }
+  else { feedStat(f.id, [g]); note(TXT.fed(f, [g])); float = `+${f.atk || 0}/+${f.hp || 0}`; }
+  achieve('feeds', 1); closeSheet();
+  if (merged.length) { afterChange(merged); setTimeout(askXing, 300); } else { renderHome(); save(); }
+  fxFloat(g.uid, float, 'buff');
+}
+// 只管这一场的食物：渡劫里下一场战斗带上（g.fx，引擎按声明式效果跑），打完就没了。选一只的那只没上场就留着
+function withFightFood(team) {
+  const ff = S.fightFood || [], ids = new Set(team.map(g => g.uid)), used = ff.filter(x => FOOD[x.id] && (!x.uid || ids.has(x.uid)));
+  if (!used.length) return { team, used };
+  return { used, team: team.map(g => { const mine = used.filter(x => !x.uid || x.uid === g.uid); return mine.length ? { ...g, fx: [...(g.fx || []), ...mine.map(x => ({ kind: 'food', id: x.id, n: FOOD[x.id].n, eff: FOOD[x.id].eff || [] }))] } : g; }) };
 }
 // ---------- 选秘境：额度、敌人主道、首领阵容（秘境列表由秘境侧给 TRIP.lands；没给时用下面的占位表）----------
 const LAND_NAMES = [['竹海', '石林', '雾泽'], ['赤岩', '寒潭', '断崖'], ['火窟', '沙洲', '古渡'], ['雷谷', '冰原', '天坑'], ['血沼', '骨林', '玄洞'], ['星墟', '云台', '归墟']];
@@ -502,9 +576,10 @@ function onTripEnd(result = {}) {
 const placed = t => autoPlace((t || []).map(g => ({ ...g, pos: g.pos ? { ...g.pos } : null })));
 // 给秘境复用的战斗回放：返回 Promise<{ res, A, B }>
 function tripPlayBattle(foeTeam, opts = {}) {
-  const team = opts.team || S.team, seed = opts.seed || ((S.seed ^ Math.imul(++S.step, 2654435761)) >>> 0).toString(36);
-  const sota = { A: sotaOn(), B: false };
+  const team0 = opts.team || S.team, seed = opts.seed || ((S.seed ^ Math.imul(++S.step, 2654435761)) >>> 0).toString(36);
+  const sota = { A: sotaOn(), B: false }, ff = withFightFood(team0), team = ff.team;
   const res = battle(placed(team), placed(foeTeam), 'r:' + seed, { ...(opts.oa || {}), sota });
+  if (ff.used.length) { S.fightFood = (S.fightFood || []).filter(x => !ff.used.includes(x)); note(TXT.fightUsed(ff.used.map(x => FOOD[x.id].n).join('、'))); save(); }
   const A = { team, name: S.name || '无名蛊师', realm: S.realm, trial: S.trial }, B = { team: foeTeam, name: opts.foeName || '秘境', realm: S.realm };
   return new Promise(resolve => runBattle({ kind: 'trip', title: opts.title || '秘境 · 斗蛊', res, A, B, sota, done: () => resolve({ res, A, B }) }));
 }
@@ -896,14 +971,14 @@ function guTip(g, team, i) {
   const act = actOfG(g), p = g.pos, sk = skills(g.sp, rankOf(g)), skP = sk.find(k => k.kind === 'passive'), skA = sk.find(k => k.kind === 'active'), rs = team ? resoOf(team, g) : '';
   return `<b>${rankName(g)}</b> <i class="a">${g.atk}</i> <i class="h">${g.hp}</i> <i class="v">${spdG(g)}</i><br><small>${esc(SP[g.sp].lore)}${team && p ? ` · 第 ${p.r + 1} 行${COL_NAMES[p.c]}列` : ''} · ${reachG(g)} · 攻 / 血 / 速</small>`
     + (rankOf(g) > driveCap(S.realm) ? `<p class="warn">${esc(TXT.overDrive)}</p>` : '') + (rs ? `<p class="rs"><b>${esc(rs.split('：')[0])}</b> ${esc(rs.slice(rs.indexOf('：') + 1))}</p>` : '') + (nat ? `<p><b>被动·${esc((skP || nat).n)}</b> ${esc(skP ? skP.text : nat.d)}</p>` : '') + (act ? `<p><b>主动·${esc((skA || act).n)}</b> ${esc(skA ? skA.text : act.d)}<br><small>蛊力攒满自动放</small></p>` : '') + (c ? `<p><b>杀招·${esc(c.n)}</b> ${esc(c.d)}<br><small>配方：${c.need.map(x => SP[x].n).join(' + ')}</small></p>` : '')
-    + (f ? `<p>${fi(f.id)}<b>挂件·${esc(f.n)}</b> ${esc(f.d)}</p>` : '') + (g.xing ? `<p><b>蛊性·${esc(xingName(g.xing))}</b> ${esc(xingDesc(g.xing))}</p>` : '') + `<small>${esc(TXT.ateLine(g))} · 点开看完整详情</small>`;
+    + (f ? `<p>${fi(f.id)}<b>挂件·${esc(f.n)}</b> ${esc(f.d)}</p>` : '') + (g.xing ? `<p><b>蛊性·${esc(xingName(g.xing))}</b> ${esc(xingDesc(g.xing))}</p>` : '') + (g.fz ? `<p class="sm">${esc(TXT.fuseTip(g))}</p>` : '') + `<small>${esc(TXT.ateLine(g))} · 点开看完整详情</small>`;
 }
 const TIPS = {
   qi: () => `<b>元气 ${fmtTok(S.bank)}</b><br><small>${esc(TXT.qiTip)}${VSC ? '' : esc(TXT.qiTrial)}</small>`,
   gu: t => { const i = S.team.findIndex(g => g.uid === t.dataset.uid); return guTip(S.team[i], S.team, i); },
   bag: () => esc(TXT.bagTip()),
   bg: t => { const g = S.bag[+t.dataset.i]; return g ? guTip(g) + '<small>在蛊囊里：不上场、不跟去渡劫，拖进空窍才上场</small>' : ''; },
-  ware: t => { const w = S.shop[+t.dataset.i]; if (!w) return ''; if (w.kind === 'food') { const f = FOOD[w.id]; return `${fi(f.id)}<b>${esc(f.n)}</b> · ${FOOD_KIND[f.kind]}<br>${esc(f.d)}<br><small>价格 ${fmtTok(price(foodCost(w.id)))} 元气</small>`; } const n = owned(w.sp); return guTip(newGu(w.sp)).replace('<small>点开看完整详情</small>', '') + `<small>价格 ${fmtTok(price(PRICE.gu))} 元气 · 点开看完整详情</small>` + (n >= 2 ? `<p>你已有 ${n} 只${RANK.names[baseRank(w.sp)]}${SP[w.sp].n}，买下当场合成${RANK.names[baseRank(w.sp) + 1]}</p><p>${esc(TXT.mergeAfter(mergePreview(w.sp, baseRank(w.sp))))}</p>` : '' + (n < 2 && resoGain(S.team, w.sp) ? `<p>${esc(TXT.resoGainTip(resoGain(S.team, w.sp)))}</p>` : '')); },
+  ware: t => { const w = S.shop[+t.dataset.i]; if (!w) return ''; if (w.kind === 'food') { const f = FOOD[w.id]; return `${fi(f.id)}<b>${esc(f.n)}</b> · ${FOOD_KIND[f.kind]}<br>${esc(f.d)}<br><small>价格 ${fmtTok(price(foodCost(w.id)))} 元气</small>`; } const wr = w.rank || baseRank(w.sp), n = owned(w.sp, wr), ng = newGu(w.sp, wr); if (w.gear) ng.food = w.gear; return guTip(ng).replace('<small>点开看完整详情</small>', '') + `<small>价格 ${fmtTok(price(PRICE.gu))} 元气 · 点开看完整详情</small>` + (n >= 2 ? `<p>你已有 ${n} 份${RANK.names[wr]}${SP[w.sp].n}，买下当场合成${RANK.names[wr + 1]}</p><p>${esc(TXT.mergeAfter(mergePreview(w.sp, wr)))}</p>` : '' + (n < 2 && resoGain(S.team, w.sp) ? `<p>${esc(TXT.resoGainTip(resoGain(S.team, w.sp)))}</p>` : '')); },
 };
 let tipT = 0, tipEl = null, tipFor = null, tipLongT = 0, tipLongAt = -1e9;
 function tipShow(t) {
@@ -984,13 +1059,13 @@ function buyWare(i) {
   const w = S.shop[i]; if (!w || w.sold || tripOn()) return;
   if (w.kind === 'food') {
     const f = FOOD[w.id]; if (!canPay(foodCost(w.id))) { note(TXT.poor(price(foodCost(w.id)) - S.bank)); return; }
-    if (f.kind === 'trip' || (f.kind === 'stat' && f.to !== 'one')) { if (f.kind === 'stat' && !S.team.some(canEat)) { note(TXT.ateFull); return; }
+    if (!needsPick(f)) { if (f.kind === 'stat' && !S.team.some(canEat)) { note(TXT.ateFull); return; }
       if (!pay(foodCost(w.id))) return; w.sold = true; w.frozen = false; useFood(w.id, 'shop', i); closeSheet(); renderHome(); save(); return; }
     useFood(w.id, 'shop', i); return;
   }
   if (!canBuy(S.team, w.sp, curCap(), S.bag, BC())) { note(TXT.bagFull); return; }
   if (!pay(PRICE.gu)) return;
-  const g = newGu(w.sp); w.sold = true; w.frozen = false;
+  const g = newGu(w.sp, w.rank || undefined); if (w.gear && FOOD[w.gear]) g.food = w.gear; w.sold = true; w.frozen = false;
   note(TXT.bought(g)); achieve('buys', 1); closeSheet();
   placeNew(g, 'shop'); snd('coin');
 }
@@ -1011,9 +1086,10 @@ const ACT = {
   },
   buy(a) { buyWare(+a.dataset.i); },
   freeze(a) { const w = S.shop[+a.dataset.i]; if (!w) return; w.frozen = !w.frozen; closeSheet(); renderShop(); save(); },
-  refresh() { if (tripOn() || !pay(PRICE.refresh)) return; newShop(); renderShop(); meters(); save(); snd('tick'); },
-  pantry(a) { const i = +a.dataset.i, id = S.pantry[i], f = FOOD[id]; if (!f) return; if (f.kind === 'gear' || (f.kind === 'stat' && f.to === 'one')) { useFood(id, 'pantry', i); return; } if (useFood(id, 'pantry', i)) { S.pantry.splice(i, 1); renderHome(); save(); } },
+  refresh() { const fr = (S.shopBuff || []).find(b => b.shop === 'free'); if (tripOn() || (!fr && !pay(PRICE.refresh))) return; if (fr) S.shopBuff.splice(S.shopBuff.indexOf(fr), 1); newShop(); renderShop(); meters(); save(); snd('tick'); },
+  pantry(a) { const i = +a.dataset.i, id = S.pantry[i], f = FOOD[id]; if (!f) return; if (needsPick(f)) { useFood(id, 'pantry', i); return; } if (useFood(id, 'pantry', i)) { S.pantry.splice(i, 1); renderHome(); save(); } },
   feedTo(a) { const all = [...S.team, ...S.bag]; feedTo(all[+a.dataset.k]); },
+  feedDao(a) { const f = FEED && FOOD[FEED.id]; if (!f) return; const fr = FEED; FEED = null; if (!takeFed(fr)) { closeSheet(); return; } (S.shopBuff = S.shopBuff || []).push({ id: f.id, shop: 'dao', pct: f.pct || 0, dao: a.dataset.d }); note(TXT.shopFood(f)); achieve('feeds', 1); closeSheet(); renderHome(); save(); },
   xingPick(a) { const g = [...S.team, ...S.bag].find(x => x.uid === a.dataset.uid); if (!g) return; g.xing = a.dataset.k; closeSheet(); note(TXT.xingSet(g)); renderHome(); save(); askXing(); },
   gu(a) { const i = S.team.findIndex(g => g.uid === a.dataset.uid); if (i >= 0) guDetail(S.team[i], { kind: 'team', i }); },
   bagGu(a) { const i = +a.dataset.i; if (S.bag[i]) guDetail(S.bag[i], { kind: 'bag', i }); },

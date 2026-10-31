@@ -1985,80 +1985,107 @@ function daoLine(d, info) {
 return { DAOS, DAO, DAO_KEYS, DAO_TIERS, CLASH_MUL, DAO_CLASH, CLASH_NOTE, DAO_OF, DAO_BY_SCHOOL, daoCount, daoLine };
 })();
 // ---- src/foods.js
-// 蛊码 GuCode · 食物（第三版，26 种：加攻血 8、挂件 10、出征用 8）。纯数据，不 import 任何文件。
-// 格式：FOODS[i] = { id, n 名, kind, dao 所属的道（蛊市按罗盘选中的道加权）, cost 价格档（× core.PRICE.food 才是元气）, d 一句话（写清加什么、给谁、多久）, ...效果字段 }
-//   kind 'stat'：买下立刻生效，永久加攻血（每只最多吃 core.ATE_MAX 次）。to = 'one'（玩家选一只）| 'rand2'（随机两只）| 'all'（空窍全体）；atk、hp = 加多少点（数值已按 design 2.8 放大十倍，和 core.STAT_SCALE 一致）
-//   kind 'gear'：挂在一只蛊身上，每只最多 1 个，换新的旧的就没了；战斗里生效。
-//              eff = 声明式效果（battle-spec 第 4、6 节），施放者是挂着它的那只蛊，数值不随转数涨。
-//              旧写法 gear = 'spawn'（倒下化出蛊蛹：本蛊攻血 pct%）| 'ward'（受到的伤害 -pct%）| 'first'（开战攻 +pct%）引擎照旧认。
-//              八种挂件正好各给一种通用效果（召、护、毒、灼、寒、标记、吞、击退），任何道的蛊挂上都能接别人的配合。
-//   kind 'trip'：只在下一次出征里有效，出征开始时生效、回洞府清掉。
-//              trip = 'heal'：每场开打前全队回 pct% 血（秘境已支持）
-//              trip = 'road'：这趟出征房间路程 -pct%（新，要秘境一侧接：路程乘 1 − pct/100）
-//              trip = 'revive'：这趟出征第一只倒下的蛊，下一场开打前以 pct% 血站起来，只一次（新，要秘境一侧接）
-//              trip = 'eff'：这趟出征每场战斗，每只出场蛊都加上 eff（新，要秘境把 eff 传给引擎，建议 battle opts 里按方带一份额外效果）
-//              新类型没接好之前，可以先用 timeline.js 的 LOCKED.food 锁住不上架（lockedTrip 列出来了）。
-// 顺序只能往后加（坐标码按下标记食物挂件）。前 6 个是骨架时的占位，id 和位置不动，只改了内容。
-// canon: true = 原著里有的东西（描述是蛊码自己写的）。导出 FOODS / FOOD（core、秘境在用），FOOD_ITEMS 是同一份的别名。
-const F = (id, n, kind, dao, cost, d, o = {}) => ({ id, n, kind, dao, cost, d, ...o });
+// 蛊码 GuCode · 食物（第四版，50 种：加攻血 10、只管这一场 6、挂件 19、功能 4、影响蛊市 4、渡劫用 8）。纯数据，不 import 任何文件。
+// 格式：FOODS[i] = { id, n 名, kind, dao 所属的道（蛊市按罗盘选中的道加权）, cost 价格档（× core.PRICE.food 才是元气）, d 一句话（是什么、有什么用、喂给谁）, look 长什么样（画图标用）, ...效果字段 }
+//   战斗效果 eff 都按 battle-spec 第 4、6 节写，施放者是吃下或挂着它的那只蛊，数值不随转数涨。数值已按 design 2.8 放大十倍（和 core.STAT_SCALE 一致）。
+//
+//   kind 'stat'  加攻血：买下立刻生效，永久。每只最多吃 core.ATE_MAX 次（单只封顶）。
+//                to = 'one'（玩家选一只）| 'rand2' | 'rand3'（空窍里随机两只 / 三只，只挑还没吃满的）| 'all'（空窍全体）；atk、hp = 加多少点
+//   kind 'fight' 只管这一场：买下后留到「下一场战斗」（渡劫里的下一场，或切磋），打完就没了。to = 'one'（选一只）| 'all'（上场的全体）；
+//                eff 给吃到的每只蛊加在这一场里（集成：像渡劫用食物的 eff 一样按方带给引擎）
+//   kind 'gear'  挂件：挂在一只蛊身上，每只最多 1 个，换新的旧的就没了；战斗里生效。eff = 声明式效果；
+//                旧写法 gear = 'spawn' | 'ward' | 'first' 引擎照旧认；noMove: true = 不会被击退、拉近或换位（要引擎接：knock / draw / swap 跳过它）。
+//                挂件尽量各接一种通用效果（召、护、毒、灼、寒、标记、吞、击退），任何道的蛊挂上都能接别人的配合。
+//   kind 'func'  功能：不加攻血，不受吃满 3 次的限制。func =
+//                'fuse'  算作 n 份同种同转的合成材料（三份合一只；仙蛊和五转不能用，不会超过五转封顶）
+//                'swap'  交换一只蛊的攻和血（食物加成一起换）
+//                'echo'  这只蛊下一场开战时先把自己的亡语放一次，本身不倒（eff 里的 echo 要引擎接：把它 death 时机的效果跑一遍）
+//                'wash'  洗掉一只蛊的蛊性，好让它在秘境里打出新的
+//   kind 'shop'  影响蛊市：只管下一次转市（或渡劫回来那次刷新）。shop =
+//                'gear'  刷出来的蛊各自带一个随机挂件（只从已解锁的挂件里挑）
+//                'dao'   买下时选一个道，这一道的蛊多出 pct%（叠在罗盘上）
+//                'up'    每只蛊 pct% 机会高一转（不超过五转，也不出仙蛊）
+//                'free'  这次转市不要元气
+//   kind 'trip'  渡劫用：只在下一次渡劫里有效，进秘境时生效、回洞府清掉。trip =
+//                'heal'  每场开打前全队回 pct% 血 · 'road' 房间路程 -pct% · 'revive' 第一只倒下的蛊下一场以 pct% 血站起来（一次）
+//                'eff'   每场战斗每只出场蛊都加上 eff。road / revive / eff 要秘境一侧接，接好前用 lockedTrip() 锁住不掉落。
+// 顺序只能往后加（坐标码按下标记食物挂件）。canon: true = 原著里有的东西（描述和样子是蛊码自己写的）。导出 FOODS / FOOD，FOOD_ITEMS 是别名。
+const F = (id, n, kind, dao, cost, d, look, o = {}) => ({ id, n, kind, dao, cost, d, look, ...o });
+const E = (when, op, tg, o = {}) => ({ when, op, tg, ...o });
 const FOODS = [
-  // —— 骨架时的 6 个（位置不动）——
-  F('meat', '血肉团', 'stat', 'li', 3, '喂给一只蛊：攻 +20、血 +20，永久', { to: 'one', atk: 20, hp: 20 }),
-  F('dew', '晨露丸', 'stat', 'xue', 3, '空窍里随机两只：攻 +10、血 +20，永久', { to: 'rand2', atk: 10, hp: 20 }),
-  F('egg', '孵蛊卵', 'gear', 'nu', 4, '挂在一只蛊上：它倒下时原地化出一只蛊蛹（本蛊攻血的 40%）', { gear: 'spawn', pct: 40 }),
-  F('scale', '鳞甲片', 'gear', 'jin', 4, '挂在一只蛊上：受到的伤害 -10%', { gear: 'ward', pct: 10 }),
-  F('tea', '回春茶', 'trip', 'xue', 3, '下一次出征：每场开打前全队回 20% 血', { trip: 'heal', pct: 20 }),
-  F('map', '寻路图', 'trip', 'zhi', 3, '下一次出征：房间路程 -15%，少花元气', { trip: 'road', pct: 15 }),
-  // —— 加攻血 ——
-  F('yuelan', '月兰花瓣', 'stat', 'guang', 3, '喂给一只蛊：攻 +30，永久', { to: 'one', atk: 30, hp: 0, canon: true }),
-  F('zhujiu', '青竹酒', 'stat', 'zhi', 5, '空窍全体各喝一口：攻 +10、血 +10，永久', { to: 'all', atk: 10, hp: 10 }),
-  F('huotan', '火炭心', 'stat', 'yan', 4, '空窍里随机两只：攻 +20、血 +10，永久', { to: 'rand2', atk: 20, hp: 10 }),
-  F('shuangye', '霜叶', 'stat', 'bing', 2, '喂给一只蛊：攻 +10、血 +20，永久', { to: 'one', atk: 10, hp: 20 }),
-  F('lingzhi', '灵芝片', 'stat', 'mu', 5, '空窍全体：血 +20，永久', { to: 'all', atk: 0, hp: 20 }),
-  F('leizao', '雷击枣', 'stat', 'lei', 4, '喂给一只蛊：攻 +20、血 +30，永久', { to: 'one', atk: 20, hp: 30 }),
-  // —— 挂件：各给一种通用效果 ——
-  F('duzhen', '毒针囊', 'gear', 'du', 4, '挂在一只蛊上：它的普攻让目标中毒（攻击 10%，可叠）',
-    { eff: [{ when: 'attack', op: 'st', tg: 'tg', k: 'psn', atk: 0.1 }] }),
-  F('huorong', '火绒草', 'gear', 'yan', 4, '挂在一只蛊上：它的普攻让目标灼烧 2 轮（攻击 12%）',
-    { eff: [{ when: 'attack', op: 'st', tg: 'tg', k: 'burn', n: 2, atk: 0.12 }] }),
-  F('bingpo', '冰魄珠', 'gear', 'bing', 4, '挂在一只蛊上：它的普攻 35% 机会让目标寒 1 层',
-    { eff: [{ when: 'attack', op: 'st', tg: 'tg', k: 'chill', n: 1, chance: 0.35 }] }),
-  F('yeming', '夜明砂', 'gear', 'an', 4, '挂在一只蛊上：开战给敌方攻最高的蛊打上标记 2 轮',
-    { eff: [{ when: 'start', op: 'st', tg: 'foe.top', k: 'mark', n: 3 }] }),
-  F('taoya', '饕餮牙', 'gear', 'li', 5, '挂在一只蛊上：它普攻后，目标血量不过 15% 或是召唤物，就整只吞下，得到它四分之一攻血',
-    { eff: [{ when: 'attack', op: 'eat', tg: 'tg', v: 0.15, gain: 0.25 }] }),
-  F('shanjiao', '撞山角', 'gear', 'tu', 4, '挂在一只蛊上：它的普攻 25% 机会把目标击退一格（撞上后面的蛊，两只都受伤）',
-    { eff: [{ when: 'attack', op: 'knock', tg: 'tg', v: 1, bump: 0.3, chance: 0.25 }] }),
-  F('xuelian', '血莲子', 'gear', 'xue', 4, '挂在一只蛊上：它普攻后回复这一下的 15%',
-    { eff: [{ when: 'attack', op: 'heal', tg: 'self', n: 0.15 }] }),
-  F('jifeng', '疾风翎', 'gear', 'yu', 3, '挂在一只蛊上：开战行动条提前 40%，抢先出手',
-    { eff: [{ when: 'start', op: 'adv', tg: 'self', v: 0.4 }] }),
-  // —— 出征用 ——
-  F('xuming', '续命汤', 'trip', 'mu', 5, '下一次出征：每场开打前全队回 35% 血', { trip: 'heal', pct: 35 }),
-  F('dinghun', '定魂香', 'trip', 'hun', 5, '下一次出征：第一只倒下的蛊，下一场开打前以 30% 血站起来（只一次）', { trip: 'revive', pct: 30 }),
-  F('jingleifu', '惊雷符', 'trip', 'lei', 3, '下一次出征：每场开战全队蛊力 +15',
-    { trip: 'eff', eff: [{ when: 'start', op: 'gp', tg: 'self', v: 15 }] }),
-  F('guangyinxiang', '光阴香', 'trip', 'zhou', 4, '下一次出征：每场第 4 轮起全队攻 +10%',
-    { trip: 'eff', eff: [{ when: 'round', op: 'buff', tg: 'self', atk: 0.1, if: 'round>=4', max: 1 }] }),
-  F('houtufu', '厚土符', 'trip', 'tu', 4, '下一次出征：每场开战全队得到最大血量 8% 的护体',
-    { trip: 'eff', eff: [{ when: 'start', op: 'shield', tg: 'self', mx: 0.08 }] }),
-  F('fengxingfu', '风行符', 'trip', 'yu', 3, '下一次出征：每场开战全队行动条提前 15%',
-    { trip: 'eff', eff: [{ when: 'start', op: 'adv', tg: 'self', v: 0.15 }] }),
+  // —— 第一批 26 种（位置不动）——
+  F('meat', '血肉团', 'stat', 'li', 3, '喂给一只蛊：攻 +20、血 +20，永久', '一团暗红的生肉，用草绳扎成拳头大小', { to: 'one', atk: 20, hp: 20 }),
+  F('dew', '晨露丸', 'stat', 'xue', 3, '空窍里随机两只：攻 +10、血 +20，永久', '三颗透明的露珠丸子，里面裹着一缕血丝', { to: 'rand2', atk: 10, hp: 20 }),
+  F('egg', '孵蛊卵', 'gear', 'nu', 4, '挂在一只蛊上：它倒下时原地化出一只蛊蛹（本蛊攻血的 40%）', '一枚灰白的软壳卵，壳上透出里面蜷着的小虫影', { gear: 'spawn', pct: 40 }),
+  F('scale', '鳞甲片', 'gear', 'jin', 4, '挂在一只蛊上：受到的伤害 -10%', '一片巴掌大的青铜色鳞片，边缘磨得发亮', { gear: 'ward', pct: 10 }),
+  F('tea', '回春茶', 'trip', 'xue', 3, '下一次渡劫：每场开打前全队回 20% 血', '一只粗陶小碗，盛着冒热气的红褐色茶汤', { trip: 'heal', pct: 20 }),
+  F('map', '寻路图', 'trip', 'zhi', 3, '下一次渡劫：房间路程 -15%，少花元气', '一卷泛黄的羊皮小图，边上画着弯弯曲曲的山路', { trip: 'road', pct: 15 }),
+  F('yuelan', '月兰花瓣', 'stat', 'guang', 3, '喂给一只蛊：攻 +30，永久', '几片半透明的淡蓝花瓣，夜里会发出月光一样的冷光', { to: 'one', atk: 30, hp: 0, canon: true }),
+  F('zhujiu', '青竹酒', 'stat', 'zhi', 5, '空窍全体各喝一口：攻 +10、血 +10，永久', '一截青竹筒，塞着软木塞，竹节上挂着酒珠', { to: 'all', atk: 10, hp: 10 }),
+  F('huotan', '火炭心', 'stat', 'yan', 4, '空窍里随机两只：攻 +20、血 +10，永久', '一块外黑里红的炭芯，裂缝里还在一明一暗地烧', { to: 'rand2', atk: 20, hp: 10 }),
+  F('shuangye', '霜叶', 'stat', 'bing', 2, '喂给一只蛊：攻 +10、血 +20，永久', '一片结了白霜的枫叶，叶脉冻成银线', { to: 'one', atk: 10, hp: 20 }),
+  F('lingzhi', '灵芝片', 'stat', 'mu', 5, '空窍全体：血 +20，永久', '一片切开的赤褐色灵芝，横截面一圈圈年轮', { to: 'all', atk: 0, hp: 20 }),
+  F('leizao', '雷击枣', 'stat', 'lei', 4, '喂给一只蛊：攻 +20、血 +30，永久', '一颗焦黑的红枣，表面有一道蓝白色的电纹', { to: 'one', atk: 20, hp: 30 }),
+  F('duzhen', '毒针囊', 'gear', 'du', 4, '挂在一只蛊上：它的普攻让目标中毒（攻击 10%，可叠）', '一个墨绿色的小皮囊，口上露出三根细针', { eff: [E('attack', 'st', 'tg', { k: 'psn', atk: 0.1 })] }),
+  F('huorong', '火绒草', 'gear', 'yan', 4, '挂在一只蛊上：它的普攻让目标灼烧 2 轮（攻击 12%）', '一簇橙红色的绒毛草，尖上冒着火星', { eff: [E('attack', 'st', 'tg', { k: 'burn', n: 2, atk: 0.12 })] }),
+  F('bingpo', '冰魄珠', 'gear', 'bing', 4, '挂在一只蛊上：它的普攻 35% 机会让目标寒 1 层', '一颗鸽蛋大的冰珠，里面封着一片雪花', { eff: [E('attack', 'st', 'tg', { k: 'chill', n: 1, chance: 0.35 })] }),
+  F('yeming', '夜明砂', 'gear', 'an', 4, '挂在一只蛊上：开战给敌方攻最高的蛊打上标记 2 轮', '一小撮黑砂装在骨瓶里，暗处闪着细碎的绿光', { eff: [E('start', 'st', 'foe.top', { k: 'mark', n: 3 })] }),
+  F('taoya', '饕餮牙', 'gear', 'li', 5, '挂在一只蛊上：它普攻后，目标血量不过 15% 或是召唤物，就整只吞下，得到它四分之一攻血', '一颗弯钩状的黄白獠牙，牙根缠着红绳', { eff: [E('attack', 'eat', 'tg', { v: 0.15, gain: 0.25 })] }),
+  F('shanjiao', '撞山角', 'gear', 'tu', 4, '挂在一只蛊上：它的普攻 25% 机会把目标击退一格（撞上后面的蛊，两只都受伤）', '一截粗短的犀角，尖头磨圆了，沾着土', { eff: [E('attack', 'knock', 'tg', { v: 1, bump: 0.3, chance: 0.25 })] }),
+  F('xuelian', '血莲子', 'gear', 'xue', 4, '挂在一只蛊上：它普攻后回复这一下的 15%', '一颗暗红的莲子，剥开一角露出血色的芯', { eff: [E('attack', 'heal', 'self', { n: 0.15 })] }),
+  F('jifeng', '疾风翎', 'gear', 'yu', 3, '挂在一只蛊上：开战行动条提前 40%，抢先出手', '一根青灰色的长翎，羽丝被风吹得往一边倒', { eff: [E('start', 'adv', 'self', { v: 0.4 })] }),
+  F('xuming', '续命汤', 'trip', 'mu', 5, '下一次渡劫：每场开打前全队回 35% 血', '一只带盖的黑陶罐，盖缝里飘出绿色的药气', { trip: 'heal', pct: 35 }),
+  F('dinghun', '定魂香', 'trip', 'hun', 5, '下一次渡劫：第一只倒下的蛊，下一场开打前以 30% 血站起来（只一次）', '一支紫色线香插在骨质香座上，烟往上走成一个圈', { trip: 'revive', pct: 30 }),
+  F('jingleifu', '惊雷符', 'trip', 'lei', 3, '下一次渡劫：每场开战全队蛊力 +15', '一张黄纸符，朱砂画的雷纹边缘焦黑', { trip: 'eff', eff: [E('start', 'gp', 'self', { v: 15 })] }),
+  F('guangyinxiang', '光阴香', 'trip', 'zhou', 4, '下一次渡劫：每场第 4 轮起全队攻 +10%', '一截沙漏形状的香，上半截燃尽的灰落在下半截', { trip: 'eff', eff: [E('round', 'buff', 'self', { atk: 0.1, if: 'round>=4', max: 1 })] }),
+  F('houtufu', '厚土符', 'trip', 'tu', 4, '下一次渡劫：每场开战全队得到最大血量 8% 的护体', '一块方形陶片，上面压着一个土黄色的掌印', { trip: 'eff', eff: [E('start', 'shield', 'self', { mx: 0.08 })] }),
+  F('fengxingfu', '风行符', 'trip', 'yu', 3, '下一次渡劫：每场开战全队行动条提前 15%', '一张青色纸符折成纸鸢的样子，翅膀微微翘起', { trip: 'eff', eff: [E('start', 'adv', 'self', { v: 0.15 })] }),
+  // —— 加攻血（续）——
+  F('gutang', '骨头汤', 'stat', 'hun', 4, '空窍里随机三只：攻 +10、血 +10，永久', '一口豁边的小铁锅，汤里浮着几截白骨', { to: 'rand3', atk: 10, hp: 10 }),
+  F('xuejing', '血精丸', 'stat', 'xue', 7, '喂给一只蛊：攻 +40、血 +40，永久', '一颗龙眼大的深红药丸，表面像血管一样爬着细纹', { to: 'one', atk: 40, hp: 40 }),
+  // —— 只管这一场 ——
+  F('zhanjiu', '壮行酒', 'fight', 'li', 3, '下一场战斗：上场的全体攻 +20%（只这一场）', '一只大口粗瓷碗，酒面上浮着一片红辣椒', { to: 'all', eff: [E('start', 'buff', 'self', { atk: 0.2 })] }),
+  F('huxin', '护心镜', 'fight', 'jin', 3, '下一场战斗：上场的全体开战得到最大血量 15% 的护体（只这一场）', '一面巴掌大的圆铜镜，背面铸着一圈兽纹', { to: 'all', eff: [E('start', 'shield', 'self', { mx: 0.15 })] }),
+  F('qiangxian', '抢先香', 'fight', 'yu', 3, '下一场战斗：上场的全体开战行动条提前 50%，先手（只这一场）', '一支极细的白香，点着的那头烧得飞快', { to: 'all', eff: [E('start', 'adv', 'self', { v: 0.5 })] }),
+  F('siwei', '四味酒', 'fight', 'zhi', 4, '下一场战斗：上场的全体开战蛊力 +50，主动技起手就半满（只这一场）', '一个四格的小酒盘，四格酒颜色各不相同：清、黄、红、褐', { to: 'all', eff: [E('start', 'gp', 'self', { v: 50 })] }),
+  F('zhuanggu', '壮骨汤', 'fight', 'tu', 2, '下一场战斗：选一只，它攻血 +40%（只这一场）', '一只陶盅，汤色奶白，盅沿搭着一根大骨', { to: 'one', eff: [E('start', 'buff', 'self', { atk: 0.4, hp: 0.4 })] }),
+  F('duwu', '毒雾瓶', 'fight', 'du', 3, '下一场战斗：选一只，它开战先向敌方全体放毒（攻击 15%）（只这一场）', '一只细颈小瓷瓶，瓶口塞着布团，渗出一丝绿烟', { to: 'one', eff: [E('start', 'st', 'foe.all', { k: 'psn', atk: 0.15 })] }),
+  // —— 挂件（续）——
+  F('guijia', '龟甲符', 'gear', 'tu', 5, '挂在一只蛊上：开战挂「护」2 次，第一次受到的伤害几乎全免', '一片龟甲刻着符文，裂纹里填了金粉', { eff: [E('start', 'st', 'self', { k: 'guard', n: 2 }), E('take', 'mul', null, { v: 0.01, max: 1 })] }),
+  F('kaifeng', '开锋石', 'gear', 'jin', 4, '挂在一只蛊上：它的第一击伤害翻倍，并给目标打上标记 2 轮', '一块青黑的磨刀石，中间磨出一道凹槽', { eff: [E('deal', 'mul', null, { v: 2, if: 'first' }), E('attack', 'st', 'tg', { k: 'mark', n: 2, max: 1 })] }),
+  F('duanhun', '断魂针', 'gear', 'an', 6, '挂在一只蛊上：它普攻有标记的敌蛊时，10% 机会一击打倒', '一根乌黑的长针，针尾系着一缕白发', { eff: [E('attack', 'dmg', 'tg', { tmx: 1, pierce: 1, chance: 0.1, if: 'tg.mark' })] }),
+  F('lingxi', '灵犀角', 'gear', 'zhi', 4, '挂在一只蛊上：它的技能伤害 +25%', '一小截半透明的犀角，中间有一条白线贯通两头', { eff: [E('deal', 'mul', null, { v: 1.25, if: 'kind=skill' })] }),
+  F('huanhun', '还魂草', 'gear', 'hun', 6, '挂在一只蛊上：它第一次受到致命伤时不倒，留 25% 血站起来', '一株枯黄的小草，只有顶上一片叶子是翠绿的', { eff: [E('lethal', 'endure', null, { v: 0.25, max: 1 })] }),
+  F('duji', '毒棘甲', 'gear', 'mu', 4, '挂在一只蛊上：被近战打中时扎回这一下的 20%，并让打它的那只中毒（攻击 10%）', '一件用带刺藤条编的小背甲，刺尖发紫', { eff: [E('hit', 'dmg', 'src', { n: 0.2, if: 'melee' }), E('hit', 'st', 'src', { k: 'psn', atk: 0.1, if: 'melee' })] }),
+  F('zhenshi', '镇石', 'gear', 'tu', 4, '挂在一只蛊上：不会被击退、拉近或换位；站在最前时受到的伤害 -10%', '一块压秤用的黑石，底下平，顶上凿了个提环', { noMove: true, eff: [E('take', 'mul', null, { v: 0.9, if: 'front' })] }),
+  F('juqi', '聚气珠', 'gear', 'zhi', 4, '挂在一只蛊上：每轮开始蛊力 +12，主动技来得更快', '一颗灰白的石珠，表面有一圈圈往里旋的纹', { eff: [E('round', 'gp', 'self', { v: 12 })] }),
+  F('chuanxin', '穿心簇', 'gear', 'li', 5, '挂在一只蛊上：普攻打穿：目标和它那一行身后的敌蛊各受这一下的 25%', '一枚三棱铁箭头，棱上开着放血槽', { eff: [E('attack', 'dmg', 'tg', { n: 0.25, shape: 'row' })] }),
+  // —— 功能 ——
+  F('helian', '合炼丹', 'func', 'jin', 6, '喂给一只蛊：算作一份同种同转的合成材料，三份就合成高一转（五转和仙蛊不能用）', '一颗金灰两色交缠的丹丸，捏起来沉甸甸的', { func: 'fuse', n: 1, to: 'one' }),
+  F('huanwei', '换位符', 'func', 'yu', 2, '贴在一只蛊上：交换它的攻和血', '一张对折的符纸，左右两半画着一样的符却颜色相反', { func: 'swap', to: 'one' }),
+  F('yinhun', '引魂香', 'func', 'hun', 3, '点给一只蛊：下一场开战时，它先把自己的亡语放一次，本身不倒', '一支灰白色的线香，烟往下沉，绕着香座打转', { func: 'echo', to: 'one', eff: [E('start', 'echo', 'self', { k: 'death' })] }),
+  F('jinggu', '净蛊水', 'func', 'mu', 3, '倒给一只蛊：洗掉它的蛊性，好让它在秘境里打出新的', '一只小竹勺盛着清水，水里沉着几粒白沙', { func: 'wash', to: 'one' }),
+  // —— 影响蛊市 ——
+  F('baibao', '百宝囊', 'shop', 'nu', 5, '下一次转市：刷出来的蛊各自带一个随机挂件', '一个鼓鼓囊囊的花布袋，袋口露出几样小物件', { shop: 'gear' }),
+  F('yingu', '引蛊香', 'shop', 'an', 3, '下一次转市：选一个道，这一道的蛊多出 30%', '一只铜香炉，炉盖上蹲着一只小虫形的钮', { shop: 'dao', pct: 30 }),
+  F('shengzhuan', '升转露', 'shop', 'zhou', 6, '下一次转市：每只蛊 15% 机会高一转（不超过五转）', '一滴悬在叶尖上的金色露水，迟迟不落', { shop: 'up', pct: 15 }),
+  F('zhuanshi', '转市令', 'shop', 'zhi', 1, '下一次转市不要元气', '一块木牌，正面刻着一个「转」字，背面有蛊市的印', { shop: 'free' }),
 ];
 const FOOD_ITEMS = FOODS;
 const FOOD = Object.fromEntries(FOODS.map(f => [f.id, f]));
-const FOOD_KIND = { stat: '直接加攻血', gear: '挂件', trip: '出征用' };
-// 出征食物里秘境还没接的类型（接好前可以锁住不上架）
+const FOOD_KIND = { stat: '加攻血', fight: '只管这一场', gear: '挂件', func: '功能', shop: '影响蛊市', trip: '渡劫用' };
+// 需要引擎或洞府、秘境一侧新接的东西（接好前可以锁住不上架）
 const TRIP_NEW = ['road', 'revive', 'eff'];
 const lockedTrip = () => FOODS.filter(f => f.kind === 'trip' && TRIP_NEW.includes(f.trip)).map(f => f.id);
+const NEEDS = { stat: ['rand3'], fight: ['整类'], func: ['fuse', 'swap', 'echo', 'wash'], shop: ['gear', 'dao', 'up', 'free'], gear: ['noMove', 'take mul v 0.01'], engine: ['echo'] };
 
 // ---- src/timeline.js
-// 蛊码 GuCode · 成就道途（第三版：50 个节点，入门 / 境界 / 出征 / 养蛊 / 杀招 / 劫数 / 挑战七组）。纯数据 + 两个纯函数，不 import 任何文件。由 tools/gen-timeline.mjs 生成，改道途改那边再跑一次。
+// 蛊码 GuCode · 成就道途（第三版：50 个节点，入门 / 境界 / 渡劫 / 养蛊 / 杀招 / 劫数 / 挑战七组）。纯数据 + 两个纯函数，不 import 任何文件。由 tools/gen-timeline.mjs 生成，改道途改那边再跑一次。
 // 格式：TIMELINE[i] = { id, n 名, g 分组, d 怎么达成（一句话）, need { 事件计数名: 次数 }, after 前置节点 id（可无）, unlock [{ k, id, n }] 解锁什么 }
 // 成就本身不给数值，只解锁东西（design 第 4 节、2.7 节）。
 //
 // 事件计数名（metaEmit 的 k）：
-//   原有：trips 出征次数（打完回来就算）、realm 境界（set 取最大）、merges 合成次数、combos 杀招成形过的种数、buys 买蛊次数、feeds 喂食次数
+//   原有：trips 渡劫次数（进秘境一趟，打完回来就算）、realm 境界（set 取最大）、merges 合成次数、combos 杀招成形过的种数、buys 买蛊次数、feeds 喂食次数
 //   clears 秘境通关次数：每通关一次都 +1（哪个秘境、第几劫都算，不只渡劫那一次）——请改用下面的 clearEvents，别只在渡劫时加
 //   以下都在通关时由 clearEvents 算出来（set 取最大，值 = 这次通关的秘境额度）：
 //     r1q 出场全是一转 · r2q 出场全是一转二转 · no5q 没有五转和仙蛊 · few3q 出场不超过 3 只 · monoq 出场全属同一道
@@ -2068,49 +2095,49 @@ const lockedTrip = () => FOODS.filter(f => f.kind === 'trip' && TRIP_NEW.include
 // unlock.k：'species' 新蛊进蛊市（仙蛊 = 仙茧里才可能开出它）| 'food' 新食物进蛊市 | 'combo' 杀招能成形 | 'trip' 新秘境 | 'feature' 新玩法（kalpa = 劫数）
 //   锁住的杀招在蛊典里照样能看到配方线索，只是凑齐了也不成形，界面写「道途解锁」。
 const TIMELINE = [
-  { id: 'first_buy', n: '开张', g: '入门', d: '在蛊市买下第一只蛊', need: { buys: 1 }, unlock: [{ k: 'species', id: 'jingzhe', n: '惊蛰蛊' }, { k: 'food', id: 'tea', n: '回春茶' }] },
-  { id: 'first_trip', n: '初入秘境', g: '入门', d: '第一次出征（打完回来就算，输了也算）', need: { trips: 1 }, unlock: [{ k: 'species', id: 'snowflea', n: '雪蚤蛊' }, { k: 'species', id: 'will', n: '鬼火蛊' }] },
+  { id: 'first_buy', n: '开张', g: '入门', d: '在蛊市买下第一只蛊', need: { buys: 1 }, unlock: [{ k: 'species', id: 'jingzhe', n: '惊蛰蛊' }] },
+  { id: 'first_trip', n: '初入秘境', g: '入门', d: '第一次渡劫（进秘境打完回来就算，输了也算）', need: { trips: 1 }, unlock: [{ k: 'species', id: 'snowflea', n: '雪蚤蛊' }, { k: 'species', id: 'will', n: '鬼火蛊' }] },
   { id: 'first_merge', n: '三蛊归一', g: '入门', d: '第一次把三只同种同转的蛊合成一只', need: { merges: 1 }, unlock: [{ k: 'species', id: 'tick', n: '蜱蛊' }, { k: 'species', id: 'bloodant', n: '血蚁蛊' }] },
-  { id: 'first_combo', n: '杀招初成', g: '入门', d: '第一次让一个杀招成形', need: { combos: 1 }, after: 'first_merge', unlock: [{ k: 'species', id: 'jiuchong', n: '酒虫' }, { k: 'food', id: 'egg', n: '孵蛊卵' }] },
-  { id: 'feeder', n: '养蛊人', g: '入门', d: '喂食 5 次（挂件、出征用的也算）', need: { feeds: 5 }, unlock: [{ k: 'food', id: 'map', n: '寻路图' }] },
+  { id: 'first_combo', n: '杀招初成', g: '入门', d: '第一次让一个杀招成形', need: { combos: 1 }, after: 'first_merge', unlock: [{ k: 'species', id: 'jiuchong', n: '酒虫' }] },
+  { id: 'feeder', n: '养蛊人', g: '入门', d: '喂食 5 次（各类食物都算）', need: { feeds: 5 }, unlock: [{ k: 'food', id: 'map', n: '寻路图' }] },
   { id: 'buyer10', n: '蛊市熟客', g: '入门', d: '买蛊 10 次', need: { buys: 10 }, after: 'first_buy', unlock: [{ k: 'species', id: 'strider', n: '水黾蛊' }, { k: 'food', id: 'yuelan', n: '月兰花瓣' }] },
   { id: 'realm1', n: '一转蛊师', g: '境界', d: '渡劫成功一次（打赢本境界任一秘境最深处的首领）', need: { realm: 1 }, after: 'first_trip', unlock: [{ k: 'species', id: 'wasp', n: '胡蜂蛊' }, { k: 'species', id: 'spider', n: '蛛母蛊' }, { k: 'species', id: 'qingfu', n: '青蚨蛊' }, { k: 'species', id: 'bomb', n: '爆囊蛊' }] },
-  { id: 'realm2', n: '二转蛊师', g: '境界', d: '境界到二转', need: { realm: 2 }, after: 'realm1', unlock: [{ k: 'species', id: 'qant', n: '蚁后蛊' }, { k: 'species', id: 'flea', n: '跳蚤蛊' }, { k: 'species', id: 'bfly', n: '比翼蛊' }, { k: 'species', id: 'sleep', n: '眠虫蛊' }] },
-  { id: 'realm3', n: '三转蛊师', g: '境界', d: '境界到三转', need: { realm: 3 }, after: 'realm2', unlock: [{ k: 'species', id: 'mirror', n: '镜甲蛊' }, { k: 'species', id: 'hive', n: '蜂巢蛊' }, { k: 'species', id: 'fly', n: '尸蝇蛊' }, { k: 'species', id: 'bury', n: '葬甲蛊' }] },
+  { id: 'realm2', n: '二转蛊师', g: '境界', d: '境界到二转', need: { realm: 2 }, after: 'realm1', unlock: [{ k: 'species', id: 'qant', n: '蚁后蛊' }, { k: 'species', id: 'flea', n: '跳蚤蛊' }, { k: 'species', id: 'bfly', n: '比翼蛊' }, { k: 'species', id: 'sleep', n: '眠虫蛊' }, { k: 'food', id: 'juqi', n: '聚气珠' }] },
+  { id: 'realm3', n: '三转蛊师', g: '境界', d: '境界到三转', need: { realm: 3 }, after: 'realm2', unlock: [{ k: 'species', id: 'mirror', n: '镜甲蛊' }, { k: 'species', id: 'hive', n: '蜂巢蛊' }, { k: 'species', id: 'fly', n: '尸蝇蛊' }, { k: 'species', id: 'bury', n: '葬甲蛊' }, { k: 'food', id: 'duji', n: '毒棘甲' }, { k: 'food', id: 'zhenshi', n: '镇石' }] },
   { id: 'realm4', n: '四转蛊师', g: '境界', d: '境界到四转', need: { realm: 4 }, after: 'realm3', unlock: [{ k: 'species', id: 'xiongli', n: '熊力蛊' }, { k: 'species', id: 'magma', n: '熔岩蛊' }, { k: 'species', id: 'hail', n: '雹甲蛊' }, { k: 'species', id: 'cordy', n: '虫草蛊' }] },
   { id: 'realm5', n: '五转蛊师', g: '境界', d: '境界到五转', need: { realm: 5 }, after: 'realm4', unlock: [{ k: 'species', id: 'thunder', n: '雷甲蛊' }, { k: 'species', id: 'tortoise', n: '玄龟蛊' }, { k: 'species', id: 'puppet', n: '傀儡蛛' }, { k: 'species', id: 'hairworm', n: '铁线蛊' }] },
-  { id: 'trips3', n: '三进三出', g: '出征', d: '出征 3 次', need: { trips: 3 }, after: 'first_trip', unlock: [{ k: 'species', id: 'silk', n: '蚕茧蛊' }, { k: 'species', id: 'mosq', n: '赤蚊蛊' }] },
-  { id: 'trips6', n: '常走秘境', g: '出征', d: '出征 6 次', need: { trips: 6 }, after: 'trips3', unlock: [{ k: 'species', id: 'click', n: '叩甲蛊' }, { k: 'species', id: 'sheli', n: '舍利蛊' }, { k: 'species', id: 'bat', n: '夜蝠蛊' }] },
-  { id: 'trips10', n: '十进秘境', g: '出征', d: '出征 10 次', need: { trips: 10 }, after: 'trips6', unlock: [{ k: 'species', id: 'cloud', n: '积云蛊' }, { k: 'species', id: 'shine', n: '照夜蛊' }, { k: 'species', id: 'amber', n: '血珀蛊' }, { k: 'species', id: 'ring', n: '年轮蛊' }] },
-  { id: 'trips15', n: '识途老蛊', g: '出征', d: '出征 15 次', need: { trips: 15 }, after: 'trips10', unlock: [{ k: 'species', id: 'xueyue', n: '血月蛊' }, { k: 'species', id: 'widow', n: '寡妇蛛' }, { k: 'species', id: 'blink', n: '瞬移蛊' }] },
-  { id: 'trips20', n: '踏遍山河', g: '出征', d: '出征 20 次', need: { trips: 20 }, after: 'trips15', unlock: [{ k: 'species', id: 'orchid', n: '兰螳蛊' }, { k: 'species', id: 'taisui', n: '太岁蛊' }, { k: 'species', id: 'yue', n: '镇岳蛊' }, { k: 'species', id: 'jinchan', n: '金蟾蛊' }] },
-  { id: 'clears2', n: '再下一城', g: '出征', d: '通关秘境 2 次（打赢最深处的首领，哪个秘境、第几劫都算）', need: { clears: 2 }, after: 'realm1', unlock: [{ k: 'species', id: 'stag', n: '锹甲蛊' }, { k: 'species', id: 'glut', n: '饕虫蛊' }, { k: 'species', id: 'toad', n: '毒蟾蛊' }] },
-  { id: 'clears4', n: '连破四关', g: '出征', d: '通关秘境 4 次', need: { clears: 4 }, after: 'clears2', unlock: [{ k: 'species', id: 'flint', n: '燧石蛊' }, { k: 'species', id: 'coldcicada', n: '寒蝉蛊' }, { k: 'species', id: 'baiyu', n: '白玉蛊' }] },
-  { id: 'clears6', n: '六关在握', g: '出征', d: '通关秘境 6 次', need: { clears: 6 }, after: 'clears4', unlock: [{ k: 'species', id: 'moveshan', n: '搬山蛊' }, { k: 'species', id: 'magstorm', n: '磁暴蛊' }, { k: 'species', id: 'eclipse', n: '月蚀蛊' }] },
-  { id: 'clears8', n: '八方来朝', g: '出征', d: '通关秘境 8 次', need: { clears: 8 }, after: 'clears6', unlock: [{ k: 'species', id: 'urn', n: '瓮王蛊' }, { k: 'species', id: 'hex', n: '魇蛾蛊' }, { k: 'species', id: 'saw', n: '天牛蛊' }, { k: 'species', id: 'dfly', n: '霆蜓蛊' }] },
-  { id: 'clears10', n: '十关无阻', g: '出征', d: '通关秘境 10 次', need: { clears: 10 }, after: 'clears8', unlock: [{ k: 'food', id: 'xuming', n: '续命汤' }, { k: 'food', id: 'dinghun', n: '定魂香' }] },
+  { id: 'trips3', n: '三进三出', g: '渡劫', d: '渡劫 3 次', need: { trips: 3 }, after: 'first_trip', unlock: [{ k: 'species', id: 'silk', n: '蚕茧蛊' }, { k: 'species', id: 'mosq', n: '赤蚊蛊' }] },
+  { id: 'trips6', n: '常走秘境', g: '渡劫', d: '渡劫 6 次', need: { trips: 6 }, after: 'trips3', unlock: [{ k: 'species', id: 'click', n: '叩甲蛊' }, { k: 'species', id: 'sheli', n: '舍利蛊' }, { k: 'species', id: 'bat', n: '夜蝠蛊' }, { k: 'food', id: 'zhuanggu', n: '壮骨汤' }] },
+  { id: 'trips10', n: '十进秘境', g: '渡劫', d: '渡劫 10 次', need: { trips: 10 }, after: 'trips6', unlock: [{ k: 'species', id: 'cloud', n: '积云蛊' }, { k: 'species', id: 'shine', n: '照夜蛊' }, { k: 'species', id: 'amber', n: '血珀蛊' }, { k: 'species', id: 'ring', n: '年轮蛊' }, { k: 'food', id: 'duwu', n: '毒雾瓶' }, { k: 'food', id: 'siwei', n: '四味酒' }] },
+  { id: 'trips15', n: '识途老蛊', g: '渡劫', d: '渡劫 15 次', need: { trips: 15 }, after: 'trips10', unlock: [{ k: 'species', id: 'xueyue', n: '血月蛊' }, { k: 'species', id: 'widow', n: '寡妇蛛' }, { k: 'species', id: 'blink', n: '瞬移蛊' }] },
+  { id: 'trips20', n: '踏遍山河', g: '渡劫', d: '渡劫 20 次', need: { trips: 20 }, after: 'trips15', unlock: [{ k: 'species', id: 'orchid', n: '兰螳蛊' }, { k: 'species', id: 'taisui', n: '太岁蛊' }, { k: 'species', id: 'yue', n: '镇岳蛊' }, { k: 'species', id: 'jinchan', n: '金蟾蛊' }] },
+  { id: 'clears2', n: '再下一城', g: '渡劫', d: '通关秘境 2 次（打赢最深处的首领，哪个秘境、第几劫都算）', need: { clears: 2 }, after: 'realm1', unlock: [{ k: 'species', id: 'stag', n: '锹甲蛊' }, { k: 'species', id: 'glut', n: '饕虫蛊' }, { k: 'species', id: 'toad', n: '毒蟾蛊' }] },
+  { id: 'clears4', n: '连破四关', g: '渡劫', d: '通关秘境 4 次', need: { clears: 4 }, after: 'clears2', unlock: [{ k: 'species', id: 'flint', n: '燧石蛊' }, { k: 'species', id: 'coldcicada', n: '寒蝉蛊' }, { k: 'species', id: 'baiyu', n: '白玉蛊' }, { k: 'food', id: 'yinhun', n: '引魂香' }, { k: 'food', id: 'jinggu', n: '净蛊水' }] },
+  { id: 'clears6', n: '六关在握', g: '渡劫', d: '通关秘境 6 次', need: { clears: 6 }, after: 'clears4', unlock: [{ k: 'species', id: 'moveshan', n: '搬山蛊' }, { k: 'species', id: 'magstorm', n: '磁暴蛊' }, { k: 'species', id: 'eclipse', n: '月蚀蛊' }, { k: 'food', id: 'baibao', n: '百宝囊' }] },
+  { id: 'clears8', n: '八方来朝', g: '渡劫', d: '通关秘境 8 次', need: { clears: 8 }, after: 'clears6', unlock: [{ k: 'species', id: 'urn', n: '瓮王蛊' }, { k: 'species', id: 'hex', n: '魇蛾蛊' }, { k: 'species', id: 'saw', n: '天牛蛊' }, { k: 'species', id: 'dfly', n: '霆蜓蛊' }] },
+  { id: 'clears10', n: '十关无阻', g: '渡劫', d: '通关秘境 10 次', need: { clears: 10 }, after: 'clears8', unlock: [{ k: 'food', id: 'dinghun', n: '定魂香' }] },
   { id: 'merges5', n: '合蛊五次', g: '养蛊', d: '合成 5 次', need: { merges: 5 }, after: 'first_merge', unlock: [{ k: 'species', id: 'rhino', n: '犀角蛊' }, { k: 'species', id: 'gold', n: '金龟蛊' }] },
   { id: 'merges12', n: '炼蛊有成', g: '养蛊', d: '合成 12 次', need: { merges: 12 }, after: 'merges5', unlock: [{ k: 'species', id: 'pyre', n: '焚翅蛊' }, { k: 'species', id: 'icesnail', n: '冰蜗蛊' }, { k: 'species', id: 'lockarm', n: '锁甲蛊' }] },
   { id: 'merges25', n: '炼蛊大家', g: '养蛊', d: '合成 25 次', need: { merges: 25 }, after: 'merges12', unlock: [{ k: 'species', id: 'frost', n: '霜蛉蛊' }, { k: 'species', id: 'lure', n: '迷蝶蛊' }, { k: 'species', id: 'antlion', n: '蚁狮蛊' }, { k: 'species', id: 'mayfly', n: '蜉蝣蛊' }] },
   { id: 'merges40', n: '千炼成器', g: '养蛊', d: '合成 40 次', need: { merges: 40 }, after: 'merges25', unlock: [{ k: 'species', id: 'glacier', n: '玄冰蛊' }, { k: 'species', id: 'fusang', n: '扶桑蛊' }, { k: 'species', id: 'solar', n: '曜日蛊' }] },
-  { id: 'feeds12', n: '投喂有方', g: '养蛊', d: '喂食 12 次', need: { feeds: 12 }, after: 'feeder', unlock: [{ k: 'food', id: 'duzhen', n: '毒针囊' }, { k: 'food', id: 'huorong', n: '火绒草' }] },
-  { id: 'feeds20', n: '百味蛊厨', g: '养蛊', d: '喂食 20 次', need: { feeds: 20 }, after: 'feeds12', unlock: [{ k: 'food', id: 'bingpo', n: '冰魄珠' }, { k: 'food', id: 'yeming', n: '夜明砂' }, { k: 'food', id: 'xuelian', n: '血莲子' }] },
-  { id: 'feeds30', n: '食谱齐全', g: '养蛊', d: '喂食 30 次', need: { feeds: 30 }, after: 'feeds20', unlock: [{ k: 'food', id: 'taoya', n: '饕餮牙' }, { k: 'food', id: 'shanjiao', n: '撞山角' }, { k: 'food', id: 'jifeng', n: '疾风翎' }] },
+  { id: 'feeds12', n: '投喂有方', g: '养蛊', d: '喂食 12 次', need: { feeds: 12 }, after: 'feeder', unlock: [{ k: 'food', id: 'huorong', n: '火绒草' }] },
+  { id: 'feeds20', n: '百味蛊厨', g: '养蛊', d: '喂食 20 次', need: { feeds: 20 }, after: 'feeds12', unlock: [{ k: 'food', id: 'bingpo', n: '冰魄珠' }, { k: 'food', id: 'yeming', n: '夜明砂' }, { k: 'food', id: 'lingxi', n: '灵犀角' }] },
+  { id: 'feeds30', n: '食谱齐全', g: '养蛊', d: '喂食 30 次', need: { feeds: 30 }, after: 'feeds20', unlock: [{ k: 'food', id: 'taoya', n: '饕餮牙' }, { k: 'food', id: 'shanjiao', n: '撞山角' }, { k: 'food', id: 'chuanxin', n: '穿心簇' }] },
   { id: 'buys30', n: '常客', g: '养蛊', d: '买蛊 30 次', need: { buys: 30 }, after: 'buyer10', unlock: [{ k: 'species', id: 'cricket', n: '促织蛊' }, { k: 'species', id: 'locust', n: '蝗群蛊' }, { k: 'species', id: 'char', n: '炭甲蛊' }] },
-  { id: 'buys60', n: '蛊市贵客', g: '养蛊', d: '买蛊 60 次', need: { buys: 60 }, after: 'buys30', unlock: [{ k: 'food', id: 'huotan', n: '火炭心' }, { k: 'food', id: 'lingzhi', n: '灵芝片' }, { k: 'food', id: 'leizao', n: '雷击枣' }] },
-  { id: 'combos3', n: '三招在手', g: '杀招', d: '让 3 种不同的杀招成形过', need: { combos: 3 }, after: 'first_combo', unlock: [{ k: 'species', id: 'vine', n: '藤蔓蛊' }, { k: 'species', id: 'earthworm', n: '地龙蛊' }] },
+  { id: 'buys60', n: '蛊市贵客', g: '养蛊', d: '买蛊 60 次', need: { buys: 60 }, after: 'buys30', unlock: [{ k: 'food', id: 'huotan', n: '火炭心' }, { k: 'food', id: 'lingzhi', n: '灵芝片' }, { k: 'food', id: 'leizao', n: '雷击枣' }, { k: 'food', id: 'xuejing', n: '血精丸' }] },
+  { id: 'combos3', n: '三招在手', g: '杀招', d: '让 3 种不同的杀招成形过', need: { combos: 3 }, after: 'first_combo', unlock: [{ k: 'species', id: 'vine', n: '藤蔓蛊' }, { k: 'species', id: 'earthworm', n: '地龙蛊' }, { k: 'food', id: 'yingu', n: '引蛊香' }] },
   { id: 'combos6', n: '推演进阶', g: '杀招', d: '让 6 种不同的杀招成形过', need: { combos: 6 }, after: 'combos3', unlock: [{ k: 'species', id: 'diting', n: '地听肉耳草' }, { k: 'species', id: 'hourglass', n: '沙漏蛊' }, { k: 'combo', id: 'sanzhu2', n: '焚原三豕' }] },
   { id: 'combos10', n: '十招融会', g: '杀招', d: '让 10 种不同的杀招成形过', need: { combos: 10 }, after: 'combos6', unlock: [{ k: 'combo', id: 'jinjia2', n: '万钧金身' }, { k: 'combo', id: 'pojian2', n: '化蝶三生' }, { k: 'food', id: 'zhujiu', n: '青竹酒' }] },
   { id: 'combos15', n: '招中有招', g: '杀招', d: '让 15 种不同的杀招成形过', need: { combos: 15 }, after: 'combos10', unlock: [{ k: 'combo', id: 'leigu2', n: '雷霆万钧' }] },
   { id: 'combos20', n: '万法归宗', g: '杀招', d: '让 20 种不同的杀招成形过', need: { combos: 20 }, after: 'combos15', unlock: [{ k: 'species', id: 'styx', n: '冥蝶蛊' }, { k: 'species', id: 'boneflute', n: '骨笛蛊' }, { k: 'species', id: 'instant', n: '刹那蛊' }, { k: 'combo', id: 'bingfeng2', n: '冰火同炉' }] },
   { id: 'kalpa_open', n: '渡劫之后', g: '劫数', d: '通关任意一个秘境，打开劫数', need: { clears: 1 }, unlock: [{ k: 'feature', id: 'kalpa', n: '劫数' }] },
   { id: 'kalpa1', n: '初历一劫', g: '劫数', d: '通关任意秘境的劫一', need: { kalpa: 1 }, after: 'kalpa_open', unlock: [{ k: 'food', id: 'jingleifu', n: '惊雷符' }, { k: 'food', id: 'fengxingfu', n: '风行符' }] },
-  { id: 'kalpa3', n: '三劫不死', g: '劫数', d: '通关任意秘境的劫三', need: { kalpa: 3 }, after: 'kalpa1', unlock: [{ k: 'species', id: 'nirvana', n: '涅火蛾' }, { k: 'combo', id: 'suanwu2', n: '算尽天机' }] },
+  { id: 'kalpa3', n: '三劫不死', g: '劫数', d: '通关任意秘境的劫三', need: { kalpa: 3 }, after: 'kalpa1', unlock: [{ k: 'species', id: 'nirvana', n: '涅火蛾' }, { k: 'combo', id: 'suanwu2', n: '算尽天机' }, { k: 'food', id: 'duanhun', n: '断魂针' }] },
   { id: 'kalpa5', n: '五劫加身', g: '劫数', d: '通关任意秘境的劫五', need: { kalpa: 5 }, after: 'kalpa3', unlock: [{ k: 'species', id: 'guangyin', n: '春秋蝉' }, { k: 'food', id: 'guangyinxiang', n: '光阴香' }, { k: 'food', id: 'houtufu', n: '厚土符' }] },
   { id: 'kalpa7', n: '七劫过尽', g: '劫数', d: '通关任意秘境的劫七', need: { kalpa: 7 }, after: 'kalpa5', unlock: [{ k: 'species', id: 'fate', n: '织命蛛' }] },
   { id: 'kalpa10', n: '十劫圆满', g: '劫数', d: '通关任意秘境的劫十', need: { kalpa: 10 }, after: 'kalpa7', unlock: [{ k: 'species', id: 'jiuxiao', n: '九霄蛊' }, { k: 'combo', id: 'zhichi2', n: '神游万里' }] },
   { id: 'ch_r1q7', n: '一转亦能', g: '挑战', d: '只用一转蛊，通关额度 7 及以上的秘境', need: { r1q: 7 }, after: 'realm1', unlock: [{ k: 'species', id: 'qingtian', n: '擎天蛊' }] },
-  { id: 'ch_r2q10', n: '低转为本', g: '挑战', d: '只用一转、二转蛊，通关额度 10 及以上的秘境', need: { r2q: 10 }, after: 'realm2', unlock: [{ k: 'combo', id: 'baiyi2', n: '火蚁燎原' }] },
+  { id: 'ch_r2q10', n: '低转为本', g: '挑战', d: '只用一转、二转蛊，通关额度 10 及以上的秘境', need: { r2q: 10 }, after: 'realm2', unlock: [{ k: 'combo', id: 'baiyi2', n: '火蚁燎原' }, { k: 'food', id: 'shengzhuan', n: '升转露' }] },
   { id: 'ch_no5q14', n: '不仗高转', g: '挑战', d: '不带五转和仙蛊，通关额度 14 及以上的秘境', need: { no5q: 14 }, after: 'realm3', unlock: [{ k: 'species', id: 'dingxian', n: '定仙游' }, { k: 'combo', id: 'yiri2', n: '一梦千秋' }] },
   { id: 'ch_few3', n: '三蛊破阵', g: '挑战', d: '出场不超过 3 只，通关额度 10 及以上的秘境', need: { few3q: 10 }, after: 'realm2', unlock: [{ k: 'species', id: 'chiba', n: '赤魃蛊' }] },
   { id: 'ch_mono', n: '一道到底', g: '挑战', d: '出场的蛊全属同一道，通关额度 10 及以上的秘境', need: { monoq: 10 }, after: 'realm2', unlock: [{ k: 'trip', id: 'maigu', n: '埋骨荒原' }, { k: 'combo', id: 'wudu2', n: '万毒归宗' }] },
@@ -2132,7 +2159,7 @@ const LOCKED = {
     'xueyue', 'chiba', 'widow', 'jiuchong', 'diting', 'zhihui', 'will', 'boneflute', 'strider', 'blink', 'dingxian', 'hourglass',
     'ring', 'instant',
   ],
-  food: ['egg', 'tea', 'map', 'yuelan', 'zhujiu', 'huotan', 'lingzhi', 'leizao', 'duzhen', 'huorong', 'bingpo', 'yeming', 'taoya', 'shanjiao', 'xuelian', 'jifeng', 'xuming', 'dinghun', 'jingleifu', 'guangyinxiang', 'houtufu', 'fengxingfu'],
+  food: ['map', 'yuelan', 'zhujiu', 'huotan', 'lingzhi', 'leizao', 'huorong', 'bingpo', 'yeming', 'taoya', 'shanjiao', 'dinghun', 'jingleifu', 'guangyinxiang', 'houtufu', 'fengxingfu', 'xuejing', 'siwei', 'zhuanggu', 'duwu', 'duanhun', 'lingxi', 'duji', 'zhenshi', 'juqi', 'chuanxin', 'yinhun', 'jinggu', 'baibao', 'yingu', 'shengzhuan'],
   combo: ['sanzhu2', 'jinjia2', 'pojian2', 'xuanwu2', 'leigu2', 'jiutian2', 'wudu2', 'bingfeng2', 'baiyi2', 'suanwu2', 'richu2', 'zhichi2', 'yiri2'],
   trip: ['maigu', 'tianting'],
   feature: ['kalpa'],
@@ -2340,14 +2367,16 @@ const comboMissing = (c, have) => c.need.filter(x => !have.includes(x));
 // ---------- 蛊市 ----------
 // 货架：蛊位 n 个、食物位 2 个。罗盘选中的道只让它出现的概率 +daoP（每个货位先以 daoP 的几率从这一道里挑，否则从全部里挑），
 // 蛊市照样什么道都会刷，不锁阵容。foeDaoP：程序生成的对手偏向某一道的几率（秘境房间的主题）
-const SHOP = { guSlots: [3, 3, 4, 4, 5, 5], foodSlots: 2, daoP: 0.05, foeDaoP: 0.6 };
+// 食物位开局 2 个，随境界加到 4 个（foodSlots[境界]）
+const SHOP = { guSlots: [3, 3, 4, 4, 5, 5], foodSlots: [2, 2, 3, 3, 4, 4], daoP: 0.05, foeDaoP: 0.6 };
+const foodSlotsOf = realm => (Array.isArray(SHOP.foodSlots) ? SHOP.foodSlots[Math.min(SHOP.foodSlots.length - 1, realm | 0)] : SHOP.foodSlots);
 function shopSpecies(realm, unlocked) { return poolFor(realm).filter(sp => SP[sp] && !SP[sp].immortal && (!unlocked || unlocked(sp, 'species'))); }
 function shopFoods(unlocked) { return FOODS.filter(f => !unlocked || unlocked(f.id, 'food')).map(f => f.id); }
 function pickDao(rng, list, dao, of, p = SHOP.daoP) { const main = dao ? list.filter(x => of(x) === dao) : []; return main.length && rng() < p ? rng.pick(main) : rng.pick(list); }
 function rollShop(rng, realm, dao, old = [], unlocked) {
   const sps = shopSpecies(realm, unlocked), fds = shopFoods(unlocked), keep = w => w && w.frozen && !w.sold;
   const gu = Array.from({ length: SHOP.guSlots[Math.min(5, realm | 0)] }, (_, i) => { const o = old.filter(w => w.kind === 'gu')[i]; return keep(o) ? o : { kind: 'gu', sp: pickDao(rng, sps, dao, daoOf), frozen: false, sold: false }; });
-  const fd = Array.from({ length: SHOP.foodSlots }, (_, i) => { const o = old.filter(w => w.kind === 'food')[i]; return keep(o) ? o : (fds.length ? { kind: 'food', id: pickDao(rng, fds, dao, id => FOOD[id].dao), frozen: false, sold: false } : null); }).filter(Boolean);
+  const fd = Array.from({ length: foodSlotsOf(realm) }, (_, i) => { const o = old.filter(w => w.kind === 'food')[i]; return keep(o) ? o : (fds.length ? { kind: 'food', id: pickDao(rng, fds, dao, id => FOOD[id].dao), frozen: false, sold: false } : null); }).filter(Boolean);
   return [...gu, ...fd];
 }
 const foodCost = id => (FOOD[id] ? FOOD[id].cost : 3) * PRICE.food;   // 单位同 PRICE
@@ -2369,7 +2398,7 @@ function sortTeam(team) { team.sort((a, b) => (a.pos ? a.pos.c * 3 + a.pos.r : 9
 
 // ---------- 收蛊与合成 ----------
 const sameRank = (list, sp, rk) => list.filter(g => g.sp === sp && rankOf(g) === rk).length;
-const fusable = (team, bag, g) => rankOf(g) < RANK.max && !(SP[g.sp] || {}).immortal && sameRank([...team, ...bag], g.sp, rankOf(g)) >= 2;
+const fusable = (team, bag, g) => rankOf(g) < RANK.max && !(SP[g.sp] || {}).immortal && [...team, ...bag].filter(x => x.sp === g.sp && rankOf(x) === rankOf(g)).reduce((n, x) => n + fuseW(x), 0) >= 2;   // 吃过合炼丹的多算几份
 // 能否再收一只：空窍或蛊囊有空位，或者它能和已有的同种同转凑成合成
 function canTake(team, bag, g, cap, bc = BAG.cap) { return team.length < cap || bag.length < bc || fusable(team, bag, g); }
 function canBuy(team, sp, cap, bag = [], bc = BAG.cap) { return canTake(team, bag, { sp, rank: baseRank(sp) }, cap, bc); }
@@ -2384,21 +2413,30 @@ function placeGu(team, bag, g, cap, bc = BAG.cap, mode = 'shop', pick) {
 // 挂件食物保留第一只的；蛊性从三只里挑一个：pick(候选蛊性数组) → 选中的那个（不给 pick 就取第一个）。返回合成出的蛊
 // 三只同种同转合成高一转：攻血换成新一转的表值，再加上三只里吃得最多的那只的食物加成（吃的次数一并继承，所以不会超过 ATE_MAX 次）。
 // 蛊性：三只材料里有不同的蛊性时，pick(候选) 同步选一个；没给 pick 就先传第一个，并在新蛊上留 xingAsk = 候选，等界面问玩家。
+// 合成：同种同转凑够三份合成高一转。一只蛊算 1 份，吃过合炼丹（g.fz）的再多算 fz 份；五转和仙蛊不合。
+// 凑材料时先拿吃过合炼丹的那只当底，再补只算 1 份的，尽量不浪费；合成后 fz 清零（那几份是低一转的材料）
+const fuseW = g => 1 + ((g && g.fz) | 0);
 function mergeAll(team, bag = [], pick) {
   const done = [], rm = x => { const l = team.includes(x) ? team : bag; l.splice(l.indexOf(x), 1); };
   for (let guard = 0; guard < 12; guard++) {
     let grp = null; const all = [...team, ...bag];
-    for (const g of all) { const rk = rankOf(g), same = all.filter(x => x.sp === g.sp && rankOf(x) === rk); if (same.length >= 3 && rk < RANK.max && !(SP[g.sp] || {}).immortal) { grp = same.slice(0, 3); break; } }
+    for (const g of all) {
+      const rk = rankOf(g); if (rk >= RANK.max || (SP[g.sp] || {}).immortal) continue;
+      const same = all.filter(x => x.sp === g.sp && rankOf(x) === rk); if (same.reduce((n, x) => n + fuseW(x), 0) < 3) continue;
+      const order = same.slice().sort((x, y) => fuseW(y) - fuseW(x)), base = order[0], pickd = [base]; let w = fuseW(base);
+      for (const x of order.slice(1).sort((x, y) => fuseW(x) - fuseW(y))) { if (w >= 3) break; pickd.push(x); w += fuseW(x); }
+      grp = pickd; break;
+    }
     if (!grp) break;
-    const [a, b, c] = grp, xs = [...new Set(grp.map(x => x.xing).filter(Boolean))];
+    const a = grp[0], rest = grp.slice(1), xs = [...new Set(grp.map(x => x.xing).filter(Boolean))];
     const fed = grp.reduce((m, x) => (ateOf(x) > ateOf(m) ? x : m), a);
     const bA = fed.bonusA || 0, bH = fed.bonusH || 0, ate = ateOf(fed);
     a.rank = rankOf(a) + 1; const st = statFor(a.sp, a.rank);
-    a.bonusA = bA; a.bonusH = bH; a.ate = ate; a.atk = st.atk + bA; a.hp = st.hp + bH;
+    a.bonusA = bA; a.bonusH = bH; a.ate = ate; a.atk = st.atk + bA; a.hp = st.hp + bH; delete a.fz;
     delete a.xingAsk;
     if (xs.length > 1 && pick) a.xing = pick(xs); else { a.xing = xs[0] || null; if (xs.length > 1) a.xingAsk = xs; }
-    a.food = a.food || b.food || c.food || null;
-    [b, c].forEach(rm);
+    a.food = a.food || rest.map(x => x.food).find(Boolean) || null;
+    rest.forEach(rm);
     done.push(a);
   }
   return done;
@@ -8923,6 +8961,20 @@ const TXT = {
   foodPick: f => `把「${f.n}」喂给哪一只？`,
   gearPick: f => `把「${f.n}」挂在哪一只身上？每只最多挂 1 个，换新的旧的就没了。`,
   tripFood: f => `「${f.n}」收好了，下一次渡劫生效`,
+  fightFood: f => `「${f.n}」收好了，下一场渡劫里的战斗生效`,
+  shopFood: f => `「${f.n}」收好了，下一次转市生效`,
+  fightPick: f => `「${f.n}」给哪一只？只管下一场战斗（要在空窍里上阵）`,
+  funcPick: f => ({ fuse: `把「${f.n}」喂给哪一只？算作一份同种同转的合成材料，凑够三份就合成`, swap: `「${f.n}」贴给哪一只？它的攻和血对调`, echo: `「${f.n}」点给哪一只？下一场开战它先放一次亡语`, wash: `「${f.n}」倒给哪一只？洗掉它的蛊性` })[f.func] || TXT.foodPick(f),
+  daoFoodPick: f => `「${f.n}」：下一次转市哪一道的蛊多出 ${f.pct || 0}%？`,
+  fightLine: '下一场战斗带着', shopLine: '下一次转市',
+  fuseDone: (f, g) => `${SP[g.sp].n} 吃下「${f.n}」，现在算作 ${fuseW(g)} 份合成材料`,
+  fuseNo: g => `${rankName(g)}不能再合成`,
+  swapDone: g => `${SP[g.sp].n} 攻血对调：攻 ${g.atk}、血 ${g.hp}`,
+  washDone: g => `${SP[g.sp].n} 的蛊性洗掉了，去秘境里打出新的`,
+  washNo: '这只蛊没有蛊性',
+  fightUsed: names => `这一场用掉了：${names}`,
+  refreshFree: '转市 · 免费',
+  fuseTip: g => `吃过合炼丹：合成时算作 ${fuseW(g)} 份`,
   tripLocked: '下个版本开放',
   tripLockedLine: names => `${names}：下个版本开放`,
   fed: (f, gs) => `${f.n}：${gs.map(g => SP[g.sp].n).join('、')} 攻 +${f.atk || 0} 血 +${f.hp || 0}`,
@@ -8973,7 +9025,7 @@ const trialTag = on => on ? `<span class="trialtag">${TXT.trial}</span>` : '';
 // bank = 元气（token），没有上限；所有价格都是 token 数
 const BAK_KEY = 'gucode.v1.bak-v2';
 const fresh = () => ({ v: 3, sx: STAT_SCALE, started: false, name: '', realm: 0, bank: 0, total: 0, team: [], bag: [], shop: [], dao: null, compass: null, tripFood: [], pantry: [], trip: null, land: null,
-  seed: (Math.random() * 1e9) >>> 0, step: 0, speed: 1, mute: true, theme: 'auto', calm: false, codex: {}, combosSeen: [], log: [], hlog: [], meta: null, todayKey: '', todayTok: 0, sim: null, trial: false, sotaAt: 0 });
+  seed: (Math.random() * 1e9) >>> 0, step: 0, speed: 1, mute: true, theme: 'auto', calm: false, codex: {}, combosSeen: [], log: [], hlog: [], meta: null, todayKey: '', todayTok: 0, sim: null, fightFood: [], shopBuff: [], trial: false, sotaAt: 0 });
 const today = () => { const d = new Date(); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); };
 const curCap = () => SLOTS, BC = () => Math.max(bagCap(S.realm), S.bag.length);
 // sx = 存档里的攻血按几倍存的。没有 sx 的是放大十倍之前的存档：空窍、蛊囊、秘境里的血量和战利品蛊一律乘 STAT_SCALE（只做一次）
@@ -9102,7 +9154,7 @@ const allCombos = f => { setComboLocks(); try { return f(); } finally { applyLoc
 
 // ---------- 渲染 ----------
 // 洞府还没接好的食物类别：先不上架，界面写明「下个版本开放」。渡劫用的（trip）秘境一侧已全部接上
-const FOOD_READY = { stat: 1, gear: 1, trip: 1 };
+const FOOD_READY = { stat: 1, gear: 1, trip: 1, fight: 1, func: 1, shop: 1 };
 const notYet = id => { const f = FOOD[id]; return !f || !FOOD_READY[f.kind]; };
 const notYetList = () => FOODS.filter(f => !FOOD_READY[f.kind] && isUnlocked(M(), f.id, 'food')).map(f => f.id);
 const unlocked = (id, k) => !(k === 'food' && notYet(id)) && isUnlocked(M(), id, k);
@@ -9200,21 +9252,42 @@ function compassHTML() {
 }
 const shopSpeciesOf = d => poolFor(S.realm).filter(sp => SP[sp] && !SP[sp].immortal && daoOf(sp) === d && unlocked(sp, 'species'));
 // ---------- 蛊市 ----------
-function newShop() { S.shop = rollShop(R(), S.realm, S.dao, S.shop, unlocked); }
-const owned = sp => [...S.team, ...S.bag].filter(g => g.sp === sp && rankOf(g) === baseRank(sp)).length;
+// 转市：影响蛊市的食物（百宝囊、引蛊香、升转露）在这一次转市生效后清掉；转市令在「转市」按钮那里免钱
+function newShop() {
+  S.shop = rollShop(R(), S.realm, S.dao, S.shop, unlocked);
+  const bf = (S.shopBuff || []).filter(b => b.shop !== 'free'); if (!bf.length) return;
+  const r = R(), gears = FOODS.filter(f => f.kind === 'gear' && unlocked(f.id, 'food')).map(f => f.id);
+  S.shop.forEach(w => {
+    if (w.kind !== 'gu' || w.sold || w.frozen) return;
+    bf.forEach(b => { if (b.shop === 'dao' && b.dao && r() < b.pct / 100) { const pool = shopSpeciesOf(b.dao); if (pool.length) w.sp = pool[r.int(pool.length)]; } });
+    bf.forEach(b => {
+      if (b.shop === 'up' && r() < b.pct / 100 && baseRank(w.sp) < RANK.max) w.rank = baseRank(w.sp) + 1;
+      if (b.shop === 'gear' && gears.length) w.gear = gears[r.int(gears.length)];
+    });
+  });
+  S.shopBuff = (S.shopBuff || []).filter(b => b.shop === 'free');
+}
+const owned = (sp, rk = baseRank(sp)) => [...S.team, ...S.bag].filter(g => g.sp === sp && rankOf(g) === rk).reduce((n, g) => n + fuseW(g), 0);
 function wareHTML(w, i) {
   if (w.kind === 'food') {
     const f = FOOD[w.id], c = price(foodCost(w.id));
     return `<div class="ware food${w.frozen ? ' frozen' : ''}${w.sold ? ' sold' : ''}"><button class="wbuy" data-act="ware" data-i="${i}" data-tip-fn="ware"${w.sold ? ' disabled' : ''}><span class="fart">${foodSVG(w.id)}</span><b>${esc(f.n)}</b><small>${FOOD_KIND[f.kind]}</small><span class="tag">${w.sold ? '已购' : fmtTok(c)}</span></button></div>`;
   }
-  const s = SP[w.sp], st = statFor(w.sp, baseRank(w.sp)), c = price(PRICE.gu), merge = !w.sold && owned(w.sp) >= 2, gain = !w.sold && !merge ? resoGain(S.team, w.sp) : null;
-  return `<div class="ware${w.frozen ? ' frozen' : ''}${w.sold ? ' sold' : ''}${merge ? ' merge' : ''}"><button class="wbuy" data-act="ware" data-i="${i}" data-tip-fn="ware"${w.sold ? ' disabled' : ''}><span class="art">${guSVG(w.sp)}</span>${dzHTML(w.sp)}<b>${s.n}</b><span class="st"><i class="a">${st.atk}</i><i class="h">${st.hp}</i></span><span class="tag">${w.sold ? '已购' : (merge ? '合成 · ' : '') + fmtTok(c)}</span>${merge ? '<span class="fu">可合成</span>' : gain ? `<span class="fu rzg">${TXT.resoGain}</span>` : ''}</button></div>`;
+  const s = SP[w.sp], wr = w.rank || baseRank(w.sp), st = statFor(w.sp, wr), c = price(PRICE.gu), merge = !w.sold && owned(w.sp, wr) >= 2, gain = !w.sold && !merge ? resoGain(S.team, w.sp) : null;
+  return `<div class="ware${w.frozen ? ' frozen' : ''}${w.sold ? ' sold' : ''}${merge ? ' merge' : ''}"><button class="wbuy" data-act="ware" data-i="${i}" data-tip-fn="ware"${w.sold ? ' disabled' : ''}><span class="art">${guSVG(w.sp, { rank: wr })}</span>${dzHTML(w.sp)}${w.rank ? `<span class="rk rk${wr}">${RANK.ch[wr]}</span>` : ''}${gearHTML({ food: w.gear })}<b>${s.n}</b><span class="st"><i class="a">${st.atk}</i><i class="h">${st.hp}</i></span><span class="tag">${w.sold ? '已购' : (merge ? '合成 · ' : '') + fmtTok(c)}</span>${merge ? '<span class="fu">可合成</span>' : gain ? `<span class="fu rzg">${TXT.resoGain}</span>` : ''}</button></div>`;
+}
+// 收着还没生效的食物：下一场战斗带着的、下一次转市的
+function pendingHTML() {
+  const ff = (S.fightFood || []).filter(x => FOOD[x.id]), sb = (S.shopBuff || []).filter(x => FOOD[x.id]);
+  const who = x => { const g = x.uid && S.team.concat(S.bag).find(y => y.uid === x.uid); return g ? `（${SP[g.sp].n}）` : x.uid ? '' : '（全体）'; };
+  return (ff.length ? `<p class="sm">${TXT.fightLine}：${ff.map(x => fi(x.id) + esc(FOOD[x.id].n + who(x))).join('、')}</p>` : '')
+    + (sb.length ? `<p class="sm">${TXT.shopLine}：${sb.map(x => fi(x.id) + esc(FOOD[x.id].n + (x.dao && DAO[x.dao] ? `（${DAO[x.dao].n}）` : ''))).join('、')}</p>` : '');
 }
 function renderShop() {
   const box = $('#shop'); if (!box) return;
   if (!S.shop.length) newShop();
-  box.innerHTML = `<div class="shead"><span class="lbl" data-tip="${esc(TXT.shopTip)}">${TXT.shopHead}</span><button class="mini-b" data-act="refresh">${TXT.refresh(fmtTok(price(PRICE.refresh)))}</button></div>
-  <div class="wares">${S.shop.map(wareHTML).join('')}</div>${S.pantry.length ? `<div class="pantry"><span class="lbl">带回的食物</span>${S.pantry.map((id, i) => `<button class="pfood" data-act="pantry" data-i="${i}" data-tip="${esc(FOOD[id] ? FOOD[id].d + (notYet(id) ? '\n' + TXT.tripLocked : '') : '')}"${notYet(id) ? ' disabled' : ''}>${fi(id)}${esc(FOOD[id] ? FOOD[id].n : id)}</button>`).join('')}</div>` : ''}${(() => { const l = notYetList(); return l.length ? `<p class="sm tlocked" data-tip="${esc(l.map(id => `${FOOD[id].n}：${FOOD[id].d}`).join('\n'))}">${esc(TXT.tripLockedLine(l.map(id => '「' + FOOD[id].n + '」').join('')))}</p>` : ''; })()}${S.tripFood.length ? `<p class="sm">下一次渡劫带着：${S.tripFood.map(id => fi(id) + esc(FOOD[id] ? FOOD[id].n : id)).join('、')}</p>` : ''}`;
+  box.innerHTML = `<div class="shead"><span class="lbl" data-tip="${esc(TXT.shopTip)}">${TXT.shopHead}</span><button class="mini-b" data-act="refresh">${(S.shopBuff || []).some(b => b.shop === 'free') ? TXT.refreshFree : TXT.refresh(fmtTok(price(PRICE.refresh)))}</button></div>
+  <div class="wares">${S.shop.map(wareHTML).join('')}</div>${S.pantry.length ? `<div class="pantry"><span class="lbl">带回的食物</span>${S.pantry.map((id, i) => `<button class="pfood" data-act="pantry" data-i="${i}" data-tip="${esc(FOOD[id] ? FOOD[id].d + (notYet(id) ? '\n' + TXT.tripLocked : '') : '')}"${notYet(id) ? ' disabled' : ''}>${fi(id)}${esc(FOOD[id] ? FOOD[id].n : id)}</button>`).join('')}</div>` : ''}${(() => { const l = notYetList(); return l.length ? `<p class="sm tlocked" data-tip="${esc(l.map(id => `${FOOD[id].n}：${FOOD[id].d}`).join('\n'))}">${esc(TXT.tripLockedLine(l.map(id => '「' + FOOD[id].n + '」').join('')))}</p>` : ''; })()}${pendingHTML()}${S.tripFood.length ? `<p class="sm">下一次渡劫带着：${S.tripFood.map(id => fi(id) + esc(FOOD[id] ? FOOD[id].n : id)).join('、')}</p>` : ''}`;
 }
 // 新得一只蛊：能合成先合成；蛊市买的先进空窍再进蛊囊；战利品只进蛊囊
 function placeNew(g, mode = 'shop') {
@@ -9250,28 +9323,67 @@ function floorCheck() {
 }
 // ---------- 食物 ----------
 let FEED = null;   // 正在挑目标的食物 { id, from: 'shop'|'pantry', i }
+// 食物要不要先挑一只蛊（或挑一道）：挂件、选一只的加攻血 / 只管这一场、功能类全部、引蛊香（挑道）
+const needsPick = f => f.kind === 'gear' || f.kind === 'func' || ((f.kind === 'stat' || f.kind === 'fight') && f.to === 'one') || (f.kind === 'shop' && f.shop === 'dao');
+// 这只蛊能不能吃这份食物（挑选页上灰掉不能选的）
+function canFeed(f, g) {
+  if (f.kind === 'stat') return canEat(g);
+  if (f.kind === 'fight' || (f.kind === 'func' && f.func === 'echo')) return S.team.includes(g);
+  if (f.kind === 'func' && f.func === 'fuse') return rankOf(g) < RANK.max && !(SP[g.sp] || {}).immortal;
+  if (f.kind === 'func' && f.func === 'wash') return !!g.xing;
+  return true;
+}
 function useFood(id, from, i) {
   const f = FOOD[id]; if (!f) return false;
   if (notYet(id)) { note(`「${f.n}」${TXT.tripLocked}`); return false; }
   if (f.kind === 'trip') { S.tripFood.push(id); note(TXT.tripFood(f)); achieve('feeds', 1); return true; }
   if (f.kind === 'stat' && f.to !== 'one') {
     const can = S.team.filter(canEat); if (!can.length) { note(TXT.ateFull); return false; }
-    const r = R(), tg = f.to === 'all' ? can : can.sort(() => r() - 0.5).slice(0, 2);
+    const r = R(), n = f.to === 'all' ? can.length : f.to === 'rand3' ? 3 : 2, tg = can.sort(() => r() - 0.5).slice(0, n);
     feedStat(id, tg); note(TXT.fed(f, tg)); tg.forEach(g => fxFloat(g.uid, `+${f.atk || 0}/+${f.hp || 0}`, 'buff')); achieve('feeds', 1); return true;
   }
+  if (f.kind === 'fight' && f.to !== 'one') { (S.fightFood = S.fightFood || []).push({ id }); note(TXT.fightFood(f)); achieve('feeds', 1); return true; }
+  if (f.kind === 'shop' && f.shop !== 'dao') { (S.shopBuff = S.shopBuff || []).push({ id, shop: f.shop, pct: f.pct || 0 }); note(TXT.shopFood(f)); achieve('feeds', 1); return true; }
   FEED = { id, from, i };
-  sheet(`<div class="fhead"><span class="fbig">${foodSVG(f.id)}</span><div><h3>${esc(f.kind === 'gear' ? TXT.gearPick(f) : TXT.foodPick(f))}</h3><p class="sm">${esc(f.d)}</p></div></div><div class="mini pick">${[...S.team, ...S.bag].map((g, k) => `<button class="mg" data-act="feedTo" data-k="${k}"${f.kind === 'stat' && !canEat(g) ? ' disabled' : ''}><span class="art">${guSVG(g.sp, { rank: rankOf(g) })}</span><b>${SP[g.sp].n}</b><span class="st"><i class="a">${g.atk}</i><i class="h">${g.hp}</i></span>${f.kind === 'stat' ? `<small>${canEat(g) ? `已吃 ${ateOf(g)}/${ATE_MAX}` : '吃满了'}</small>` : g.food ? `<small>${fi(g.food)}挂着${esc(FOOD[g.food] ? FOOD[g.food].n : '')}</small>` : ''}</button>`).join('')}</div>`);
+  if (f.kind === 'shop') {   // 引蛊香：挑一道
+    sheet(`<div class="fhead"><span class="fbig">${foodSVG(f.id)}</span><div><h3>${esc(TXT.daoFoodPick(f))}</h3><p class="sm">${esc(f.d)}</p></div></div><div class="dpick">${DAOS.map(d => `<button data-act="feedDao" data-d="${d.id}" style="--dc:${d.color}"><b>${esc(d.n.replace(/道$/, '')[0])}</b>${esc(d.n)}</button>`).join('')}</div>`);
+    return null;
+  }
+  const list = f.kind === 'fight' || (f.kind === 'func' && f.func === 'echo') ? S.team : [...S.team, ...S.bag], all = [...S.team, ...S.bag];
+  const head = f.kind === 'gear' ? TXT.gearPick(f) : f.kind === 'fight' ? TXT.fightPick(f) : f.kind === 'func' ? TXT.funcPick(f) : TXT.foodPick(f);
+  sheet(`<div class="fhead"><span class="fbig">${foodSVG(f.id)}</span><div><h3>${esc(head)}</h3><p class="sm">${esc(f.d)}</p></div></div><div class="mini pick">${list.map(g => { const k = all.indexOf(g); return `<button class="mg" data-act="feedTo" data-k="${k}"${canFeed(f, g) ? '' : ' disabled'}><span class="art">${guSVG(g.sp, { rank: rankOf(g) })}</span><span class="rk rk${rankOf(g)}">${RANK.ch[rankOf(g)]}</span><b>${SP[g.sp].n}</b><span class="st"><i class="a">${g.atk}</i><i class="h">${g.hp}</i></span>${f.kind === 'stat' ? `<small>${canEat(g) ? `已吃 ${ateOf(g)}/${ATE_MAX}` : '吃满了'}</small>` : f.kind === 'func' && f.func === 'fuse' ? `<small>算作 ${fuseW(g)} 份</small>` : f.kind === 'func' && f.func === 'wash' ? `<small>${g.xing ? esc(xingName(g.xing)) : '没有蛊性'}</small>` : g.food ? `<small>${fi(g.food)}挂着${esc(FOOD[g.food] ? FOOD[g.food].n : '')}</small>` : ''}</button>`; }).join('')}</div>`);
   return null;   // 等玩家挑
+}
+// 挑完之后先付钱（货架）或从食物架拿走（带回的食物）
+function takeFed(fr) {
+  if (fr.from === 'shop') { const w = S.shop[fr.i]; if (!w || w.sold || !pay(foodCost(w.id))) return false; w.sold = true; w.frozen = false; return true; }
+  S.pantry.splice(fr.i, 1); return true;
 }
 function feedTo(g) {
   const f = FEED && FOOD[FEED.id]; if (!f || !g) return;
   if (f.kind === 'stat' && !canEat(g)) { note(TXT.ateNo(g)); return; }
+  if (!canFeed(f, g)) { note(f.kind === 'func' && f.func === 'fuse' ? TXT.fuseNo(g) : f.kind === 'func' && f.func === 'wash' ? TXT.washNo : TXT.fightPick(f)); return; }
   const fr = FEED; FEED = null;
-  if (fr.from === 'shop') { const w = S.shop[fr.i]; if (!w || w.sold || !pay(foodCost(w.id))) { closeSheet(); return; } w.sold = true; w.frozen = false; }
-  else S.pantry.splice(fr.i, 1);
+  if (!takeFed(fr)) { closeSheet(); return; }
+  let float = f.n, merged = [];
   if (f.kind === 'gear') { g.food = f.id; note(TXT.geared(f, g)); }
-  else { feedStat(f.id, [g]); note(TXT.fed(f, [g])); }
-  achieve('feeds', 1); closeSheet(); renderHome(); save(); fxFloat(g.uid, f.kind === 'gear' ? f.n : `+${f.atk || 0}/+${f.hp || 0}`, 'buff');
+  else if (f.kind === 'fight' || (f.kind === 'func' && f.func === 'echo')) { (S.fightFood = S.fightFood || []).push({ id: f.id, uid: g.uid }); note(TXT.fightFood(f)); }
+  else if (f.kind === 'func' && f.func === 'fuse') {   // 合炼丹：多算几份材料，凑够就当场走合成
+    g.fz = (g.fz | 0) + (f.n || 1); note(TXT.fuseDone(f, g));
+    merged = mergeAll(S.team, S.bag, null); merged.forEach(x => { note(TXT.merge(x)); achieve('merges', 1); });
+  }
+  else if (f.kind === 'func' && f.func === 'swap') { [g.atk, g.hp] = [g.hp, g.atk]; [g.bonusA, g.bonusH] = [g.bonusH || 0, g.bonusA || 0]; note(TXT.swapDone(g)); float = `攻 ${g.atk} 血 ${g.hp}`; }
+  else if (f.kind === 'func' && f.func === 'wash') { g.xing = null; delete g.xingAsk; note(TXT.washDone(g)); }
+  else { feedStat(f.id, [g]); note(TXT.fed(f, [g])); float = `+${f.atk || 0}/+${f.hp || 0}`; }
+  achieve('feeds', 1); closeSheet();
+  if (merged.length) { afterChange(merged); setTimeout(askXing, 300); } else { renderHome(); save(); }
+  fxFloat(g.uid, float, 'buff');
+}
+// 只管这一场的食物：渡劫里下一场战斗带上（g.fx，引擎按声明式效果跑），打完就没了。选一只的那只没上场就留着
+function withFightFood(team) {
+  const ff = S.fightFood || [], ids = new Set(team.map(g => g.uid)), used = ff.filter(x => FOOD[x.id] && (!x.uid || ids.has(x.uid)));
+  if (!used.length) return { team, used };
+  return { used, team: team.map(g => { const mine = used.filter(x => !x.uid || x.uid === g.uid); return mine.length ? { ...g, fx: [...(g.fx || []), ...mine.map(x => ({ kind: 'food', id: x.id, n: FOOD[x.id].n, eff: FOOD[x.id].eff || [] }))] } : g; }) };
 }
 // ---------- 选秘境：额度、敌人主道、首领阵容（秘境列表由秘境侧给 TRIP.lands；没给时用下面的占位表）----------
 const LAND_NAMES = [['竹海', '石林', '雾泽'], ['赤岩', '寒潭', '断崖'], ['火窟', '沙洲', '古渡'], ['雷谷', '冰原', '天坑'], ['血沼', '骨林', '玄洞'], ['星墟', '云台', '归墟']];
@@ -9346,9 +9458,10 @@ function onTripEnd(result = {}) {
 const placed = t => autoPlace((t || []).map(g => ({ ...g, pos: g.pos ? { ...g.pos } : null })));
 // 给秘境复用的战斗回放：返回 Promise<{ res, A, B }>
 function tripPlayBattle(foeTeam, opts = {}) {
-  const team = opts.team || S.team, seed = opts.seed || ((S.seed ^ Math.imul(++S.step, 2654435761)) >>> 0).toString(36);
-  const sota = { A: sotaOn(), B: false };
+  const team0 = opts.team || S.team, seed = opts.seed || ((S.seed ^ Math.imul(++S.step, 2654435761)) >>> 0).toString(36);
+  const sota = { A: sotaOn(), B: false }, ff = withFightFood(team0), team = ff.team;
   const res = battle(placed(team), placed(foeTeam), 'r:' + seed, { ...(opts.oa || {}), sota });
+  if (ff.used.length) { S.fightFood = (S.fightFood || []).filter(x => !ff.used.includes(x)); note(TXT.fightUsed(ff.used.map(x => FOOD[x.id].n).join('、'))); save(); }
   const A = { team, name: S.name || '无名蛊师', realm: S.realm, trial: S.trial }, B = { team: foeTeam, name: opts.foeName || '秘境', realm: S.realm };
   return new Promise(resolve => runBattle({ kind: 'trip', title: opts.title || '秘境 · 斗蛊', res, A, B, sota, done: () => resolve({ res, A, B }) }));
 }
@@ -9740,14 +9853,14 @@ function guTip(g, team, i) {
   const act = actOfG(g), p = g.pos, sk = skills(g.sp, rankOf(g)), skP = sk.find(k => k.kind === 'passive'), skA = sk.find(k => k.kind === 'active'), rs = team ? resoOf(team, g) : '';
   return `<b>${rankName(g)}</b> <i class="a">${g.atk}</i> <i class="h">${g.hp}</i> <i class="v">${spdG(g)}</i><br><small>${esc(SP[g.sp].lore)}${team && p ? ` · 第 ${p.r + 1} 行${COL_NAMES[p.c]}列` : ''} · ${reachG(g)} · 攻 / 血 / 速</small>`
     + (rankOf(g) > driveCap(S.realm) ? `<p class="warn">${esc(TXT.overDrive)}</p>` : '') + (rs ? `<p class="rs"><b>${esc(rs.split('：')[0])}</b> ${esc(rs.slice(rs.indexOf('：') + 1))}</p>` : '') + (nat ? `<p><b>被动·${esc((skP || nat).n)}</b> ${esc(skP ? skP.text : nat.d)}</p>` : '') + (act ? `<p><b>主动·${esc((skA || act).n)}</b> ${esc(skA ? skA.text : act.d)}<br><small>蛊力攒满自动放</small></p>` : '') + (c ? `<p><b>杀招·${esc(c.n)}</b> ${esc(c.d)}<br><small>配方：${c.need.map(x => SP[x].n).join(' + ')}</small></p>` : '')
-    + (f ? `<p>${fi(f.id)}<b>挂件·${esc(f.n)}</b> ${esc(f.d)}</p>` : '') + (g.xing ? `<p><b>蛊性·${esc(xingName(g.xing))}</b> ${esc(xingDesc(g.xing))}</p>` : '') + `<small>${esc(TXT.ateLine(g))} · 点开看完整详情</small>`;
+    + (f ? `<p>${fi(f.id)}<b>挂件·${esc(f.n)}</b> ${esc(f.d)}</p>` : '') + (g.xing ? `<p><b>蛊性·${esc(xingName(g.xing))}</b> ${esc(xingDesc(g.xing))}</p>` : '') + (g.fz ? `<p class="sm">${esc(TXT.fuseTip(g))}</p>` : '') + `<small>${esc(TXT.ateLine(g))} · 点开看完整详情</small>`;
 }
 const TIPS = {
   qi: () => `<b>元气 ${fmtTok(S.bank)}</b><br><small>${esc(TXT.qiTip)}${VSC ? '' : esc(TXT.qiTrial)}</small>`,
   gu: t => { const i = S.team.findIndex(g => g.uid === t.dataset.uid); return guTip(S.team[i], S.team, i); },
   bag: () => esc(TXT.bagTip()),
   bg: t => { const g = S.bag[+t.dataset.i]; return g ? guTip(g) + '<small>在蛊囊里：不上场、不跟去渡劫，拖进空窍才上场</small>' : ''; },
-  ware: t => { const w = S.shop[+t.dataset.i]; if (!w) return ''; if (w.kind === 'food') { const f = FOOD[w.id]; return `${fi(f.id)}<b>${esc(f.n)}</b> · ${FOOD_KIND[f.kind]}<br>${esc(f.d)}<br><small>价格 ${fmtTok(price(foodCost(w.id)))} 元气</small>`; } const n = owned(w.sp); return guTip(newGu(w.sp)).replace('<small>点开看完整详情</small>', '') + `<small>价格 ${fmtTok(price(PRICE.gu))} 元气 · 点开看完整详情</small>` + (n >= 2 ? `<p>你已有 ${n} 只${RANK.names[baseRank(w.sp)]}${SP[w.sp].n}，买下当场合成${RANK.names[baseRank(w.sp) + 1]}</p><p>${esc(TXT.mergeAfter(mergePreview(w.sp, baseRank(w.sp))))}</p>` : '' + (n < 2 && resoGain(S.team, w.sp) ? `<p>${esc(TXT.resoGainTip(resoGain(S.team, w.sp)))}</p>` : '')); },
+  ware: t => { const w = S.shop[+t.dataset.i]; if (!w) return ''; if (w.kind === 'food') { const f = FOOD[w.id]; return `${fi(f.id)}<b>${esc(f.n)}</b> · ${FOOD_KIND[f.kind]}<br>${esc(f.d)}<br><small>价格 ${fmtTok(price(foodCost(w.id)))} 元气</small>`; } const wr = w.rank || baseRank(w.sp), n = owned(w.sp, wr), ng = newGu(w.sp, wr); if (w.gear) ng.food = w.gear; return guTip(ng).replace('<small>点开看完整详情</small>', '') + `<small>价格 ${fmtTok(price(PRICE.gu))} 元气 · 点开看完整详情</small>` + (n >= 2 ? `<p>你已有 ${n} 份${RANK.names[wr]}${SP[w.sp].n}，买下当场合成${RANK.names[wr + 1]}</p><p>${esc(TXT.mergeAfter(mergePreview(w.sp, wr)))}</p>` : '' + (n < 2 && resoGain(S.team, w.sp) ? `<p>${esc(TXT.resoGainTip(resoGain(S.team, w.sp)))}</p>` : '')); },
 };
 let tipT = 0, tipEl = null, tipFor = null, tipLongT = 0, tipLongAt = -1e9;
 function tipShow(t) {
@@ -9828,13 +9941,13 @@ function buyWare(i) {
   const w = S.shop[i]; if (!w || w.sold || tripOn()) return;
   if (w.kind === 'food') {
     const f = FOOD[w.id]; if (!canPay(foodCost(w.id))) { note(TXT.poor(price(foodCost(w.id)) - S.bank)); return; }
-    if (f.kind === 'trip' || (f.kind === 'stat' && f.to !== 'one')) { if (f.kind === 'stat' && !S.team.some(canEat)) { note(TXT.ateFull); return; }
+    if (!needsPick(f)) { if (f.kind === 'stat' && !S.team.some(canEat)) { note(TXT.ateFull); return; }
       if (!pay(foodCost(w.id))) return; w.sold = true; w.frozen = false; useFood(w.id, 'shop', i); closeSheet(); renderHome(); save(); return; }
     useFood(w.id, 'shop', i); return;
   }
   if (!canBuy(S.team, w.sp, curCap(), S.bag, BC())) { note(TXT.bagFull); return; }
   if (!pay(PRICE.gu)) return;
-  const g = newGu(w.sp); w.sold = true; w.frozen = false;
+  const g = newGu(w.sp, w.rank || undefined); if (w.gear && FOOD[w.gear]) g.food = w.gear; w.sold = true; w.frozen = false;
   note(TXT.bought(g)); achieve('buys', 1); closeSheet();
   placeNew(g, 'shop'); snd('coin');
 }
@@ -9855,9 +9968,10 @@ const ACT = {
   },
   buy(a) { buyWare(+a.dataset.i); },
   freeze(a) { const w = S.shop[+a.dataset.i]; if (!w) return; w.frozen = !w.frozen; closeSheet(); renderShop(); save(); },
-  refresh() { if (tripOn() || !pay(PRICE.refresh)) return; newShop(); renderShop(); meters(); save(); snd('tick'); },
-  pantry(a) { const i = +a.dataset.i, id = S.pantry[i], f = FOOD[id]; if (!f) return; if (f.kind === 'gear' || (f.kind === 'stat' && f.to === 'one')) { useFood(id, 'pantry', i); return; } if (useFood(id, 'pantry', i)) { S.pantry.splice(i, 1); renderHome(); save(); } },
+  refresh() { const fr = (S.shopBuff || []).find(b => b.shop === 'free'); if (tripOn() || (!fr && !pay(PRICE.refresh))) return; if (fr) S.shopBuff.splice(S.shopBuff.indexOf(fr), 1); newShop(); renderShop(); meters(); save(); snd('tick'); },
+  pantry(a) { const i = +a.dataset.i, id = S.pantry[i], f = FOOD[id]; if (!f) return; if (needsPick(f)) { useFood(id, 'pantry', i); return; } if (useFood(id, 'pantry', i)) { S.pantry.splice(i, 1); renderHome(); save(); } },
   feedTo(a) { const all = [...S.team, ...S.bag]; feedTo(all[+a.dataset.k]); },
+  feedDao(a) { const f = FEED && FOOD[FEED.id]; if (!f) return; const fr = FEED; FEED = null; if (!takeFed(fr)) { closeSheet(); return; } (S.shopBuff = S.shopBuff || []).push({ id: f.id, shop: 'dao', pct: f.pct || 0, dao: a.dataset.d }); note(TXT.shopFood(f)); achieve('feeds', 1); closeSheet(); renderHome(); save(); },
   xingPick(a) { const g = [...S.team, ...S.bag].find(x => x.uid === a.dataset.uid); if (!g) return; g.xing = a.dataset.k; closeSheet(); note(TXT.xingSet(g)); renderHome(); save(); askXing(); },
   gu(a) { const i = S.team.findIndex(g => g.uid === a.dataset.uid); if (i >= 0) guDetail(S.team[i], { kind: 'team', i }); },
   bagGu(a) { const i = +a.dataset.i; if (S.bag[i]) guDetail(S.bag[i], { kind: 'bag', i }); },
