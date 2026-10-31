@@ -1,0 +1,27 @@
+name: 新蛊 / 杀招 / 玩法点子
+description: 想要一只新蛊、一个新杀招，或者一个新玩法
+labels: ["点子"]
+body:
+  - type: dropdown
+    id: kind
+    attributes:
+      label: 类型
+      options: [新蛊种, 新杀招, 新词条或怪癖, 玩法, 其他]
+    validations: { required: true }
+  - type: textarea
+    id: what
+    attributes:
+      label: 它干什么
+      description: 用大白话写，比如「挨打时有一半概率把伤害转给身后的蛊」
+    validations: { required: true }
+  - type: textarea
+    id: numbers
+    attributes:
+      label: 数值或配方（可选）
+      description: 攻击 / 血量 / 杀招需要哪几只蛊，没想好可以不填
+  - type: checkboxes
+    id: pr
+    attributes:
+      label: 自己动手
+      options:
+        - label: 我愿意自己提 PR
