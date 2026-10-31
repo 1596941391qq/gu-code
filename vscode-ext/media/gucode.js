@@ -5478,7 +5478,7 @@ const CSS = `
 @keyframes gbvfare{from{opacity:0;filter:blur(2px)}}
 .gbv-res .gbv-note{font-size:11px;color:var(--mu,#8f8775);text-align:center;margin:4px 0}
 .gbv-res .gbv-go{display:block;margin:10px auto 0;min-width:140px;height:38px;border-radius:3px;background:var(--zhu,#b5301f);color:var(--on-zhu,#f3ead6);font:16px var(--kai,serif);letter-spacing:.3em;cursor:pointer;border:0}
-.gbv.narrow .gbv-ic{width:250%}.gbv.narrow .gbv-ic b{font-size:10px;line-height:12px;padding:0 2px}.gbv.narrow .gbv-ic b em{font-size:8px;line-height:12px}
+.gbv.narrow .gbv-ic{width:122%}.gbv.narrow .gbv-ic b{font-size:9.5px;line-height:12px;padding:0 1.5px}.gbv.narrow .gbv-ic b em{font-size:8px;line-height:12px;margin-left:1px}
 .gbv.narrow .gbv-tok{border-radius:50%}
 .gbv.narrow .gbv-tok svg{filter:brightness(0);opacity:.85}
 .gbv.calm .gbv-ban span{animation-duration:.2s}
@@ -5533,10 +5533,10 @@ const CSS = `
 @keyframes gbvspin{to{transform:rotate(360deg)}}
 .gbv-u.s-web .a-web{display:block;background:repeating-linear-gradient(45deg,rgba(235,232,222,.55) 0 1px,rgba(0,0,0,0) 1px 7px),repeating-linear-gradient(-45deg,rgba(235,232,222,.55) 0 1px,rgba(0,0,0,0) 1px 7px)}
 .gbv-u.s-seal .gbv-gp i{background:#8a8070!important;box-shadow:none!important}
-.gbv-ic{position:absolute;left:50%;bottom:100%;margin-bottom:2px;transform:translateX(-50%);display:flex;flex-wrap:wrap-reverse;justify-content:center;gap:1px;width:170%;pointer-events:none}
+.gbv-ic{position:absolute;left:50%;bottom:100%;margin-bottom:2px;transform:translateX(-50%);display:flex;flex-wrap:wrap-reverse;justify-content:center;gap:1px;width:150%;pointer-events:none}
 .gbv-ic b{font:11px/13px var(--kai,serif);padding:0 3px;border-radius:2px;background:#5a5244;color:#fbf3e3;white-space:nowrap}
 .gbv-ic b em{font:600 9px/13px var(--sans,system-ui);font-style:normal;margin-left:2px}
-.gbv-ic b.psn,.gbv-ic b.para{background:#3d7a33}.gbv-ic b.burn{background:#c2501f}.gbv-ic b.chill{background:#3d78a8}.gbv-ic b.stun,.gbv-ic b.web{background:#6a5a8a}.gbv-ic b.grd,.gbv-ic b.taunt{background:#8a7434}.gbv-ic b.mark{background:#a3302a}.gbv-ic b.seal{background:#55504a}
+.gbv-ic b.more{background:#3a352c;font:600 10px/13px var(--sans,system-ui)}.gbv-ic b.psn,.gbv-ic b.para{background:#3d7a33}.gbv-ic b.burn{background:#c2501f}.gbv-ic b.chill{background:#3d78a8}.gbv-ic b.stun,.gbv-ic b.web{background:#6a5a8a}.gbv-ic b.grd,.gbv-ic b.taunt{background:#8a7434}.gbv-ic b.mark{background:#a3302a}.gbv-ic b.seal{background:#55504a}
 /* 状态跳字：灼伤橙红带小火苗、毒绿字带气泡 */
 .gbv-fl.stk{font-size:16px;display:flex;align-items:center;gap:2px}
 .gbv-fl.stk.burn{color:#ff7a3d}.gbv-fl.stk.psn{color:#8fd05a}
@@ -5693,7 +5693,8 @@ async function run(el, res, opts, resolve) {
   // 身上的状态：快照第 9 项（引擎每个事件都带），图标带层数 + 常驻效果
   function setSt(u, sx) {
     sx = sx || {}; const key = JSON.stringify(sx); if (key === u.sxKey) return; u.sxKey = key; u.sx = sx;
-    u.ic.innerHTML = ST_ORDER.filter(k => sx[k]).map(k => `<b class="${k}">${ST_CH[k]}<em>${stNum(k, sx[k])}</em></b>`).join('');
+    const L = ST_ORDER.filter(k => sx[k]), MAXI = 3;   // 最多显示 3 枚，多出来的写「+N」，悬停或点按看全部
+    u.ic.innerHTML = L.slice(0, MAXI).map(k => `<b class="${k}">${ST_CH[k]}<em>${stNum(k, sx[k])}</em></b>`).join('') + (L.length > MAXI ? `<b class="more">+${L.length - MAXI}</b>` : '');
     ['burn', 'chill', 'stun', 'web', 'grd', 'mark', 'seal'].forEach(k => u.el.classList.toggle('s-' + k, !!sx[k]));
     u.el.classList.toggle('s-psn', !!(sx.psn || sx.para));
   }
