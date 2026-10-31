@@ -682,7 +682,7 @@ function dispatch(ctx, h, u, c = {}) {
     const pn = ctx.nat; ctx.nat = t.nat ? 1 : 0;   // ctx.nat：本命技发出的事件带 nat 标记，模拟里统计本命占比
     withNM(t.nat ? natMul(u) : 1, () => fn(ctx, u, u.tr[id], c, () => { fired = true; ctx.ev('trig', { uid: u.uid, id }); })); ctx.nat = pn;
   }
-  const cb = u.combo && NC[u.combo], cf = cb && cb.hooks[name];
+  const cb = u.combo && !u.cdecl && NC[u.combo], cf = cb && cb.hooks[name];   // 声明式杀招（combos2 有 eff 的，battle.js 置 u.cdecl）不再派发旧钩子，免得效果算两遍
   if (cf && withNM(1, () => cf(ctx, u, c, quiet => { fired = true; ctx.ev('combo', { uid: u.uid, n: u.cname, quiet: quiet ? 1 : 0 }); }))) fired = true;
   return fired;
 }
@@ -3050,7 +3050,7 @@ function battle(ta, tb, seed, opts = {}) {
   syn.forEach((sy, s) => sy.combos.forEach(c => {
     const u = S[s].find(x => x.src === c.idx), C = comboDef(COMBOS.find(x => x.id === c.id)); if (!u) return;
     u.combo = c.id; u.cname = c.n; u.cmul = c.mul; roster[u.uid].combo = { id: c.id, n: c.n, mul: c.mul };
-    if (C.eff) u.dx.push({ src: { kind: 'combo', key: 'cb', mul: c.mul * TUNE.combo, combo: 1 }, list: C.eff.map(e => ({ when: C.when, ...e })) });
+    if (C.eff) { u.cdecl = 1; u.dx.push({ src: { kind: 'combo', key: 'cb', mul: c.mul * TUNE.combo, combo: 1 }, list: C.eff.map(e => ({ when: C.when, ...e })) }); }   // cdecl：bestiary 的旧杀招钩子不再派发
   }));
 
   // ----- 伤害、增益、召唤（ctx 接口与 bestiary.js 文件头一致） -----

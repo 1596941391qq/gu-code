@@ -677,7 +677,7 @@ function dispatch(ctx, h, u, c = {}) {
     const pn = ctx.nat; ctx.nat = t.nat ? 1 : 0;   // ctx.nat：本命技发出的事件带 nat 标记，模拟里统计本命占比
     withNM(t.nat ? natMul(u) : 1, () => fn(ctx, u, u.tr[id], c, () => { fired = true; ctx.ev('trig', { uid: u.uid, id }); })); ctx.nat = pn;
   }
-  const cb = u.combo && NC[u.combo], cf = cb && cb.hooks[name];
+  const cb = u.combo && !u.cdecl && NC[u.combo], cf = cb && cb.hooks[name];   // 声明式杀招（combos2 有 eff 的，battle.js 置 u.cdecl）不再派发旧钩子，免得效果算两遍
   if (cf && withNM(1, () => cf(ctx, u, c, quiet => { fired = true; ctx.ev('combo', { uid: u.uid, n: u.cname, quiet: quiet ? 1 : 0 }); }))) fired = true;
   return fired;
 }
