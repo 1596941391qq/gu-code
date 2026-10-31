@@ -450,6 +450,49 @@ button.mg{font:inherit;font-size:11px;border:0;cursor:pointer;position:relative;
 .wbuy .wt{font:12px var(--kai);color:#4a4239}
 .price{margin-top:2px;font:600 12px var(--sans);color:#2c6e5e}
 .ware.merge .wbuy{outline:1.5px solid var(--zhu2);outline-offset:2px}
+/* ---- v2 洞府：主道与共鸣、蛊囊行、战报、食物位、出征、罗盘、全屏时刻 ---- */
+.home.away .qiao{opacity:.72}
+.hhead{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:baseline;margin:12px 0 6px}
+.reso{display:flex;flex-wrap:wrap;gap:6px}.reso .ro{font:12px var(--sans);color:var(--mu)}.reso .ro.on{color:var(--qing);border:1px solid var(--qing);border-radius:10px;padding:0 7px}
+.bagline .bhead{display:flex;justify-content:space-between;align-items:baseline}
+.mini.bagrow{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;overflow:visible}
+.mini.bagrow .mg{width:auto;min-height:64px;position:relative;font-size:10px;padding:2px}
+.mini.bagrow .mg.empty{background:transparent;border:1px dashed var(--faint);min-height:0;height:46px;aspect-ratio:auto}
+.mini.bagrow .mg .art{width:70%}
+.mini.bagrow .mg b{font-size:11px}
+.mg .rk,.gu .rk{position:absolute;top:2px;left:2px}
+.mg{position:relative}
+@media (max-width:520px){.mini.bagrow{grid-template-columns:repeat(4,1fr)}}
+.hlog{list-style:none;margin:8px 0 0;padding:0;font:13px var(--kai);color:var(--mu);min-height:1.4em}
+.hlog li{line-height:1.6}.hlog li.new{color:var(--tx)}
+.ware.food .wbuy{background:var(--paper2)}
+.wbuy .fart{display:grid;place-items:center;width:44px;height:44px;margin:6px 0 2px;border:1.5px solid var(--ink);border-radius:50%;font:22px var(--kai)}
+.wbuy small{font-size:11px;color:#5b5244}
+.wbuy .tag{font:600 13px var(--mono)}.wbuy .tag.poor{color:var(--atk);opacity:.75}
+.wbuy .fu{font:11px var(--kai);color:var(--zhu2)}
+.shead{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.pantry{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:10px}.pfood{font:13px var(--kai);padding:3px 9px}
+.gorow{margin:16px 0 4px}.gorow .go{width:100%;display:flex;flex-direction:column;align-items:center;gap:2px}.gorow .go small{font:12px var(--sans);opacity:.85}
+.compass2{margin-top:16px}.dopts{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}
+.dopt{display:flex;flex-direction:column;gap:4px;align-items:flex-start;text-align:left;background:var(--paper);color:var(--ink);border-radius:3px;padding:10px}
+.dopt b{font:400 20px var(--kai)}.dopt small{font-size:12px;color:#5b5244}.dopt em{font:normal 12px var(--kai);color:var(--atk)}
+.dopt .dsp{display:flex;gap:2px}.dopt .dsp i{width:28px;height:28px}
+@media (max-width:520px){.dopts{grid-template-columns:1fr}}
+.sota{margin-left:8px;padding:0 5px;border:1.5px solid var(--zhu2);border-radius:3px;color:var(--zhu2);font:600 11px/1.5 var(--mono);transform:rotate(-4deg);display:inline-block}
+.sota[hidden]{display:none}
+.vrate .vlab{margin-right:8px}
+.bigmo{position:fixed;inset:0;z-index:2000;display:grid;place-items:center;background:color-mix(in srgb,var(--bg) 82%,transparent);opacity:0;transition:opacity .18s}
+.bigmo.in{opacity:1}
+.bigcard{max-width:min(440px,calc(100vw - 32px));background:var(--paper);color:var(--ink);border-radius:4px;padding:22px 22px 18px;box-shadow:0 10px 40px var(--shadow);transform:scale(.96);transition:transform .22s cubic-bezier(.2,.9,.3,1.2)}
+.bigmo.in .bigcard{transform:none}
+.bigcard h2{font:400 30px var(--kai);margin:4px 0 10px;color:var(--zhu)}
+.bigcard ul{margin:0 0 16px;padding-left:18px;font-size:15px;line-height:1.7}
+.bigcard .zhu{width:100%}
+.tline{padding-left:18px}.tline li{margin:8px 0}.tline li.done b{color:var(--qing)}.tline li.locked{opacity:.5}.tline small{margin-left:6px}.tline em{display:block;font:normal 12px var(--kai);color:var(--atk)}
+.recipes{padding-left:16px}.recipes li{margin:6px 0}.recipes li.on b{color:var(--zhu2)}.recipes .got{color:var(--qing)}.recipes small{margin-left:6px;color:var(--mu)}
+.codexgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(58px,1fr));gap:6px}.cx{display:flex;flex-direction:column;align-items:center;font-size:11px}.cx svg{width:48px;height:48px}.cx.unseen{opacity:.3}
+.mini.pick .mg{cursor:pointer}
+.tc.food{color:var(--qing)}.tc.xing{color:var(--atk)}
 .ware.merge .price{color:var(--zhu)}
 .wbuy{position:relative}
 .fu{position:absolute;top:3px;right:3px;font:11px/1 var(--kai);color:var(--on-zhu);background:var(--zhu);padding:2px 3px;border-radius:1px}

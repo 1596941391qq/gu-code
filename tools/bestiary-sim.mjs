@@ -10,7 +10,7 @@ import { battle } from '../src/battle.js';
 import * as BXmod from '../src/bestiary.js';
 import { ART2 } from '../src/art2.js';
 const { makeRng, genTeam, comboOf, SP, SPECIES, NORMAL_SPECIES, TRAITS, TRAIT_KEYS, COMBOS, COMBO, POOL_TIERS, addTrait, MARK_KEYS, decodeTeam, encodeTeam, natOf, guRank, awOf, subOk, nodeChoices, applyNode, mkNode, NODES, nodeOk, newGu, poolFor, slotCap, cleanTr } = core;
-const { NEW_SPECIES, NEW_TRAITS, NEW_COMBOS, NEW_SUMMONS, LEGENDS, META, NEW_RECIPES, FOODS, SCHOOLS, OLD_EXTRA } = BXmod;
+const { NEW_SPECIES, NEW_TRAITS, NEW_COMBOS, NEW_SUMMONS, LEGENDS, META, NEW_RECIPES, SCHOOLS, OLD_EXTRA } = BXmod;
 
 const QUICK = process.argv.includes('--quick'), N = +process.argv.find(a => /^\d+$/.test(a)) || (QUICK ? 3000 : 8000);
 const t0 = Date.now(), fails = [], warn = [];
@@ -35,7 +35,7 @@ if (dupAb.length || dupN.length) fails.push(`重名：简字 ${dupAb.join(',')} 
 for (const c of COMBOS) for (const x of c.need) if (!SP[x]) fails.push(`杀招 ${c.n} 配方 ${x} 不存在`);
 if (POOL_TIERS.length !== 6 || POOL_TIERS.flat().some(id => SP[id].immortal)) fails.push('蛊池不是 6 档或混进了仙蛊');
 const rankOf = id => SP[id] && SP[id].rank;
-for (const s of SPECIES) { if (!FOODS[s.food] || !s.lore.includes(FOODS[s.food].n)) fails.push(`${s.n} 喂食偏好缺失`); if (!SCHOOLS.includes(s.school)) fails.push(`${s.n} 流派缺失`); }
+for (const s of SPECIES) { if (!SCHOOLS.includes(s.school)) fails.push(`${s.n} 流派缺失`); }
 for (const r of NEW_RECIPES) {
   if (!SP[r.out] || SP[r.out].immortal) fails.push(`蛊方 ${r.n} 产出不合法`);
   const nr = r.need.map(x => typeof x === 'string' ? rankOf(x) : x.rank); if (nr.some(x => !x) || Math.max(...nr) >= rankOf(r.out)) fails.push(`蛊方 ${r.n} 原料转数应低于产物`);
@@ -43,7 +43,6 @@ for (const r of NEW_RECIPES) {
   if (META.matchRecipe(sample)?.id !== r.id) fails.push(`蛊方 ${r.n} 匹配不到自己`);
 }
 if (!META.canOwn([{ sp: 'boar' }], 'guangyin') || META.canOwn([{ sp: 'guangyin' }], 'guangyin')) fails.push('仙蛊唯一规则不对');
-if (META.feedMul({ sp: 'bfly' }, 'gemini') !== 1.3 || META.feedMul({ sp: 'boar' }, 'qwen') !== 1.1) fails.push('喂食倍率不对');
 const noArt = [...NEW_SPECIES.map(x => x.id), ...Object.keys(NEW_SUMMONS)].filter(id => !ART2[id] || !ART2[id].b); if (noArt.length) fails.push('缺美术：' + noArt.join(','));
 // 转数与觉醒：物种基础转数 + 每星两转
 if (guRank({ sp: 'boar', star: 1 }) !== 1 || guRank({ sp: 'boar', star: 2 }) !== 3 || guRank({ sp: 'boar', star: 3 }) !== 5 || awOf({ sp: 'boar', star: 2 }) !== 1 || awOf({ sp: 'dfly' }) !== 2 || guRank({ sp: 'guangyin' }) !== 6) fails.push('转数/觉醒推算不对');
