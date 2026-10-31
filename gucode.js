@@ -1115,9 +1115,9 @@ const NATS = {
     ['开战：敌方攻最高的蛊打上标记（第 1 轮）', '倒下时光照满阵：敌方全体再各受攻击 〔30〕%'],
     [E('death', 'dmg', 'killer', { atk: 1.0 }), E('death', 'st', 'same', { k: 'mark', n: 3 })],
     [[E('start', 'st', 'foe.top', { k: 'mark', n: 2 })], [E('death', 'dmg', 'foe.all', { atk: 0.3 })]]),
-  mirror: N('镜反', '镜', '受击', '受到技能伤害：照回来源这一下的 〔50〕%',
+  mirror: N('镜反', '镜', '受击', '受到技能伤害：照回来源这一下的 〔50〕%（每场最多 8 次）',
     ['受到的技能伤害 -25%', '普攻打它也照回 〔20〕%'],
-    [E('hit', 'dmg', 'src', { n: 0.5, if: 'kind=skill' })],
+    [E('hit', 'dmg', 'src', { n: 0.5, if: 'kind=skill', max: 8 })],
     [[E('take', 'mul', null, { v: 0.75, if: 'kind=skill' })], [E('hit', 'dmg', 'src', { n: 0.2, if: 'kind=hit' })]]),
   moonblade: N('月刃', '皎', '出手', '普攻化作一道月刃，贯穿目标那一整行：各受这一下的 〔30〕%',
     ['贯穿再加 〔15〕%', '本蛊打有标记的敌蛊，伤害 +20%'],
@@ -1746,8 +1746,8 @@ const COMBOS2 = [
   K('liuying', '流萤焚夜', ['firefly', 'fire'], 'death', '小光蛊倒下时化作满天流萤：敌方全体受攻击 50%，灼烧 2 轮（攻击 10%）',
     [E('dmg', 'foe.all', { atk: 0.5 }), E('st', 'same', { k: 'burn', n: 2, atk: 0.1 })],
     { c: ['#e7d77a', '#1c1915'], d: '画面转入夜色，小光蛊散成上百个光点慢慢升空，悬停一拍后像流星雨一样斜着落进敌阵，每个光点落地开出一朵小火花；慢开快收' }),
-  K('jinghua', '镜花水月', ['mirror', 'lure'], 'hit', '镜甲被打中：照回这一下的 40% 给打它的那只（普攻也算）',
-    [E('dmg', 'src', { n: 0.4 })],
+  K('jinghua', '镜花水月', ['mirror', 'lure'], 'hit', '镜甲被打中：照回这一下的 40% 给打它的那只（普攻也算，每场最多 8 次）',
+    [E('dmg', 'src', { n: 0.4, max: 8 })],
     { c: ['#c0d8e8', '#e8a0c0'], d: '镜甲身前竖起一面水波纹镜面，来袭的攻击在镜面上荡开涟漪后原路折返，镜中倒映出一朵虚花又碎掉；镜头与镜面平行，左右对称' }),
   K('shishan', '尸山月影', ['moth', 'bone'], 'death', '月蛾倒下时，原地召出一只月影（本蛊攻 50%、血 40%）',
     [E('summon', 'self', { sp: 'lunar', atk: 0.5, mx: 0.4, at: 'here' })],
@@ -1877,64 +1877,65 @@ return { COMBOS2, COMBO2, COMBO_POWER, COMBO_UP, COMBO_SUMMONS };
 })();
 // ---- src/daos.js（包一层，只放出 export）
 const { DAOS, DAO, DAO_KEYS, DAO_TIERS, CLASH_MUL, DAO_CLASH, CLASH_NOTE, DAO_OF, DAO_BY_SCHOOL, daoCount, daoLine } = (() => {
-// 蛊码 GuCode · 道（流派）。docs/design.md 第 1 节「羁绊分三层」的第一层 + 2.6「道共鸣只给轻量加成」。纯数据 + 纯函数，不 import 任何文件。
-// 16 道都是原著里的流派名（canon: true）。同一道的蛊在空窍里凑到 2 只、4 只时触发共鸣（4 只档替换 2 只档，不叠加），没有 6 只档：不鼓励一道到底。
+// 蛊码 GuCode · 道（流派）。docs/design.md 第 1 节「羁绊分三层」的第一层 + 2.8「道共鸣要有体感」。纯数据 + 纯函数，不 import 任何文件。
+// 16 道都是原著里的流派名（canon: true）。同一道的蛊在空窍里凑到 2 只、4 只时触发共鸣（4 只档替换 2 只档，不叠加），没有 6 只档。
+// 共鸣要有体感（design 2.8）：每道 2 只约 +15%、4 只约 +35% 的基础加成（攻、血或护体，带速度的道略少一点），再加这一道的小特色。
 // 异道道痕相冲：写在道上 clash: { 道id: 倍率 }，两道同时有共鸣时，两边共鸣都打折（只削共鸣，不影响杀招）。
 //
 // 格式（docs/battle-spec.md 7.1 / 7.2）：DAOS[i] = { id, n, color, d, canon, clash, r2, r4 }
 //   r* = { d 一句话（写的是玩家实际拿到的数）, atk / hp / spd / sh / gp, eff?: [{ when, op, … }] }
-//   atk / hp / spd / sh / gp 按引擎 RES_K（现为 0.5）折算前写：表里写 12，玩家拿到 6%，d 里写 6%。改 RES_K 要连 d 一起改。
+//   atk / hp / spd / sh / gp 按引擎 RES_K（现为 0.5）折算前写：表里写 30，玩家拿到 15%，d 里写 15%。改 RES_K 要连 d 一起改。
 //   eff 的施放者是这一道的每只蛊自己，只作用于自己（不写全队效果，免得只数越多叠得越多）；up: 0 = 不随转数涨。
 const E = (when, op, tg, o = {}) => ({ when, op, tg, up: 0, ...o });
 const DAOS = [
   { id: 'li', n: '力道', color: '#b5301f', d: '一身蛮力，打满血的更狠', canon: true,
-    r2: { d: '力道的蛊攻 +6%', atk: 12 },
-    r4: { d: '力道的蛊攻 +12%；打满血的敌蛊伤害 +15%', atk: 24, eff: [E('deal', 'mul', null, { v: 1.15, if: 'tg.full' })] } },
+    r2: { d: '力道的蛊攻 +15%', atk: 30 },
+    r4: { d: '力道的蛊攻 +35%；打满血的敌蛊伤害 +15%', atk: 70, eff: [E('deal', 'mul', null, { v: 1.15, if: 'tg.full' })] } },
   { id: 'yan', n: '炎道', color: '#d0632a', d: '普攻带火', canon: true, clash: { bing: 0.5 },
-    r2: { d: '炎道的蛊普攻点燃目标 2 轮（攻击 5%）', eff: [E('attack', 'st', 'tg', { k: 'burn', n: 2, atk: 0.05 })] },
-    r4: { d: '炎道的蛊攻 +5%，普攻点燃目标 2 轮（攻击 8%）', atk: 10, eff: [E('attack', 'st', 'tg', { k: 'burn', n: 2, atk: 0.08 })] } },
+    r2: { d: '炎道的蛊攻 +15%，普攻点燃目标 2 轮（攻击 5%）', atk: 30, eff: [E('attack', 'st', 'tg', { k: 'burn', n: 2, atk: 0.05 })] },
+    r4: { d: '炎道的蛊攻 +35%，普攻点燃目标 2 轮（攻击 8%）', atk: 70, eff: [E('attack', 'st', 'tg', { k: 'burn', n: 2, atk: 0.08 })] } },
   { id: 'bing', n: '冰雪道', color: '#6a9cc0', d: '普攻带寒', canon: true, clash: { yan: 0.5 },
-    r2: { d: '冰雪道的蛊普攻 15% 机会让目标寒 1 层', eff: [E('attack', 'st', 'tg', { k: 'chill', n: 1, chance: 0.15 })] },
-    r4: { d: '冰雪道的蛊速 +5%，普攻 30% 机会让目标寒 1 层', spd: 10, eff: [E('attack', 'st', 'tg', { k: 'chill', n: 1, chance: 0.3 })] } },
+    r2: { d: '冰雪道的蛊血 +15%，普攻 15% 机会让目标寒 1 层', hp: 30, eff: [E('attack', 'st', 'tg', { k: 'chill', n: 1, chance: 0.15 })] },
+    r4: { d: '冰雪道的蛊血 +35%，普攻 30% 机会让目标寒 1 层', hp: 70, eff: [E('attack', 'st', 'tg', { k: 'chill', n: 1, chance: 0.3 })] } },
   { id: 'jin', n: '金道', color: '#a8803e', d: '开战披甲', canon: true, clash: { mu: 0.5 },
-    r2: { d: '金道的蛊开战得到最大血量 6% 的护体', sh: 12 },
-    r4: { d: '金道的蛊开战得到 12% 护体，受到的伤害 -8%', sh: 24, eff: [E('take', 'mul', null, { v: 0.92 })] } },
+    r2: { d: '金道的蛊开战得到最大血量 15% 的护体', sh: 30 },
+    r4: { d: '金道的蛊开战得到最大血量 35% 的护体，受到的伤害 -8%', sh: 70, eff: [E('take', 'mul', null, { v: 0.92 })] } },
   { id: 'mu', n: '木道', color: '#5e8a4a', d: '慢慢回血', canon: true, clash: { jin: 0.5 },
-    r2: { d: '木道的蛊每轮回复最大血量 2%', eff: [E('round', 'heal', 'self', { mx: 0.02 })] },
-    r4: { d: '木道的蛊血 +5%，每轮回复 3.5%', hp: 10, eff: [E('round', 'heal', 'self', { mx: 0.035 })] } },
+    r2: { d: '木道的蛊血 +15%，每轮回复最大血量 2%', hp: 30, eff: [E('round', 'heal', 'self', { mx: 0.02 })] },
+    r4: { d: '木道的蛊血 +35%，每轮回复最大血量 3%', hp: 70, eff: [E('round', 'heal', 'self', { mx: 0.03 })] } },
   { id: 'tu', n: '土道', color: '#8a6a3a', d: '皮糙肉厚，站前排更稳', canon: true, clash: { lei: 0.5 },
-    r2: { d: '土道的蛊血 +8%', hp: 16 },
-    r4: { d: '土道的蛊血 +15%；站在最前时受到的伤害 -10%', hp: 30, eff: [E('take', 'mul', null, { v: 0.9, if: 'front' })] } },
+    r2: { d: '土道的蛊血 +15%', hp: 30 },
+    r4: { d: '土道的蛊血 +35%；站在最前时受到的伤害 -10%', hp: 70, eff: [E('take', 'mul', null, { v: 0.9, if: 'front' })] } },
   { id: 'lei', n: '雷道', color: '#3a6aa8', d: '出手快，偶尔麻住对手', canon: true, clash: { tu: 0.5 },
-    r2: { d: '雷道的蛊速 +5%', spd: 10 },
-    r4: { d: '雷道的蛊速 +10%，普攻 8% 机会让目标眩晕一次', spd: 20, eff: [E('attack', 'st', 'tg', { k: 'stun', n: 1, chance: 0.08 })] } },
+    r2: { d: '雷道的蛊攻 +10%、速 +5%', atk: 20, spd: 10 },
+    r4: { d: '雷道的蛊攻 +25%、速 +10%，普攻 8% 机会让目标眩晕一次', atk: 50, spd: 20, eff: [E('attack', 'st', 'tg', { k: 'stun', n: 1, chance: 0.08 })] } },
   { id: 'guang', n: '光道', color: '#c9a53a', d: '光比谁都快，专打被照亮的', canon: true, clash: { an: 0.5 },
-    r2: { d: '光道的蛊速 +6%', spd: 12 },
-    r4: { d: '光道的蛊速 +12%；打有标记的敌蛊伤害 +10%', spd: 24, eff: [E('deal', 'mul', null, { v: 1.1, if: 'tg.mark' })] } },
+    r2: { d: '光道的蛊攻 +10%、速 +5%', atk: 20, spd: 10 },
+    r4: { d: '光道的蛊攻 +25%、速 +10%；打有标记的敌蛊伤害 +10%', atk: 50, spd: 20, eff: [E('deal', 'mul', null, { v: 1.1, if: 'tg.mark' })] } },
   { id: 'an', n: '暗道', color: '#3a3346', d: '先在暗处做好记号', canon: true, clash: { guang: 0.5 },
-    r2: { d: '暗道的蛊开战给敌方攻最高的蛊打上标记（第 1 轮）', eff: [E('start', 'st', 'foe.top', { k: 'mark', n: 2 })] },
-    r4: { d: '暗道的蛊攻 +5%，开战标记敌方攻最高的蛊；打有标记的伤害 +12%', atk: 10, eff: [E('start', 'st', 'foe.top', { k: 'mark', n: 2 }), E('deal', 'mul', null, { v: 1.12, if: 'tg.mark' })] } },
+    r2: { d: '暗道的蛊攻 +15%；开战给敌方攻最高的蛊打上标记（第 1 轮）', atk: 30, eff: [E('start', 'st', 'foe.top', { k: 'mark', n: 2 })] },
+    r4: { d: '暗道的蛊攻 +35%，开战标记敌方攻最高的蛊；打有标记的伤害 +12%', atk: 70, eff: [E('start', 'st', 'foe.top', { k: 'mark', n: 2 }), E('deal', 'mul', null, { v: 1.12, if: 'tg.mark' })] } },
   { id: 'xue', n: '血道', color: '#8a1f2b', d: '打出去的伤害吸回来', canon: true,
-    r2: { d: '血道的蛊普攻后回复这一下的 8%', eff: [E('attack', 'heal', 'self', { n: 0.08 })] },
-    r4: { d: '血道的蛊血 +5%，普攻后回复这一下的 15%', hp: 10, eff: [E('attack', 'heal', 'self', { n: 0.15 })] } },
+    r2: { d: '血道的蛊血 +15%，普攻后回复这一下的 8%', hp: 30, eff: [E('attack', 'heal', 'self', { n: 0.08 })] },
+    r4: { d: '血道的蛊血 +35%，普攻后回复这一下的 15%', hp: 70, eff: [E('attack', 'heal', 'self', { n: 0.15 })] } },
   { id: 'du', n: '毒道', color: '#4f7a3a', d: '普攻带毒', canon: true,
-    r2: { d: '毒道的蛊普攻让目标中毒（攻击 5%）', eff: [E('attack', 'st', 'tg', { k: 'psn', atk: 0.05 })] },
-    r4: { d: '毒道的蛊普攻让目标中毒（攻击 8%）；打中毒的敌蛊伤害 +10%', eff: [E('attack', 'st', 'tg', { k: 'psn', atk: 0.08 }), E('deal', 'mul', null, { v: 1.1, if: 'tg.psn' })] } },
+    r2: { d: '毒道的蛊攻 +15%，普攻让目标中毒（攻击 5%）', atk: 30, eff: [E('attack', 'st', 'tg', { k: 'psn', atk: 0.05 })] },
+    r4: { d: '毒道的蛊攻 +35%，普攻让目标中毒（攻击 8%）；打中毒的敌蛊伤害 +10%', atk: 70, eff: [E('attack', 'st', 'tg', { k: 'psn', atk: 0.08 }), E('deal', 'mul', null, { v: 1.1, if: 'tg.psn' })] } },
   { id: 'zhi', n: '智道', color: '#3d5a8a', d: '谋定而后动，主动技来得早', canon: true,
-    r2: { d: '智道里有主动技的蛊，开战蛊力 15', gp: 30 },
-    r4: { d: '智道里有主动技的蛊开战蛊力 30；开战敌方速最快的行动条推后 10%', gp: 60, eff: [E('start', 'delay', 'foe.fast', { v: 0.1 })] } },
+    r2: { d: '智道的蛊攻、血各 +8%，有主动技的开战蛊力 15', atk: 16, hp: 16, gp: 30 },
+    r4: { d: '智道的蛊攻、血各 +18%，有主动技的开战蛊力 30；开战敌方速最快的行动条推后 10%', atk: 36, hp: 36, gp: 60, eff: [E('start', 'delay', 'foe.fast', { v: 0.1 })] } },
   { id: 'hun', n: '魂道', color: '#5a4a7a', d: '同伴倒下，魂气更盛', canon: true,
-    r2: { d: '有友蛊倒下时，魂道的蛊攻 +5%', eff: [E('allyDeath', 'buff', 'self', { atk: 0.05 })] },
-    r4: { d: '有友蛊倒下时，魂道的蛊攻 +8%、血 +5%', eff: [E('allyDeath', 'buff', 'self', { atk: 0.08, hp: 0.05 })] } },
+    r2: { d: '魂道的蛊攻 +15%；有友蛊倒下时再攻 +5%', atk: 30, eff: [E('allyDeath', 'buff', 'self', { atk: 0.05 })] },
+    r4: { d: '魂道的蛊攻 +35%；有友蛊倒下时再攻 +8%、血 +5%', atk: 70, eff: [E('allyDeath', 'buff', 'self', { atk: 0.08, hp: 0.05 })] } },
   { id: 'nu', n: '奴道', color: '#7a5a3a', d: '驱使召唤物，越多越壮', canon: true,
-    r2: { d: '每有友蛊被召唤，奴道的蛊攻 +3%（最多 5 次）', eff: [E('summon', 'buff', 'self', { atk: 0.03, max: 5 })] },
-    r4: { d: '奴道的蛊攻 +5%；每有友蛊被召唤再攻 +5%（最多 6 次）', atk: 10, eff: [E('summon', 'buff', 'self', { atk: 0.05, max: 6 })] } },
+    r2: { d: '奴道的蛊血 +15%；每有友蛊被召唤，攻 +3%（最多 5 次）', hp: 30, eff: [E('summon', 'buff', 'self', { atk: 0.03, max: 5 })] },
+    r4: { d: '奴道的蛊血 +35%；每有友蛊被召唤，攻 +5%（最多 6 次）', hp: 70, eff: [E('summon', 'buff', 'self', { atk: 0.05, max: 6 })] } },
   { id: 'yu', n: '宇道', color: '#4a8a86', d: '站位腾挪，后排更安全', canon: true,
-    r2: { d: '宇道的蛊身前有友蛊时，每轮得到最大血量 2% 的护体', eff: [E('round', 'shield', 'self', { mx: 0.02, if: 'back' })] },
-    r4: { d: '宇道的蛊速 +5%；身前有友蛊时每轮得到 4% 护体', spd: 10, eff: [E('round', 'shield', 'self', { mx: 0.04, if: 'back' })] } },
+    r2: { d: '宇道的蛊血 +10%、速 +5%；身前有友蛊时每轮得到最大血量 2% 的护体', hp: 20, spd: 10, eff: [E('round', 'shield', 'self', { mx: 0.02, if: 'back' })] },
+    r4: { d: '宇道的蛊血 +25%、速 +10%；身前有友蛊时每轮得到 4% 护体', hp: 50, spd: 20, eff: [E('round', 'shield', 'self', { mx: 0.04, if: 'back' })] } },
   { id: 'zhou', n: '宙道', color: '#8a7a3a', d: '拖得越久越强', canon: true,
-    r2: { d: '第 3 轮起，宙道的蛊每轮攻 +2%', eff: [E('round', 'buff', 'self', { atk: 0.02, if: 'round>=3' })] },
-    r4: { d: '第 3 轮起，宙道的蛊每轮攻 +4%、血 +2%', eff: [E('round', 'buff', 'self', { atk: 0.04, hp: 0.02, if: 'round>=3' })] } },
+    r2: { d: '宙道的蛊血 +15%；第 3 轮起每轮攻 +2%', hp: 30, eff: [E('round', 'buff', 'self', { atk: 0.02, if: 'round>=3' })] },
+    r4: { d: '宙道的蛊血 +35%；第 3 轮起每轮攻 +4%、血 +2%', hp: 70, eff: [E('round', 'buff', 'self', { atk: 0.04, hp: 0.02, if: 'round>=3' })] } },
 ];
 const DAO = Object.fromEntries(DAOS.map(d => [d.id, d]));
 const DAO_KEYS = DAOS.map(d => d.id);
@@ -1987,7 +1988,7 @@ return { DAOS, DAO, DAO_KEYS, DAO_TIERS, CLASH_MUL, DAO_CLASH, CLASH_NOTE, DAO_O
 // ---- src/foods.js
 // 蛊码 GuCode · 食物（第三版，26 种：加攻血 8、挂件 10、出征用 8）。纯数据，不 import 任何文件。
 // 格式：FOODS[i] = { id, n 名, kind, dao 所属的道（蛊市按罗盘选中的道加权）, cost 价格档（× core.PRICE.food 才是元气）, d 一句话（写清加什么、给谁、多久）, ...效果字段 }
-//   kind 'stat'：买下立刻生效，永久加攻血（每只最多吃 core.ATE_MAX 次）。to = 'one'（玩家选一只）| 'rand2'（随机两只）| 'all'（空窍全体）；atk、hp = 加多少点
+//   kind 'stat'：买下立刻生效，永久加攻血（每只最多吃 core.ATE_MAX 次）。to = 'one'（玩家选一只）| 'rand2'（随机两只）| 'all'（空窍全体）；atk、hp = 加多少点（数值已按 design 2.8 放大十倍，和 core.STAT_SCALE 一致）
 //   kind 'gear'：挂在一只蛊身上，每只最多 1 个，换新的旧的就没了；战斗里生效。
 //              eff = 声明式效果（battle-spec 第 4、6 节），施放者是挂着它的那只蛊，数值不随转数涨。
 //              旧写法 gear = 'spawn'（倒下化出蛊蛹：本蛊攻血 pct%）| 'ward'（受到的伤害 -pct%）| 'first'（开战攻 +pct%）引擎照旧认。
@@ -2003,19 +2004,19 @@ return { DAOS, DAO, DAO_KEYS, DAO_TIERS, CLASH_MUL, DAO_CLASH, CLASH_NOTE, DAO_O
 const F = (id, n, kind, dao, cost, d, o = {}) => ({ id, n, kind, dao, cost, d, ...o });
 const FOODS = [
   // —— 骨架时的 6 个（位置不动）——
-  F('meat', '血肉团', 'stat', 'li', 3, '喂给一只蛊：攻 +2、血 +2，永久', { to: 'one', atk: 2, hp: 2 }),
-  F('dew', '晨露丸', 'stat', 'xue', 3, '空窍里随机两只：攻 +1、血 +2，永久', { to: 'rand2', atk: 1, hp: 2 }),
+  F('meat', '血肉团', 'stat', 'li', 3, '喂给一只蛊：攻 +20、血 +20，永久', { to: 'one', atk: 20, hp: 20 }),
+  F('dew', '晨露丸', 'stat', 'xue', 3, '空窍里随机两只：攻 +10、血 +20，永久', { to: 'rand2', atk: 10, hp: 20 }),
   F('egg', '孵蛊卵', 'gear', 'nu', 4, '挂在一只蛊上：它倒下时原地化出一只蛊蛹（本蛊攻血的 40%）', { gear: 'spawn', pct: 40 }),
   F('scale', '鳞甲片', 'gear', 'jin', 4, '挂在一只蛊上：受到的伤害 -10%', { gear: 'ward', pct: 10 }),
   F('tea', '回春茶', 'trip', 'xue', 3, '下一次出征：每场开打前全队回 20% 血', { trip: 'heal', pct: 20 }),
   F('map', '寻路图', 'trip', 'zhi', 3, '下一次出征：房间路程 -15%，少花元气', { trip: 'road', pct: 15 }),
   // —— 加攻血 ——
-  F('yuelan', '月兰花瓣', 'stat', 'guang', 3, '喂给一只蛊：攻 +3，永久', { to: 'one', atk: 3, hp: 0, canon: true }),
-  F('zhujiu', '青竹酒', 'stat', 'zhi', 5, '空窍全体各喝一口：攻 +1、血 +1，永久', { to: 'all', atk: 1, hp: 1 }),
-  F('huotan', '火炭心', 'stat', 'yan', 4, '空窍里随机两只：攻 +2、血 +1，永久', { to: 'rand2', atk: 2, hp: 1 }),
-  F('shuangye', '霜叶', 'stat', 'bing', 2, '喂给一只蛊：攻 +1、血 +2，永久', { to: 'one', atk: 1, hp: 2 }),
-  F('lingzhi', '灵芝片', 'stat', 'mu', 5, '空窍全体：血 +2，永久', { to: 'all', atk: 0, hp: 2 }),
-  F('leizao', '雷击枣', 'stat', 'lei', 4, '喂给一只蛊：攻 +2、血 +3，永久', { to: 'one', atk: 2, hp: 3 }),
+  F('yuelan', '月兰花瓣', 'stat', 'guang', 3, '喂给一只蛊：攻 +30，永久', { to: 'one', atk: 30, hp: 0, canon: true }),
+  F('zhujiu', '青竹酒', 'stat', 'zhi', 5, '空窍全体各喝一口：攻 +10、血 +10，永久', { to: 'all', atk: 10, hp: 10 }),
+  F('huotan', '火炭心', 'stat', 'yan', 4, '空窍里随机两只：攻 +20、血 +10，永久', { to: 'rand2', atk: 20, hp: 10 }),
+  F('shuangye', '霜叶', 'stat', 'bing', 2, '喂给一只蛊：攻 +10、血 +20，永久', { to: 'one', atk: 10, hp: 20 }),
+  F('lingzhi', '灵芝片', 'stat', 'mu', 5, '空窍全体：血 +20，永久', { to: 'all', atk: 0, hp: 20 }),
+  F('leizao', '雷击枣', 'stat', 'lei', 4, '喂给一只蛊：攻 +20、血 +30，永久', { to: 'one', atk: 20, hp: 30 }),
   // —— 挂件：各给一种通用效果 ——
   F('duzhen', '毒针囊', 'gear', 'du', 4, '挂在一只蛊上：它的普攻让目标中毒（攻击 10%，可叠）',
     { eff: [{ when: 'attack', op: 'st', tg: 'tg', k: 'psn', atk: 0.1 }] }),
@@ -2216,6 +2217,9 @@ const bagCap = () => BAG.cap;
 // 物种可带 st: [[攻,血] × 6]（下标 = 转数）直接覆盖这张表。
 // 单只蛊封顶（design 第 0 节）：攻血按「每种蛊每一转」的固定表，五转封顶；加攻血的食物每只最多吃 ATE_MAX 次
 const RANK_GROW = [0, 1, 1.8, 3, 4.6, 6.8, 9.6];
+// 数值放大十倍（design 2.8）：物种表里的攻血是小数字，statFor 统一乘 STAT_SCALE 再给出去（一转约攻 20、血 40），百分比加成才看得出来。
+// 食物加的攻血在 foods.js 里已经是放大后的数，不再乘。
+const STAT_SCALE = 10;
 const ATE_MAX = 3;
 const ateOf = g => (g && g.ate) || 0;
 const canEat = g => !!g && ateOf(g) < ATE_MAX;
@@ -2223,9 +2227,9 @@ const canEat = g => !!g && ateOf(g) < ATE_MAX;
 const statTable = sp => { const out = []; for (let r = baseRank(sp); r <= RANK.max; r++) out.push({ rank: r, ...statFor(sp, r) }); return out; };
 function statFor(sp, rank) {
   const s = SP[sp]; if (!s) return { atk: 1, hp: 1 };
-  const r = Math.max(1, Math.min(6, rank | 0)); if (s.st && s.st[r]) return { atk: s.st[r][0], hp: s.st[r][1] };
+  const r = Math.max(1, Math.min(6, rank | 0)), X = STAT_SCALE; if (s.st && s.st[r]) return { atk: Math.max(1, Math.round(s.st[r][0] * X)), hp: Math.max(1, Math.round(s.st[r][1] * X)) };
   const k = RANK_GROW[r] / RANK_GROW[Math.max(1, Math.min(6, baseRank(sp)))];
-  return { atk: Math.max(1, Math.round(s.atk * k)), hp: Math.max(1, Math.round(s.hp * k)) };
+  return { atk: Math.max(1, Math.round(s.atk * k * X)), hp: Math.max(1, Math.round(s.hp * k * X)) };
 }
 
 // 词条效果表：旧 12 种蛊的本命技（物种的 nat 字段指向这里），v 为层数；数值按本蛊攻血的百分比。v2 不再有副词条，词条只作本命技用。
@@ -2461,10 +2465,10 @@ function posNote(team, i, id) {
 function formScore(t) {
   let s = 0; const n = t.length;
   t.forEach((g, i) => {
-    const k = natOf(g.sp), T = k ? { [k]: 1 } : {}, q = [], h = g.hp + 3 * (T.shell || 0) + 2 * (T.guard || 0);
-    if (i === 0) s += h * 1.3 + g.atk * 0.5 + 2.5 * (T.thorn || 0) + 2 * (T.frenzy || 0) + 1.5 * (T.split || 0) + 4 * (T.vanguard || 0) - 4 * (T.snipe || 0) - 2 * (T.war || 0) - 1.5 * (T.legacy || 0) - (q.includes('timid') ? 4 : 0) + (q.includes('lastgasp') ? 2 : 0);
+    const k = natOf(g.sp), T = k ? { [k]: 1 } : {}, q = [], A = g.atk / STAT_SCALE, h = g.hp / STAT_SCALE + 3 * (T.shell || 0) + 2 * (T.guard || 0);   // 攻血按放大前的量级打分，和下面的常数对得上
+    if (i === 0) s += h * 1.3 + A * 0.5 + 2.5 * (T.thorn || 0) + 2 * (T.frenzy || 0) + 1.5 * (T.split || 0) + 4 * (T.vanguard || 0) - 4 * (T.snipe || 0) - 2 * (T.war || 0) - 1.5 * (T.legacy || 0) - (q.includes('timid') ? 4 : 0) + (q.includes('lastgasp') ? 2 : 0);
     else s += 3 * (T.snipe || 0) + (n - i) * 0.15 * h;
-    if (T.legacy && t[i + 1]) s += T.legacy * (1 + 0.15 * t[i + 1].atk);
+    if (T.legacy && t[i + 1]) s += T.legacy * (1 + 0.15 * t[i + 1].atk / STAT_SCALE);
     if (T.link) s += 1.5 * T.link * ((i > 0) + (i < n - 1));
     if (T.guard) s += i === 1 ? 4 : i > 1 ? 1 : 0;
   });
@@ -2498,15 +2502,16 @@ function unutf8(b) { return typeof TextDecoder !== 'undefined' ? new TextDecoder
 // v5（v2 玩法）：物种 7 位、转数 3 位、攻血各 10 位、挂件食物 6 位、蛊性 6 位，外加 1 位「试玩」
 // v6（阵盘）：v5 每只蛊后面再加 阵盘格 4 位（0–8，15 = 没摆）、速 8 位（0 = 按物种）。v1–v5 解出来按顺序自动摆进阵盘
 // v7（额度）：和 v6 一样，只是只数字段从 3 位改成 4 位（阵盘最多 9 只）
+// v8（数值放大十倍）：版本字段写 0 再跟 3 位扩展号（8 = 7 + 1），攻血各 12 位；v5–v7 的攻血是放大前的数，解出来乘 STAT_SCALE
 const OLD_W = { 1: { sp: 4, tr: 4, q: 3, st: 8, mk: 0, rk: 0 }, 2: { sp: 4, tr: 4, q: 3, st: 8, mk: 12, rk: 2 }, 3: { sp: 6, tr: 6, q: 4, st: 10, mk: 16, rk: 3 }, 4: { sp: 6, tr: 6, q: 4, st: 10, mk: 16, rk: 3, fl: 1 } };
-const W5 = { sp: 7, rk: 3, st: 10, fd: 6, xg: 6 };
+const W5 = { sp: 7, rk: 3, st: 10, fd: 6, xg: 6 }, ST8 = 12;
 function encodeTeam(team, meta = {}) {
   let bits = ''; const put = (v, n) => { bits += Math.max(0, Math.min(2 ** n - 1, Math.round(v) || 0)).toString(2).padStart(n, '0'); };
   const nm = Array.from(utf8((meta.name || '').slice(0, 8))).slice(0, 31);
-  put(7, 3); put(meta.realm || 0, 3); put(Math.min(SLOTS, team.length), 4); put(nm.length, 5); nm.forEach(b => put(b, 8)); put(meta.trial ? 1 : 0, 1);
+  put(0, 3); put(1, 3); put(meta.realm || 0, 3); put(Math.min(SLOTS, team.length), 4); put(nm.length, 5); nm.forEach(b => put(b, 8)); put(meta.trial ? 1 : 0, 1);
   const xk = XING_KEYS();
   for (const g of team.slice(0, SLOTS)) {
-    put(SPI[g.sp], W5.sp); put(rankOf(g), W5.rk); put(g.atk, W5.st); put(g.hp, W5.st);
+    put(SPI[g.sp], W5.sp); put(rankOf(g), W5.rk); put(g.atk, ST8); put(g.hp, ST8);
     put(g.food && FDI[g.food] != null ? FDI[g.food] + 1 : 0, W5.fd); const xi = g.xing ? xk.indexOf(g.xing) : -1; put(xi + 1, W5.xg); put(g.boss ? 1 : 0, 1);
     const k = cellOf(g); put(k >= 0 && k <= 8 ? k : 15, 4); put(g.spd || 0, 8);
   }
@@ -2519,14 +2524,14 @@ function decodeTeam(code) {
     const m = String(code).match(/[A-Za-z0-9_-]{8,}/); if (!m) return null;
     let bits = ''; for (const ch of m[0]) { const i = B64.indexOf(ch); if (i < 0) return null; bits += i.toString(2).padStart(6, '0'); }
     let p = 0; const get = n => { if (p + n > bits.length) throw 0; const v = parseInt(bits.slice(p, p + n), 2); p += n; return v; };
-    const ver = get(3); if (ver < 1 || ver > 7) return null;
+    let ver = get(3); if (ver === 0) ver = 7 + get(3); if (ver < 1 || ver > 8) return null;
     const realm = get(3), n = get(ver >= 7 ? 4 : 3), nl = get(5), nm = []; for (let i = 0; i < nl; i++) nm.push(get(8));
     const team = []; let trial = false;
     if (ver >= 5) {
-      trial = !!get(1); const xk = XING_KEYS();
+      trial = !!get(1); const xk = XING_KEYS(), sw = ver >= 8 ? ST8 : W5.st, sx = ver >= 8 ? 1 : STAT_SCALE;
       for (let i = 0; i < n; i++) {
         const sp = SPECIES[get(W5.sp)]; if (!sp) return null;
-        const rank = Math.max(1, Math.min(6, get(W5.rk))), g = { uid: nuid(), sp: sp.id, rank, atk: Math.max(1, get(W5.st)), hp: Math.max(1, get(W5.st)), food: null, xing: null };
+        const rank = Math.max(1, Math.min(6, get(W5.rk))), g = { uid: nuid(), sp: sp.id, rank, atk: Math.max(1, get(sw) * sx), hp: Math.max(1, get(sw) * sx), food: null, xing: null };
         const fi = get(W5.fd); if (fi && FOODS[fi - 1]) g.food = FOODS[fi - 1].id; const xi = get(W5.xg); if (xi && xk[xi - 1]) g.xing = xk[xi - 1]; if (get(1)) g.boss = 1;
         if (ver >= 6) { const k = get(4); if (k <= 8) g.pos = cellPos(k); const sp2 = get(8); if (sp2) g.spd = sp2; }
         team.push(g);
@@ -6205,11 +6210,23 @@ const trialTag = on => on ? `<span class="trialtag">${TXT.trial}</span>` : '';
 // v3 = v2 玩法的存档（gu = { uid, sp, rank, atk, hp, food, xing, bonusA?, bonusH? }）。旧版本存档一律不读，启动时另存到 BAK_KEY。
 // bank = 元气（token），没有上限；所有价格都是 token 数
 const BAK_KEY = 'gucode.v1.bak-v2';
-const fresh = () => ({ v: 3, started: false, name: '', realm: 0, bank: 0, total: 0, team: [], bag: [], shop: [], dao: null, compass: null, tripFood: [], pantry: [], trip: null, land: null,
+const fresh = () => ({ v: 3, sx: STAT_SCALE, started: false, name: '', realm: 0, bank: 0, total: 0, team: [], bag: [], shop: [], dao: null, compass: null, tripFood: [], pantry: [], trip: null, land: null,
   seed: (Math.random() * 1e9) >>> 0, step: 0, speed: 1, mute: true, theme: 'auto', calm: false, codex: {}, combosSeen: [], log: [], hlog: [], meta: null, todayKey: '', todayTok: 0, ghosts: null, trial: false, sotaAt: 0 });
 const today = () => { const d = new Date(); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); };
 const curCap = () => SLOTS, BC = () => Math.max(bagCap(S.realm), S.bag.length);
-const migrate = s => s && s.v === 3 ? s : null;
+// sx = 存档里的攻血按几倍存的。没有 sx 的是放大十倍之前的存档：空窍、蛊囊、秘境里的血量和战利品蛊一律乘 STAT_SCALE（只做一次）
+const scaleGu = (g, k) => { if (!g) return; ['atk', 'hp', 'bonusA', 'bonusH'].forEach(f => { if (typeof g[f] === 'number') g[f] = Math.max(f === 'atk' || f === 'hp' ? 1 : 0, Math.round(g[f] * k)); }); };
+function scaleSave(s) {
+  if (!s || s.sx === STAT_SCALE) return s;
+  const k = STAT_SCALE / (s.sx || 1), t = s.trip;
+  (s.team || []).forEach(g => scaleGu(g, k)); (s.bag || []).forEach(g => scaleGu(g, k));
+  if (t) {
+    ['hp', 'mx'].forEach(f => { if (t[f]) for (const u in t[f]) t[f][u] = Math.max(t[f][u] > 0 ? 1 : 0, Math.round(t[f][u] * k)); });
+    [t.loot, t.end && t.end.loot].forEach(l => l && (l.gu || []).forEach(g => scaleGu(g, k)));
+  }
+  s.ghosts = null; s.sx = STAT_SCALE; return s;
+}
+const migrate = s => s && s.v === 3 ? scaleSave(s) : null;
 const price = k => Math.round(k * src.unit);   // 价格表（core.PRICE，单位 = 罗盘「千」）换成 token 数
 let S = fresh(), rate = 0, hot = false, inBattle = false, booted = false, skip = false, resetArm = 0;
 const src = new TokenSource(onTick);

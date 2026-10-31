@@ -1,6 +1,6 @@
 // 蛊码 GuCode · 食物（第三版，26 种：加攻血 8、挂件 10、出征用 8）。纯数据，不 import 任何文件。
 // 格式：FOODS[i] = { id, n 名, kind, dao 所属的道（蛊市按罗盘选中的道加权）, cost 价格档（× core.PRICE.food 才是元气）, d 一句话（写清加什么、给谁、多久）, ...效果字段 }
-//   kind 'stat'：买下立刻生效，永久加攻血（每只最多吃 core.ATE_MAX 次）。to = 'one'（玩家选一只）| 'rand2'（随机两只）| 'all'（空窍全体）；atk、hp = 加多少点
+//   kind 'stat'：买下立刻生效，永久加攻血（每只最多吃 core.ATE_MAX 次）。to = 'one'（玩家选一只）| 'rand2'（随机两只）| 'all'（空窍全体）；atk、hp = 加多少点（数值已按 design 2.8 放大十倍，和 core.STAT_SCALE 一致）
 //   kind 'gear'：挂在一只蛊身上，每只最多 1 个，换新的旧的就没了；战斗里生效。
 //              eff = 声明式效果（battle-spec 第 4、6 节），施放者是挂着它的那只蛊，数值不随转数涨。
 //              旧写法 gear = 'spawn'（倒下化出蛊蛹：本蛊攻血 pct%）| 'ward'（受到的伤害 -pct%）| 'first'（开战攻 +pct%）引擎照旧认。
@@ -16,19 +16,19 @@
 const F = (id, n, kind, dao, cost, d, o = {}) => ({ id, n, kind, dao, cost, d, ...o });
 export const FOODS = [
   // —— 骨架时的 6 个（位置不动）——
-  F('meat', '血肉团', 'stat', 'li', 3, '喂给一只蛊：攻 +2、血 +2，永久', { to: 'one', atk: 2, hp: 2 }),
-  F('dew', '晨露丸', 'stat', 'xue', 3, '空窍里随机两只：攻 +1、血 +2，永久', { to: 'rand2', atk: 1, hp: 2 }),
+  F('meat', '血肉团', 'stat', 'li', 3, '喂给一只蛊：攻 +20、血 +20，永久', { to: 'one', atk: 20, hp: 20 }),
+  F('dew', '晨露丸', 'stat', 'xue', 3, '空窍里随机两只：攻 +10、血 +20，永久', { to: 'rand2', atk: 10, hp: 20 }),
   F('egg', '孵蛊卵', 'gear', 'nu', 4, '挂在一只蛊上：它倒下时原地化出一只蛊蛹（本蛊攻血的 40%）', { gear: 'spawn', pct: 40 }),
   F('scale', '鳞甲片', 'gear', 'jin', 4, '挂在一只蛊上：受到的伤害 -10%', { gear: 'ward', pct: 10 }),
   F('tea', '回春茶', 'trip', 'xue', 3, '下一次出征：每场开打前全队回 20% 血', { trip: 'heal', pct: 20 }),
   F('map', '寻路图', 'trip', 'zhi', 3, '下一次出征：房间路程 -15%，少花元气', { trip: 'road', pct: 15 }),
   // —— 加攻血 ——
-  F('yuelan', '月兰花瓣', 'stat', 'guang', 3, '喂给一只蛊：攻 +3，永久', { to: 'one', atk: 3, hp: 0, canon: true }),
-  F('zhujiu', '青竹酒', 'stat', 'zhi', 5, '空窍全体各喝一口：攻 +1、血 +1，永久', { to: 'all', atk: 1, hp: 1 }),
-  F('huotan', '火炭心', 'stat', 'yan', 4, '空窍里随机两只：攻 +2、血 +1，永久', { to: 'rand2', atk: 2, hp: 1 }),
-  F('shuangye', '霜叶', 'stat', 'bing', 2, '喂给一只蛊：攻 +1、血 +2，永久', { to: 'one', atk: 1, hp: 2 }),
-  F('lingzhi', '灵芝片', 'stat', 'mu', 5, '空窍全体：血 +2，永久', { to: 'all', atk: 0, hp: 2 }),
-  F('leizao', '雷击枣', 'stat', 'lei', 4, '喂给一只蛊：攻 +2、血 +3，永久', { to: 'one', atk: 2, hp: 3 }),
+  F('yuelan', '月兰花瓣', 'stat', 'guang', 3, '喂给一只蛊：攻 +30，永久', { to: 'one', atk: 30, hp: 0, canon: true }),
+  F('zhujiu', '青竹酒', 'stat', 'zhi', 5, '空窍全体各喝一口：攻 +10、血 +10，永久', { to: 'all', atk: 10, hp: 10 }),
+  F('huotan', '火炭心', 'stat', 'yan', 4, '空窍里随机两只：攻 +20、血 +10，永久', { to: 'rand2', atk: 20, hp: 10 }),
+  F('shuangye', '霜叶', 'stat', 'bing', 2, '喂给一只蛊：攻 +10、血 +20，永久', { to: 'one', atk: 10, hp: 20 }),
+  F('lingzhi', '灵芝片', 'stat', 'mu', 5, '空窍全体：血 +20，永久', { to: 'all', atk: 0, hp: 20 }),
+  F('leizao', '雷击枣', 'stat', 'lei', 4, '喂给一只蛊：攻 +20、血 +30，永久', { to: 'one', atk: 20, hp: 30 }),
   // —— 挂件：各给一种通用效果 ——
   F('duzhen', '毒针囊', 'gear', 'du', 4, '挂在一只蛊上：它的普攻让目标中毒（攻击 10%，可叠）',
     { eff: [{ when: 'attack', op: 'st', tg: 'tg', k: 'psn', atk: 0.1 }] }),
