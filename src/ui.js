@@ -4,6 +4,7 @@ import { battle } from './battle.js';
 import { guSVG, ART_DEFS } from './art.js';
 import { TokenSource, VSC } from './tokens.js';
 import { makeCard } from './card.js';
+import { ledgerInit, openLedger, ledgerShades, ledgerLimitRows, ledgerBindLimits, ledgerApply, ledgerLive, ledgerData, ledgerFeedMul, ledgerStoneMul } from './ledger.js';
 import { metaInit, metaMigrate, metaEmit, levelInfo, LEVEL_REWARDS, RARITY, CHESTS, TITLES, UNLOCKS, UNLOCK_ORDER, isUnlocked, rollRarity, applyRarity, openCocoon, openChest, pityLeft, rarityOdds, metaPool, feedTeam, feedGu, qiText, streakInfo, charmCost, canGuardStreak, shopFlags, rigShop, META_TUNE, dailyView, achList, titleName, setTitle, ACH_TIER } from './meta.js';
 import { TUTORIAL_STEPS, startTutorial, tutorialEvent, tutorialActive } from './tutorial.js';
 
@@ -207,8 +208,8 @@ function regenWill(tok) {   // 意志 = 体力：随时间和 token 回复，与
   if (up) { S.will = Math.min(WILL_MAX, S.will + up); renderSlots(); renderPhase(); save(); }
 }
 function feed(d, hotAmt) {
-  S.total += d; let rest = d, hr = hotAmt || 0;
-  S.stoneK += d; while (S.stoneK >= ECON.tokPer * src.unit) { S.stoneK -= ECON.tokPer * src.unit; S.stone++; renderMeta(); renderShop(); }
+  S.total += d; let rest = d * ledgerFeedMul(S.team[0]), hr = hotAmt || 0;   // 灵根：相合的主蛊吸纳更快（只加节点进度）
+  S.stoneK += d * ledgerStoneMul(); while (S.stoneK >= ECON.tokPer * src.unit) { S.stoneK -= ECON.tokPer * src.unit; S.stone++; renderMeta(); renderShop(); }
   if (S.team.some(g => g.wound > 0)) { S.repair += d; while (S.repair >= WOUND.healTok && healOne()) S.repair -= WOUND.healTok; }
   else S.repair = 0;
   let guard = 0;
@@ -274,7 +275,7 @@ async function animResolve(res, wu) {
 function renderAll() {
   const app = $('#app');
   app.innerHTML = S.started ? mainHTML() : startHTML();
-  if (S.started) { renderSlots(); renderShop(); renderPhase(); renderHint(); renderLevel(); meters(); }
+  if (S.started) { renderSlots(); renderShop(); renderPhase(); renderHint(); renderLevel(); meters(); ledgerShades($('#qiao')); }
 }
 // ---------- 成长：等级条、箱茧托盘、稀有度 ----------
 const M = () => S.meta || (S.meta = metaInit());
@@ -361,7 +362,7 @@ function startHTML() {
 }
 function mainHTML() {
   return `<header class="top"><div class="brand"><b class="logo">蛊码</b><span class="sub">烧 Token · 养蛊 · 斗道</span></div>
-  <div class="tools"><button class="realm" id="realm" data-act="path" title="修行路">${REALMS[S.realm]}</button><button class="ib gear" data-act="settings" title="设置" aria-label="设置"><svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.7" d="M12 8.6a3.4 3.4 0 1 0 0 6.8 3.4 3.4 0 0 0 0-6.8zm7.4 4.6.1-1.2-.1-1.2 2-1.6-2-3.4-2.4 1a7.6 7.6 0 0 0-2-1.2L14.6 3h-4l-.4 2.6a7.6 7.6 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6-.1 1.2.1 1.2-2 1.6 2 3.4 2.4-1c.6.5 1.3.9 2 1.2l.4 2.6h4l.4-2.6c.7-.3 1.4-.7 2-1.2l2.4 1 2-3.4z"/></svg></button><button class="ib zhu" data-act="share">战帖</button></div></header>
+  <div class="tools"><button class="realm" id="realm" data-act="path" title="修行路">${REALMS[S.realm]}</button><button class="ib gear" data-act="settings" title="设置" aria-label="设置"><svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.7" d="M12 8.6a3.4 3.4 0 1 0 0 6.8 3.4 3.4 0 0 0 0-6.8zm7.4 4.6.1-1.2-.1-1.2 2-1.6-2-3.4-2.4 1a7.6 7.6 0 0 0-2-1.2L14.6 3h-4l-.4 2.6a7.6 7.6 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6-.1 1.2.1 1.2-2 1.6 2 3.4 2.4-1c.6.5 1.3.9 2 1.2l.4 2.6h4l.4-2.6c.7-.3 1.4-.7 2-1.2l2.4 1 2-3.4z"/></svg></button><button class="ib" data-act="ledger" title="算力履历">履历</button><button class="ib zhu" data-act="share">战帖</button></div></header>
   <div class="lvrow"><button class="lvbar" id="lvbar" data-act="path" data-tip-fn="level"></button><span class="tray" id="tray"></span></div>
   <section class="vein"><canvas id="vein"></canvas><div class="vread"><div class="vrate" data-tip-fn="rate"><b id="rateTxt">0</b><span class="vu" id="rateU"></span><span class="vlab">灵流</span><span id="fireTag" class="fire"></span></div><div class="vtot"><span id="totTxt"></span><button class="chip" data-act="src" id="srcTag"></button></div></div><div class="vsrc" id="srcRates" hidden></div></section>
   <div class="seg" id="demo">${[['coding', '写代码中'], ['rest', '停手休息']].map(([m, t]) => `<button data-act="demo" data-m="${m}">${t}</button>`).join('')}</div>
@@ -972,14 +973,15 @@ const applyCalm = () => document.documentElement.toggleAttribute('data-calm', !!
 const isCalm = () => !!S.calm;   // 表现组件读这个：减弱震屏与闪光
 function openSettings() {
   const tog = (act, on, a = '开', b = '关') => `<button class="tog${on ? ' on' : ''}" data-act="${act}" aria-pressed="${on}">${on ? a : b}</button>`;
-  sheet(`<h3>设置</h3>
+  ledgerBindLimits(sheet(`<h3>设置</h3>
   <div class="set"><span>主题</span><div class="segs">${[['auto', '自动'], ['light', '日'], ['dark', '夜']].map(([k, t]) => `<button data-act="setTheme" data-v="${k}" class="${(S.theme || 'auto') === k ? 'on' : ''}">${t}</button>`).join('')}</div></div>
   <div class="set"><span>声音<small>古琴、钱币与木鱼</small></span>${tog('setMute', !S.mute)}</div>
   <div class="set"><span>减弱震屏与闪光<small>暴击、斩杀、开茧的震动和闪白都调弱</small></span>${tog('setCalm', !!S.calm)}</div>
   ${VSC ? '' : `<div class="set"><span>匿名统计<small>只发游玩事件计数，帮我们调数值；不含代码与对话内容，默认关闭</small></span>${tog('setStats', !!S.stats)}</div>`}
   <div class="set"><span>导出游玩数据<small>最近 ${S.log.length} 条事件（获得、战斗、节点、升阶），只存在本机${VSC ? '，导出到剪贴板' : ''}</small></span><button class="tog" data-act="exportLog">导出</button></div>
   <div class="set"><span>近期所得<small>最近 50 条奖励记录：时间、来源、内容</small></span><button class="tog" data-act="gains">查看</button></div>
-  <p class="sm">累计喂养 ${fmtTok(S.total)} token · 胜 ${S.wins} · 负 ${S.losses}</p>`, 'settings');
+  ${ledgerLimitRows()}
+  <p class="sm">累计喂养 ${fmtTok(S.total)} token · 胜 ${S.wins} · 负 ${S.losses}</p>`, 'settings'));
 }
 // ---------- 集成接口：合分支时替换实现（现在只往本地事件日志里记一笔）----------
 function logEv(k, o = {}) { (S.log || (S.log = [])).push({ t: Date.now(), k, ...o }); if (S.log.length > 500) S.log.splice(0, S.log.length - 500); }
@@ -1151,6 +1153,7 @@ const ACT = {
   share() { openShare(); },
   trib() { prep('trib'); }, ghost() { openGhosts(); tutorialEvent('ghost_open'); }, endless() { prep('endless'); },
   path() { openPath(); }, codex() { openCodex(); },
+  ledger() { openLedger({ name: S.name, realm: REALMS[S.realm], rank: titleName(M()) }); },
   ghostGo(a) { const o = S.ghosts && S.ghosts.list[+a.dataset.i]; if (!o || S.will <= 0) return; const d = decodeTeam(o.code); prep('ghost', { team: d.team, name: o.name, tier: o.tier, label: o.label }); },
   choose(a) { const p = S.pending; if (!p) return; finishNode(p.node, p.opts[+a.dataset.i], p.wu, p.cost); },
   buy(a) {
@@ -1217,7 +1220,7 @@ const ACT = {
   duelFight() { prep('duel', window.__guFoe); },
   reset(a) {
     if (Date.now() - resetArm > 3000) { resetArm = Date.now(); a.textContent = '再点一次确认重开'; setTimeout(() => { a.textContent = '重开一局'; }, 3000); return; }
-    codexScan(); const keep = { sound: S.sound, name: S.name, total: S.total, theme: S.theme, codex: S.codex, meta: S.meta, tutDone: true, mute: S.mute, calm: S.calm, stats: S.stats, log: S.log, todayKey: S.todayKey, todayTok: S.todayTok }; S = Object.assign(fresh(), keep); save(); renderAll();
+    codexScan(); const keep = { sound: S.sound, name: S.name, total: S.total, theme: S.theme, codex: S.codex, meta: S.meta, tutDone: true, mute: S.mute, calm: S.calm, stats: S.stats, log: S.log, todayKey: S.todayKey, todayTok: S.todayTok, qlim: S.qlim, lgSnap: S.lgSnap, lgAch: S.lgAch }; S = Object.assign(fresh(), keep); save(); renderAll();
   },
 };
 document.addEventListener('click', e => {
@@ -1226,6 +1229,15 @@ document.addEventListener('click', e => {
   const a = e.target.closest('[data-act]'); if (!a || a.disabled || performance.now() - dragEndT < 250) return;
   const f = ACT[a.dataset.act]; if (f) f(a, e);
 });
+
+// ---------- 算力履历（src/ledger.js）：收数据、周天上限存档；玩法挂钩见 ledger.js 文件头 ----------
+ledgerInit({ vsc: VSC, openSettings, buffsOn: true, getLimits: () => S.qlim || {}, setLimit: (k, v) => { S.qlim = Object.assign({}, S.qlim); if (v > 0) S.qlim[k] = v; else delete S.qlim[k]; save(); }, onData: ledgerSync });
+function ledgerSync() {   // 真实履历到达：周天轮转箱、履历成就、全年称号交给 meta 结算
+  ledgerShades($('#qiao')); if (!booted || !S.started || !ledgerLive()) return;
+  const rw = ledgerApply(M(), S, ledgerData()), out = metaEmit(M(), 'ledger', {}, R(), S);
+  rw.forEach(r => { if (r.k === 'chest') out.chests.push(r.tier); out.rewards.push(r); });
+  handleOut(out); save();
+}
 
 // ---------- 启动 ----------
 function boot(saved, pending) {
@@ -1237,7 +1249,7 @@ function boot(saved, pending) {
   booted = true; renderAll(); requestAnimationFrame(veinLoop);
   const away = pending && pending.tokens > 0 && S.started ? pending.tokens : 0;
   if (pending && pending.tokens > 0 && S.started) { countTok(pending.tokens); feed(pending.tokens, pending.hot || 0); renderSlots(); renderPhase(); const h = $('#hint'); if (h) h.textContent = `你不在的时候，蛊吸纳了 ${fmtTok(pending.tokens)} token。`; }
-  onSession(away); checkHash();
+  onSession(away); checkHash(); ledgerSync();
   if (!S.started && !S.tutDone && !location.hash.match(/[#&](c|r)=/)) setTimeout(runTutorial, 300);
 }
 // 新手引导：第一场斗蛊必胜并打出杀招（见 startBattle 里的 tutorialFight）
