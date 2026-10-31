@@ -75,11 +75,9 @@ function updateStatus(hot, idle) {
   const st = latestStatus;
   let text;
   if (!st || !st.started) text = '$(bug) 蛊码';
-  else if (idle) text = st.will > 0 ? '$(bug) 可斗蛊' : '$(bug) 蛊码 · 静';
-  else {
-    const fire = hot ? '武火' : '文火';
-    if (st.node && st.cost) text = `$(bug) 养蛊中 · ${fire} ${Math.min(99, Math.floor(100 * (st.prog + (ready ? 0 : W.pending)) / st.cost))}%`;
-    else text = `$(bug) 养蛊中 · ${fire} · 待择路`;
+  else {   // 只显示养蛊状态；斗蛊随时可开，不随空闲切换
+    const pct = st.node && st.cost ? Math.min(99, Math.floor(100 * (st.prog + (ready ? 0 : W.pending)) / st.cost)) + '%' : '待择路';
+    text = idle ? `$(bug) 蛊码 · ${pct}` : `$(bug) 养蛊中 · ${hot ? '武火' : '文火'} ${pct}`;
   }
   statusItem.text = text;
   statusItem.tooltip = `蛊码 GuCode\n灵流 ${fmt(W.rate)}/s · 本次启动累计 ${fmt(W.total)} token\nClaude ${fmt(W.src.claude)} · Codex ${fmt(W.src.codex)}\n只读会话里的 usage 数字，不读内容\n点击打开空窍`;

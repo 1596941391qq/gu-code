@@ -5,12 +5,12 @@ import { guSVG, ART_DEFS } from './art.js';
 import { TokenSource, VSC } from './tokens.js';
 import { makeCard } from './card.js';
 
-const KEY = 'gucode.v1', REPAIR = 30, TEMPO = 1.3;
+const KEY = 'gucode.v1', REPAIR = 30, TEMPO = 1.3, WILL_MAX = 5, WILL_SEC = 120, WILL_TOK = 60;
 const $ = (s, r = document) => r.querySelector(s);
 const el = html => { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstElementChild; };
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-const fresh = () => ({ v: 1, started: false, name: '', team: [], realm: 0, nodes: 0, compass: [], sel: null, prog: 0, wh: 0, bank: 0, repair: 0, will: 1, total: 0, muts: 0, wins: 0, losses: 0, seed: (Math.random() * 1e9) | 0, step: 0, sound: false, speed: 1 });
+const fresh = () => ({ v: 1, started: false, name: '', team: [], realm: 0, nodes: 0, compass: [], sel: null, prog: 0, wh: 0, bank: 0, repair: 0, will: 3, willT: 0, willK: 0, total: 0, muts: 0, wins: 0, losses: 0, seed: (Math.random() * 1e9) | 0, step: 0, sound: false, speed: 1 });
 
 let S = fresh(), phase = 'yang', rate = 0, hot = false, inBattle = false, booted = false, skip = false, resetArm = 0;
 const src = new TokenSource(onTick);
@@ -55,9 +55,19 @@ function onTick(t) {
   if (!booted) return;
   if (t.delta > 0 && S.started && !inBattle) feed(t.delta, t.hotDelta != null ? t.hotDelta : (t.hot ? t.delta : 0));
   else if (t.delta > 0 && S.started) S.bank = Math.min(bankCap(), S.bank + t.delta), S.total += t.delta;
-  const np = t.idle ? 'yin' : 'yang';
-  if (np !== phase) { phase = np; if (S.started) { renderPhase(); renderHint(); } }
+  phase = t.idle ? 'yin' : 'yang';   // 只影响灵脉/呼吸动画，不影响能否斗蛊
+  if (S.started) regenWill(t.delta || 0);
   meters();
+}
+let lastTick = performance.now();
+function regenWill(tok) {   // 意志 = 体力：随时间和 token 回复，与是否空闲无关
+  const now = performance.now(), dt = Math.min(5000, now - lastTick); lastTick = now;
+  if (S.will >= WILL_MAX) { S.willT = 0; S.willK = 0; return; }
+  S.willT += dt; S.willK += tok;
+  let up = 0;
+  while (S.willT >= WILL_SEC * 1000) { S.willT -= WILL_SEC * 1000; up++; }
+  while (S.willK >= WILL_TOK * src.unit) { S.willK -= WILL_TOK * src.unit; up++; }
+  if (up) { S.will = Math.min(WILL_MAX, S.will + up); renderSlots(); renderPhase(); save(); }
 }
 function feed(d, hotAmt) {
   S.total += d; let rest = d, hr = hotAmt || 0;
@@ -83,7 +93,7 @@ function resolveNode() {
   if (!nodeOk(node.type, S.team)) { S.sel = null; S.prog = 0; S.compass = rollCompass(R(), S.team); renderPhase(); return; }
   const res = applyNode(S.team, node, R(), { wuhuo: wu });
   const tg = node.type === 'summon' ? S.team[S.team.length - 1] : S.team[0]; if (tg) tg.fed += cost;
-  S.muts += res.muts; S.nodes++; S.will = Math.min(3, S.will + 1); S.sel = null; S.prog = 0; S.wh = 0;
+  S.muts += res.muts; S.nodes++; S.will = Math.min(WILL_MAX, S.will + 1); S.sel = null; S.prog = 0; S.wh = 0;
   S.compass = rollCompass(R(), S.team);
   animResolve(res, wu); renderPhase(); renderHint(); snd('pluck'); save();
 }
@@ -134,7 +144,7 @@ function renderSlots() {
   let h = ''; for (let i = 0; i < SLOTS; i++) h += `<div class="slot">${S.team[i] ? guCard(S.team[i], i) : '<span class="empty">空</span>'}</div>`;
   box.innerHTML = h;
   const yq = Math.max(0, 100 - 12 * S.team.reduce((a, g) => a + (g.wound || 0), 0));
-  const m = $('#qmeta'); if (m) m.innerHTML = `元气 ${yq}% · 战意 <b class="will">${'◆'.repeat(S.will)}${'◇'.repeat(3 - S.will)}</b>`;
+  const m = $('#qmeta'); if (m) m.innerHTML = `元气 ${yq}% · 意志 <b class="will">${'◆'.repeat(S.will)}${'◇'.repeat(Math.max(0, WILL_MAX - S.will))}</b>`;
   const rl = $('#realm'); if (rl) rl.textContent = REALMS[S.realm];
 }
 function nodeDesc(n) {
@@ -157,11 +167,11 @@ function nodeDesc(n) {
 function renderPhase() {
   const box = $('#phase'); if (!box) return;
   if (S.compass.length === 0 || S.compass.every(n => !nodeOk(n.type, S.team))) { S.compass = rollCompass(R(), S.team); S.sel = null; S.prog = 0; }
-  const yin = phase === 'yin', canFight = yin && S.will > 0;
+  const canFight = S.will > 0, nextWill = Math.max(0, Math.ceil(WILL_SEC - S.willT / 1000));
   const tribLabel = S.realm < 5 ? `渡${TRIB_NAMES[Math.min(S.realm, 4)]}` : '五转大成';
   box.innerHTML = `<div class="compass"><div class="ch"><span class="lbl">罗盘 · 三岔</span><span id="bank" class="bank"></span></div>
   <div class="nodes">${S.compass.map((n, i) => { const ok = nodeOk(n.type, S.team), on = S.sel === i; return `<button class="node${on ? ' on' : ''}" data-act="node" data-i="${i}"${ok ? '' : ' disabled'}><span class="nseal">${NODES[n.type].ch}</span><span class="nbody"><b>${NODES[n.type].n}${n.type === 'summon' ? ' · ' + SP[n.sp].n : ''}</b><small>${esc(nodeDesc(n))}</small></span><span class="ncost">${fmtTok(n.cost * src.unit)}</span><span class="nbar"><i></i></span></button>`; }).join('')}</div></div>
-  <div class="gate${yin ? ' open' : ''}"><div class="gh"><span class="lbl">${yin ? '阴 · 斗蛊' : '阳 · 养蛊'}</span><span class="gsub">${yin ? (S.will > 0 ? '停手了，斗场开启' : '战意已尽，再走一条路') : 'Token 流动中，斗场闭'}</span></div>
+  <div class="gate${canFight ? ' open' : ''}"><div class="gh"><span class="lbl">斗蛊</span><span class="gsub">${canFight ? `每场耗 1 点意志 · 余 ${S.will}` : `意志已尽 · 约 ${Math.ceil(nextWill / 60)} 分钟回 1 点，养蛊也会回`}</span></div>
   <div class="gbtns"><button class="gbtn" data-act="trib"${canFight && S.realm < 5 ? '' : ' disabled'}><b>${tribLabel}</b><small>${S.realm < 5 ? `${REALMS[S.realm + 1]}境 Boss · 胜则升阶` : '已登顶'}</small></button><button class="gbtn" data-act="ghost"${canFight ? '' : ' disabled'}><b>斗幽灵</b><small>同阶阵容 · 胜则夺蛊</small></button></div></div>`;
   meters();
 }
@@ -169,9 +179,8 @@ function renderHint() {
   const h = $('#hint'); if (!h) return;
   let t;
   if (S.team.some(g => g.wound)) t = '元气受损：一半 token 先拿去温养伤口。';
-  else if (phase === 'yin') t = S.will > 0 ? '停手了。渡劫升阶，或斗幽灵夺蛊。' : '战意已尽。再走一条路，攒一点战意。';
   else if (S.sel == null) t = S.nodes === 0 ? '选一条路。Token 流过，蛊沿路生长。' : '罗盘转好了，挑下一条路。顺序即流派。';
-  else if (src.mode === 'demo' && S.nodes >= 1) t = '页面在模拟写代码。点「停手休息」，斗场就开。';
+  else if (S.nodes >= 1 && S.will > 0) t = `${NODES[S.compass[S.sel].type].n}中。想打随时可以斗蛊，耗一点意志。`;
   else t = `${NODES[S.compass[S.sel].type].n}中：你写代码，它在长。`;
   h.textContent = t;
 }
@@ -179,7 +188,7 @@ function meters() {
   if (!S.started) return;
   const rt = $('#rateTxt'); if (!rt) return;
   rt.textContent = rate > 0 ? `${fmtTok(rate)}/s` : '静';
-  const ft = $('#fireTag'); ft.textContent = rate <= 0 ? (phase === 'yin' ? '阴' : '') : hot ? '武火' : '文火'; ft.classList.toggle('hot', hot && rate > 0);
+  const ft = $('#fireTag'); ft.textContent = rate <= 0 ? '' : hot ? '武火' : '文火'; ft.classList.toggle('hot', hot && rate > 0);
   $('#totTxt').textContent = '累计 ' + fmtTok(S.total);
   const st = $('#srcTag'); st.textContent = src.mode === 'vscode' ? 'Claude 实时' : '演示';
   const dm = $('#demo'); dm.hidden = src.mode !== 'demo'; dm.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.m === src.demo));
@@ -233,7 +242,7 @@ function startBattle(kind, foe) {
   if (kind === 'trib') { if (S.realm >= 5) return; enemy = tribTeam(S.realm); ename = `${REALMS[S.realm + 1]}·${TRIB_NAMES[Math.min(S.realm, 4)]}`; title = ename.replace('·', ' · '); erealm = S.realm + 1; }
   else if (kind === 'ghost') { const r = R(), gn = r.pick(GHOST_NAMES); enemy = genTeam(r, Math.max(1, S.nodes) + S.realm); ename = '幽灵·' + gn; title = '幽灵 · ' + gn; }
   else { enemy = foe.team; ename = foe.name || '无名蛊师'; erealm = foe.realm || 0; title = '战帖 · ' + ename; }
-  if (kind !== 'duel' && (phase !== 'yin' || S.will <= 0)) return;
+  if (kind !== 'duel' && S.will <= 0) return;
   const mine = (kind === 'duel' && (!S.started || !S.team.length)) ? starterTeam() : S.team;
   const ca = encodeTeam(mine, { name: S.name || '无名蛊师', realm: S.realm }), cb = encodeTeam(enemy, { name: ename, realm: erealm });
   const seed = kind === 'duel' ? hashStr(ca + '|' + cb).toString(36) : ((S.seed ^ Math.imul(++S.step, 2654435761)) >>> 0).toString(36);
