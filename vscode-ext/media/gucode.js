@@ -6866,7 +6866,7 @@ const MECHS = [
 const MECH = Object.fromEntries(MECHS.map(m => [m.id, m]));
 
 // ───────────── 秘境祝福：部分房间三选一，只在这一趟有效，出秘境清零 ─────────────
-// eff = 每场挂给我方每只出场蛊；trip = 秘境里的规则改动（路程、篝火、掉落、坊市、视野、开打前回血）；fights = 只管接下来几场（不写 = 这一趟一直有效）
+// eff = 每场挂给我方每只出场蛊；trip = 秘境里的规则改动（路程、篝火、掉落、坊市、救回剩几成血、开打前回血）；fights = 只管接下来几场（不写 = 这一趟一直有效）
 const BLESSES = [
   { id: 'xiansheng', n: '先声', d: '每场开战蛊力就是满的，第一次出手直接放主动技', eff: [{ when: 'start', op: 'gp', tg: 'self', v: 100 }] },
   { id: 'tiejia', n: '铁甲', d: '每场开战得满血 20% 的护体', eff: [{ when: 'start', op: 'shield', tg: 'self', mx: 0.2, up: 0 }] },
@@ -6887,11 +6887,11 @@ const BLESSES = [
   { id: 'guhuo', n: '篝火旺', d: '篝火回满血的 100%（原来一半）', trip: { camp: 1 } },
   { id: 'fengshou', n: '丰收', d: '打赢战斗多掉一份食物', trip: { food: 1 } },
   { id: 'shuke', n: '熟客', d: '坊市的东西半价', trip: { price: 0.5 } },
-  { id: 'qianli', n: '千里眼', d: '地图多看一层', trip: { see: 1 } },
+  { id: 'qiangjiu', n: '抢救', d: '打赢后倒下的蛊救回时剩三成血（原来只剩 1 血）', trip: { rescue: 0.3 } },
   { id: 'baoyou', n: '庇佑', d: '开打前全队回满血 25%', trip: { pre: 0.25 }, fights: 3 },
 ];
 const BLESS = Object.fromEntries(BLESSES.map(b => [b.id, b]));
-const blessLast = b => (b.fights ? `接下来 ${b.fights} 场战斗` : '这一趟秘境里一直有效，回洞府清零');
+const blessLast = b => (b.fights ? `管接下来 ${b.fights} 场战斗` : '这一趟一直有效');
 
 // ───────────── 劫数：通关一个秘境后能开劫一到劫十，每级叠一条限制（劫 n 含劫 1…n 全部）─────────────
 // 解锁条件由道途决定（洞府一侧）；秘境只认 tripStart 的 opts.jie，结果里带回 jie，洞府记每个秘境打到第几劫
@@ -6935,9 +6935,9 @@ function skyEff(sky, daoId, k = 1) {
 }
 // 祝福的规则改动合在一起（只算还在有效期里的）
 function blessRules(list) {
-  const r = { road: 1, camp: null, food: 0, price: 1, see: 0, pre: 0 };
+  const r = { road: 1, camp: null, food: 0, price: 1, rescue: 0, pre: 0 };
   (list || []).forEach(x => { const b = BLESS[x.id]; if (!b || !b.trip || (b.fights && (x.left | 0) <= 0)) return; const t = b.trip;
-    if (t.road) r.road *= t.road; if (t.camp != null) r.camp = Math.max(r.camp || 0, t.camp); if (t.price) r.price *= t.price; r.food += t.food || 0; r.see += t.see || 0; r.pre += t.pre || 0; });
+    if (t.road) r.road *= t.road; if (t.camp != null) r.camp = Math.max(r.camp || 0, t.camp); if (t.price) r.price *= t.price; r.food += t.food || 0; r.rescue = Math.max(r.rescue, t.rescue || 0); r.pre += t.pre || 0; });
   return r;
 }
 
@@ -7218,6 +7218,7 @@ function tripStart(seed, land, team, opts = {}) {   // land = 秘境 id（也认
   const t = { v: 2, seed: String(seed), land: L.id, realm: L.realm, quota: L.quota, d: 0, lane: null, pick: null, prog: 0, order: fielded.map(g => g.uid), hp: {}, mx: {}, dead: [], fallen: [],
     loot: { foods: [], gu: [] }, log: [], room: null, end: null, kills: {}, saved: [], seen: [], rooms: 0, short: 1, foodPool: (opts.foods || []).slice(), spPool: opts.sp && opts.sp.length ? opts.sp.slice() : null,
     kalpa: Math.max(0, Math.min(JIE_MAX, opts.kalpa | 0)), sky: plan.sky, boss: plan.boss, bless: [], offer: null, reward: null, got: null,
+    map: tripMap(seed, L.realm), path: [],                                                                   // 整张地图进秘境时就生成好存下；path = 每层走的哪条路
     pre: Math.min(1, tf.reduce((a, f) => a + (f.trip === 'heal' ? (f.pct || 0) / 100 : 0), 0)),                 // 回春茶、续命汤：每场开打前全队回的比例
     road: tf.reduce((a, f) => a * (f.trip === 'road' ? 1 - (f.pct || 0) / 100 : 1), 1),                       // 寻路图：路程乘几
     revive: Math.max(0, ...tf.map(f => (f.trip === 'revive' ? (f.pct || 0) / 100 : 0))), revived: null,       // 定魂香：第一只倒下的蛊下一场以几成血站起来
@@ -7227,8 +7228,8 @@ function tripStart(seed, land, team, opts = {}) {   // land = 秘境 id（也认
   return t;
 }
 const tlog = (t, s) => { t.log.push(s); if (t.log.length > 60) t.log.splice(0, t.log.length - 60); };
-const MAPC = new Map();   // 地图由种子现算，不进存档
-function tripMapOf(t) { const k = t.seed + '|' + t.realm; if (!MAPC.has(k)) { if (MAPC.size > 8) MAPC.clear(); MAPC.set(k, tripMap(t.seed, t.realm)); } return MAPC.get(k); }
+const MAPC = new Map();   // 旧存档没存地图时由种子现算
+function tripMapOf(t) { if (t.map) return t.map; const k = t.seed + '|' + t.realm; if (!MAPC.has(k)) { if (MAPC.size > 8) MAPC.clear(); MAPC.set(k, tripMap(t.seed, t.realm)); } return MAPC.get(k); }
 const tripAlive = t => t.order.filter(u => !t.dead.includes(u));
 // 这一层能选哪几条路
 function tripReach(t) {
@@ -7280,7 +7281,7 @@ function roomFoe(t) {
 }
 const tripLand = t => landOf(t.land || t.realm);
 function leave(t) {   // 房间处理完：进下一层（首领打完就结束）
-  t.lane = t.pick; t.pick = null; t.prog = 0; t.room = null; t.d++;
+  (t.path || (t.path = []))[t.d] = t.pick; t.lane = t.pick; t.pick = null; t.prog = 0; t.room = null; t.d++;
   if (t.d >= tripMapOf(t).length) tripEnd(t, 'clear');
 }
 // 出战阵容：出征时的站位，去掉倒下的；每只带 hpNow（上一场剩的血）
@@ -7318,7 +7319,7 @@ function tripFight(t, team, fielded, res) {
     const hp = Math.max(0, Math.round(hpEnd[i] || 0)), st = stat[i] || null, real = by[g.uid];
     if (st) t.kills[g.uid] = (t.kills[g.uid] || 0) + (st.kills | 0);
     if (hp <= 0) {   // 倒下了但这一场没输：救回，剩 1 血（定魂香：第一只以几成血站起来）
-      saved.push(g.uid); if (!t.saved.includes(g.uid)) t.saved.push(g.uid); t.hp[g.uid] = 1;
+      saved.push(g.uid); if (!t.saved.includes(g.uid)) t.saved.push(g.uid); t.hp[g.uid] = Math.max(1, Math.round(t.mx[g.uid] * blessRules(t.bless).rescue));   // 祝福「抢救」：救回剩三成
       if (t.revive && !t.revived) { t.revived = g.uid; t.hp[g.uid] = Math.max(1, Math.round(t.mx[g.uid] * t.revive)); }
       return;
     }
@@ -7434,7 +7435,12 @@ function tripPreview(seed, land, kalpa = 0, o = {}) {
     kalpa: { n: t.kalpa, name: JIE_NAMES[t.kalpa] || '普通', rules: JIE.slice(0, t.kalpa).map(j => j.n) }, reward: landReward(L, { ...o, kalpa: t.kalpa }) };
 }
 // 一趟里的天象、首领机制、劫数（界面在顶上和开打前写明）
-const tripMods = t => ({ sky: SKY[t.sky] || null, mechs: bossMechs(t), kalpa: t.kalpa || 0, kalpaName: JIE_NAMES[t.kalpa] || '', rules: JIE.slice(0, t.kalpa || 0).map(j => j.n), boss: (landOf(t.land || t.realm).bosses || [])[t.boss || 0] || null });
+//   boss = { i, mech, n, team }（team 已算上劫数多用的额度）
+function tripMods(t) {
+  const L = landOf(t.land || t.realm), B = (L.bosses || [])[t.boss || 0] || null, add = jieRules(t.kalpa).boss;
+  return { sky: SKY[t.sky] || null, mechs: bossMechs(t), kalpa: t.kalpa || 0, kalpaName: JIE_NAMES[t.kalpa] || '', rules: JIE.slice(0, t.kalpa || 0).map(j => j.n),
+    boss: B && { ...B, team: add ? slim(landBoss(L, t.boss || 0, add)) : B.team } };
+}
 function acceptXing(team, uid, key) { const g = team.find(x => x.uid === uid); if (g && XING[key]) { g.xing = key; return true; } return false; }
 // 奇遇：选第 i 个选项。返回 { ok, lines, offer? }
 function tripEvent(t, team, i, unit = 0, purse = null) {
@@ -7516,6 +7522,7 @@ const tripSeed = (base, n) => (hashStr(String(base) + ':trip:' + n) >>> 0).toStr
 
 
 
+
 const tuUnit = () => (VSC ? 8000 : 200);   // 1 份路程 = 多少 token（插件 8000，网页模拟 200），和 TokenSource.unit 一致
 const tuEsc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const tuFood = id => (FOOD[id] ? FOOD[id].n : id);
@@ -7547,24 +7554,25 @@ function tuDraw(api) {
   if (!t && S.trip) t = tuInit(api);
   if (!t) { box.innerHTML = ''; return; }
   const ui = tuUI(t), by = Object.fromEntries(S.team.map(g => [g.uid, g]));
-  let body;
+  let body, onMap = false;
   if (ui.offers.length) body = tuOffer(t, by, ui.offers[0]);
   else if (t.offer) body = tuBlessPick(t, t.offer.ids, 'offer');
   else if (t.reward) body = tuReward(t);
   else if (t.end) body = tuEnd(t, by, S);
   else if (ui.ask === 'flee') body = tuAsk(t);
   else if (t.room && !t.room.done) body = tuRoom(t, S);
-  else body = tuMap(t, S) + tuWalk(t);
+  else { body = tuMapView(t, S); onMap = true; }
   const msg = ui.msg && ui.msg.length && !t.end ? `<p class="tu-msg">${ui.msg.map(tuEsc).join('<br>')}</p>` : '';
-  box.innerHTML = `${tuHead(t)}${t.end ? '' : tuMods(t)}${tuTeam(t, by)}${msg}<div class="tu-body">${body}</div>${t.end ? '' : tuBag(t)}`;
+  box.innerHTML = `${tuHead(t)}${t.end || onMap ? '' : tuMods(t)}${t.end ? '' : tuSyn(api, t, S)}${tuTeam(t, by)}${msg}<div class="tu-body">${body}</div>${t.end ? '' : tuBag(t)}`;
+  const sc = box.querySelector('.tu-scroll'), at = sc && sc.querySelector('.tu-cell.cur, .tu-cell.reach');   // 地图滚到当前位置
+  if (sc && at) sc.scrollTop = Math.max(0, at.offsetTop - sc.clientHeight / 2);
 }
 function tuHead(t) {
   const N = tripMapOf(t).length, d = Math.min(t.d, N - 1);
-  const dots = Array.from({ length: N }, (_, i) => `<i class="${i < t.d ? 'past' : i === t.d && !t.end ? 'now' : ''}${i === N - 1 ? ' boss' : ''}">${i === N - 1 ? '劫' : ''}</i>`).join('');
   const flee = t.end || t.reward || t.offer || tuUI(t).ask ? '' : `<button class="tu-flee" data-trip="flee" title="带着战利品回洞府">退出秘境</button>`, L = tripLand(t);
-  return `<div class="tu-head"><span class="lbl">${tuEsc(tripLand(t).n)} <small>${t.end ? '回洞府' : `第 ${d + 1} / ${N} 层`}</small></span><span class="tu-dots" aria-label="第 ${d + 1} 层，共 ${N} 层，最深处是首领" title="${tuEsc(`${L.n}：额度 ${L.quota}，主道是${DAO[L.dao] ? DAO[L.dao].n : L.dao}，最深处是首领`)}">${dots}</span>${flee}</div>`;
+  return `<div class="tu-head"><span class="lbl" title="${tuEsc(`${L.n}：额度 ${L.quota}，主道是${DAO[L.dao] ? DAO[L.dao].n : L.dao}，最深处是首领`)}">${tuEsc(L.n)}${t.kalpa ? ` <em class="tu-jie">${tuEsc(JIE_NAMES[t.kalpa])}</em>` : ''} <small>${t.end ? '回洞府' : `第 ${d + 1} / ${N} 层`}</small></span>${flee}</div>`;
 }
-// 顶上一行：天象、劫数、手里的祝福和出征食物（悬停看全文）
+// 房间里（不在地图上时）顶上一行：天象、劫数、手里的祝福和出征食物（悬停看全文）
 function tuMods(t) {
   const m = tripMods(t), chip = (cls, k, n, d) => `<span class="tu-chip ${cls}" title="${tuEsc(d)}"><i>${k}</i>${tuEsc(n)}</span>`, out = [];
   if (m.sky) out.push(chip('sky', '天象', m.sky.n, m.sky.d));
@@ -7573,40 +7581,72 @@ function tuMods(t) {
   (t.eff || []).forEach(id => FOOD[id] && out.push(chip('food', '食', FOOD[id].n, FOOD[id].d)));
   return out.length ? `<div class="tu-mods">${out.join('')}</div>` : '';
 }
+// 队伍上方一行：当前生效的道共鸣和杀招（用洞府的同一个组件 api.synLine；洞府还没给时只写一行字）
+function tuSyn(api, t, S) {
+  const team = fieldTeam(t, S.team); if (!team.length) return '';
+  if (typeof api.synLine === 'function') return `<div class="tu-syn">${api.synLine(team)}</div>`;
+  let line = ''; try { line = synergyOf(team).line; } catch (e) { line = ''; }
+  return `<div class="tu-syn"><span class="lbl">共鸣</span><span>${tuEsc(line || '没有生效的共鸣和杀招')}</span></div>`;
+}
+// 队伍：每只写攻、速、血条和数字，道字、蛊性、挂件，身上的状态（残血、救回、定魂）
+const tuSpd = g => { try { return g.spd || (battleProfile(g.sp) || {}).spd || 100; } catch (e) { return g.spd || 100; } };
 function tuTeam(t, by) {
   return `<div class="tu-team">${t.order.map(u => {
     const g = by[u], f = t.fallen.find(x => x.uid === u), sp = g ? g.sp : f && f.sp, rank = g ? g.rank : f && f.rank; if (!sp) return '';
     const dead = t.dead.includes(u), hp = t.hp[u] || 0, mx = t.mx[u] || 1, pc = Math.max(0, Math.min(100, Math.round(hp / mx * 100)));
-    const xg = g && g.xing && XING[g.xing];
-    return `<div class="tu-g${dead ? ' dead' : pc <= 30 ? ' low' : ''}" title="${tuEsc(xg ? `蛊性「${xg.n}」：${xg.d}` : '')}"><span class="tu-art">${guSVG(sp, { rank })}</span><span class="tu-gi"><b>${tuEsc(SP[sp] ? SP[sp].n : sp)}${xg ? `<em class="tu-xg">${tuEsc(xg.n[0])}</em>` : ''}</b>${dead ? '<small>永久死亡</small>' : `<span class="tu-hp"><i style="width:${pc}%"></i></span><small>${hp}/${mx}</small>`}</span></div>`;
+    const xg = g && g.xing && XING[g.xing], gear = g && g.food && FOOD[g.food], dao = DAO[daoOf(sp)];
+    const tags = [xg ? `<em class="tu-tag xg" title="${tuEsc(`蛊性「${xg.n}」：${xg.d}`)}">${tuEsc(xg.n[0])}</em>` : '', gear ? `<em class="tu-tag gear" title="${tuEsc(`挂件「${gear.n}」：${gear.d}`)}">${tuEsc(gear.n[0])}</em>` : ''].join('');
+    const st = dead ? '' : t.revived === u && hp > 1 ? '定魂' : (t.saved || []).includes(u) && hp <= Math.max(1, mx * 0.05) ? '救回' : pc <= 30 ? '残血' : '';
+    return `<div class="tu-g${dead ? ' dead' : pc <= 30 ? ' low' : ''}"><span class="tu-art">${guSVG(sp, { rank })}</span><span class="tu-gi"><b>${dao ? `<i class="tu-dao" title="${tuEsc(dao.n)}">${tuEsc(dao.n[0])}</i>` : ''}${tuEsc(SP[sp] ? SP[sp].n : sp)}${tags}</b>${dead ? '<small>永久死亡</small>' : `<span class="tu-st"><i class="a">${g ? g.atk : ''}</i><i class="v">${g ? tuSpd(g) : ''}</i>${st ? `<em class="tu-state">${st}</em>` : ''}</span><span class="tu-hp"><i style="width:${pc}%"></i></span><small>${hp}/${mx}</small>`}</span></div>`;
   }).join('')}</div>`;
 }
 function tuBag(t) {
   const l = t.loot, items = [...l.gu.map(tuGuN), ...l.foods.map(tuFood)];
   return `<div class="tu-bag"><span class="lbl">战利品袋</span><span>${items.length ? items.map(tuEsc).join('、') : '还是空的'}</span><small>退出秘境或渡劫成功都全部带回；渡劫失败全部丢在秘境里。</small></div>`;
 }
-const tuX = lane => [50, 150, 250][lane];
-function tuNode(t, d, lane, o = {}) {
-  const r = roomAt(t, d, lane); if (!r) return '<span class="tu-room none"></span>';
-  const R = ROOMS[r.type], cost = r.cost * tuUnit() * (d === t.d ? t.short || 1 : 1) * roadOf(t);
-  const tag = o.pick ? 'button' : 'span', cls = `tu-room t-${r.type}${o.on ? ' on' : ''}${o.off ? ' off' : ''}${o.cur ? ' cur' : ''}`;
-  return `<${tag} class="${cls}"${o.pick ? ` data-trip="pick" data-lane="${lane}"` : ''} title="${tuEsc(R.n + '：' + R.d)}"><b class="tu-seal">${R.ch}</b><span>${R.n}</span><small>${fmtTok(cost)}</small></${tag}>`;
+// ───────────── 整张地图（杀戮尖塔式）：从下往上 10 层，最顶上是首领；一层一行、三条路三列 ─────────────
+// 当前位置描朱，能走的下一格高亮可点，走过的路变暗；正在走的那段路，朱线从起点往目标长（进度条）
+const TU_H = 40, tuX = lane => [50, 150, 250][lane], tuPct = lane => ['16.667%', '50%', '83.333%'][lane];
+function tuWalkPc(t) { const need = needTok(t, tuUnit()); return need ? Math.min(1, t.prog / need) : 0; }
+function tuMapView(t, S) {
+  const map = tripMapOf(t), N = map.length, H = TU_H, Ht = (N + 1) * H, reach = tripReach(t), walking = t.pick != null && !t.room, path = t.path || [];
+  const y = d => (N - 1 - d) * H + H / 2;   // d = -1 是入口（最底下）
+  const from = t.d === 0 ? [-1, 1] : [t.d - 1, path[t.d - 1] != null ? path[t.d - 1] : t.lane];   // 现在站的地方
+  const lanesAt = d => (d < 0 ? [1] : map[d] ? map[d].rooms.map(r => r.lane) : []);
+  const nexts = (d, l) => (d < 0 ? map[0].rooms.map(r => r.lane) : nextLanes(map, d, l));
+  const lines = [];
+  for (let d = -1; d < N - 1; d++) lanesAt(d).forEach(l => nexts(d, l).forEach(n => {
+    const done = d + 1 < t.d && (d < 0 ? true : path[d] === l) && path[d + 1] === n;
+    const isFrom = d === from[0] && l === from[1], open = isFrom && !walking && reach.includes(n), walk = isFrom && walking && n === t.pick;
+    lines.push(`<line class="${done ? 'done' : open ? 'open' : walk ? 'base' : 'off'}" x1="${tuX(d < 0 ? 1 : l)}" y1="${y(d)}" x2="${tuX(n)}" y2="${y(d + 1)}"/>`);
+    if (walk) { const p = tuWalkPc(t), x1 = tuX(d < 0 ? 1 : l), y1 = y(d), x2 = tuX(n), y2 = y(d + 1);
+      lines.push(`<line id="tuWalkLn" class="walk" data-x="${x1},${y1},${x2},${y2}" x1="${x1}" y1="${y1}" x2="${x1 + (x2 - x1) * p}" y2="${y1 + (y2 - y1) * p}"/>`); }
+  }));
+  const m = tripMods(t), cells = [];
+  for (let d = 0; d < N; d++) map[d].rooms.forEach(r => {
+    const R = ROOMS[r.type], cost = r.cost * tuUnit() * (d === t.d ? t.short || 1 : 1) * roadOf(t);
+    const past = d < t.d && path[d] === r.lane, skip = d < t.d && !past, cur = d === t.d && t.pick === r.lane, can = !walking && d === t.d && reach.includes(r.lane);
+    const cls = `tu-cell t-${r.type}${past ? ' past' : ''}${skip ? ' skip' : ''}${cur ? ' cur' : ''}${can ? ' reach' : ''}${!past && !cur && !can && d <= t.d ? ' off' : ''}`;
+    const tip = `第 ${d + 1} 层 · ${R.n}：${R.d}${d >= t.d ? `\n路程 ${fmtTok(cost)} 元气` : ''}`;
+    const pop = r.type === 'boss' && m.boss ? `<span class="tu-pop"><b>${tuEsc(m.boss.n)}</b>${m.mechs.map(x => `<small>机制「${tuEsc(x.n)}」：${tuEsc(x.d)}</small>`).join('')}<span class="tu-pop-team">${m.boss.team.map(g => `<i title="${tuEsc(tuGuN(g))}">${guSVG(g.sp, { rank: g.rank })}<em>${RANK.ch[g.rank]}</em></i>`).join('')}</span></span>` : '';
+    const tag = can ? 'button' : 'span', at = `style="left:${tuPct(r.lane)};top:${y(d)}px"`;
+    cells.push(`<${tag} class="${cls}" ${at}${can ? ` data-trip="pick" data-lane="${r.lane}"` : ''} title="${tuEsc(pop ? '' : tip)}"><b class="tu-seal">${R.ch}</b>${can ? `<small>${fmtTok(cost)}</small>` : ''}${pop}</${tag}>`);
+  });
+  cells.push(`<span class="tu-cell t-start${t.d === 0 && !walking ? ' cur' : ''}" style="left:50%;top:${y(-1)}px" title="入口"><b class="tu-seal">入</b></span>`);
+  const r = curRoom(t), need = needTok(t, tuUnit());
+  const cap = walking ? `<p class="tu-cap tu-walkcap"><span>走向第 ${t.d + 1} 层的${ROOMS[r.type].n}</span><small id="tuProg">${fmtTok(t.prog)} / ${fmtTok(need)} 元气</small></p><p class="tu-hint">写代码的 token 推着蛊往前走（朱线就是进度）。</p>`
+    : `<p class="tu-cap tu-walkcap"><span>点亮的格子可以走</span><small>格子下的数字是路程</small></p><p class="tu-hint">路程先花洞府攒着的元气（现在 ${fmtTok(S.bank)}），不够就等你写代码。</p>`;
+  return `<div class="tu-mapwrap"><div class="tu-mapcol"><div class="tu-scroll"><div class="tu-tower" style="height:${Ht}px"><svg class="tu-lines" viewBox="0 0 300 ${Ht}" preserveAspectRatio="none" aria-hidden="true">${lines.join('')}</svg>${cells.join('')}</div></div></div>${tuSide(t)}</div>${cap}`;
 }
-function tuMap(t, S) {
-  const map = tripMapOf(t); if (t.d >= map.length) return '';
-  const reach = tripReach(t), walking = t.pick != null, d = t.d, nx = map[d + 1];
-  const now = [0, 1, 2].map(l => tuNode(t, d, l, walking ? { on: l === t.pick, off: l !== t.pick, cur: l === t.pick } : { pick: reach.includes(l), off: !reach.includes(l) })).join('');
-  const from = walking ? [t.pick] : reach, to = new Set(), lines = [];
-  if (nx) from.forEach(l => { if (!roomAt(t, d, l)) return; nextLanes(map, d, l).forEach(n => { to.add(n); lines.push(`<line x1="${tuX(l)}" y1="0" x2="${tuX(n)}" y2="40"/>`); }); });
-  const next = nx ? [0, 1, 2].map(l => tuNode(t, d + 1, l, { off: !to.has(l) })).join('') : '';
-  const far = nx && map[d + 2] && blessList(t).some(b => b.id === 'qianli') ? `<p class="tu-cap sub">再往下两层（千里眼）${map[d + 2].boss ? '：渡劫首领' : ''}</p><div class="tu-row next">${[0, 1, 2].map(l => tuNode(t, d + 2, l, {})).join('')}</div>` : '';
-  return `<div class="tu-map"><p class="tu-cap">${walking ? '正在走这条路' : '这一层走哪条路？'}<small>数字 = 要走多少元气</small></p><div class="tu-row">${now}</div>${nx ? `<svg class="tu-links" viewBox="0 0 300 40" preserveAspectRatio="none" aria-hidden="true">${lines.join('')}</svg><p class="tu-cap sub">再往下一层${map[d + 1].boss ? '：渡劫首领' : ''}</p><div class="tu-row next">${next}</div>` : ''}${far}</div>`
-    + (walking ? '' : `<p class="tu-hint">路程花元气：先花洞府攒着的（现在 ${fmtTok(S.bank)}），不够就等你写代码，token 会推着蛊往前走。</p>`);
-}
-function tuWalk(t) {
-  const r = curRoom(t); if (!r || t.room) return '';
-  const need = needTok(t, tuUnit()), pc = Math.min(100, Math.round(t.prog / need * 100));
-  return `<div class="tu-walk"><b class="tu-seal">${ROOMS[r.type].ch}</b><div><p>走向第 ${t.d + 1} 层的${ROOMS[r.type].n}</p><div class="tu-bar"><i id="tuBar" style="width:${pc}%"></i></div><small id="tuProg">${fmtTok(t.prog)} / ${fmtTok(need)} 元气 · 写代码的 token 推着蛊往前走</small></div></div>`;
+// 地图旁边常驻：天象、首领（机制 + 阵容）、劫数、手里的祝福和出征食物
+function tuSide(t) {
+  const m = tripMods(t), out = [];
+  if (m.sky) out.push(`<div class="tu-sc sky"><p class="k">天象 · 双方都吃</p><b>${tuEsc(m.sky.n)}</b><p>${tuEsc(m.sky.d)}</p></div>`);
+  if (m.boss) out.push(`<div class="tu-sc boss"><p class="k">首领</p><b>${tuEsc(m.boss.n)}</b>${m.mechs.map(x => `<p><em>「${tuEsc(x.n)}」</em>${tuEsc(x.d)}<small>${tuEsc(x.k)}</small></p>`).join('')}<span class="tu-pop-team">${m.boss.team.map(g => `<i title="${tuEsc(tuGuN(g))}">${guSVG(g.sp, { rank: g.rank })}<em>${RANK.ch[g.rank]}</em></i>`).join('')}</span></div>`);
+  if (m.kalpa) out.push(`<div class="tu-sc jie"><p class="k">劫数</p><b>${tuEsc(m.kalpaName)}</b><ol>${m.rules.map(x => `<li>${tuEsc(x)}</li>`).join('')}</ol></div>`);
+  const bl = blessList(t), fd = (t.eff || []).filter(id => FOOD[id]);
+  if (bl.length || fd.length) out.push(`<div class="tu-sc bless"><p class="k">这一趟的加持</p>${bl.map(b => `<p title="${tuEsc(b.d)}"><em>${tuEsc(b.n)}</em>${tuEsc(b.d)}<small>${tuEsc(b.last)}</small></p>`).join('')}${fd.map(id => `<p><em>${tuEsc(FOOD[id].n)}</em>${tuEsc(FOOD[id].d.replace(/^下一次出征：/, ''))}</p>`).join('')}</div>`);
+  return `<aside class="tu-side">${out.join('')}</aside>`;
 }
 function tuFoes(foe) {
   return `<div class="tu-foes">${foe.map(f => `<div class="tu-f${f.boss ? ' boss' : ''}"><span class="tu-art">${guSVG(f.sp, { rank: f.rank })}</span><b>${tuEsc(SP[f.sp] ? SP[f.sp].n : f.sp)}</b><span class="st"><i class="a">${f.atk}</i><i class="h">${f.hp}</i></span></div>`).join('')}</div>`;
@@ -7667,7 +7707,7 @@ function tuEnd(t, by, S) {
   let gotGu = false, gotFood = false;
   const N = tripMapOf(t).length, deep = Math.min(N, e.why === 'clear' ? N : e.depth + (t.rooms > e.depth ? 1 : 0));
   const tag = (k, x) => { const on = k === 'gu' ? !gotGu && isGot(k, x) : !gotFood && isGot(k, x); if (on) { if (k === 'gu') gotGu = true; else gotFood = true; } return on ? '<em class="tu-drop">首领掉落</em>' : ''; };
-  const got = [...e.loot.gu.map(g => `<li><span class="tu-art">${guSVG(g.sp, { rank: g.rank })}</span>${tuEsc(tuGuN(g))}${tag('gu', g)}<small>放进蛊囊</small></li>`), ...e.loot.foods.map(id => `<li><b class="tu-seal">食</b>${tuEsc(tuFood(id))}${tag('food', id)}<small>放进食物架</small></li>`)];
+  const got = [...e.loot.gu.map(g => `<li><span class="tu-art">${guSVG(g.sp, { rank: g.rank })}</span><span>${tuEsc(tuGuN(g))}${tag('gu', g)}</span><small>放进蛊囊</small></li>`), ...e.loot.foods.map(id => `<li><b class="tu-seal">食</b><span>${tuEsc(tuFood(id))}${tag('food', id)}</span><small>放进食物架</small></li>`)];
   const lost = e.lost && !lootEmpty(e.lost) ? `<p class="tu-hint">丢在秘境里的：${tuEsc([...e.lost.gu.map(tuGuN), ...e.lost.foods.map(tuFood)].join('、'))}</p>` : '';
   const back = e.survivors.map(u => by[u]).filter(Boolean).map(g => tuEsc(SP[g.sp].n)), saved = (e.saved || []).map(u => by[u]).filter(Boolean).map(g => tuEsc(SP[g.sp].n));
   return `<div class="tu-panel tu-end w-${e.why}"><p class="tu-eyebrow">${head[0]}</p><h3>${head[1]}</h3><p>这一趟走了 ${t.rooms} 个房间，最深到第 ${deep} 层。${back.length ? `回来的：${back.join('、')}，回洞府就养好伤。` : ''}</p>${e.wiped ? '' : `<p class="tu-saved">${saved.length ? `救回 ${saved.length} 只：${saved.join('、')}（倒下过，但那一场打赢了）` : '这一趟没有蛊倒下过。'}</p>`}${first.length ? `<ul class="tu-first">${first.map(x => `<li>${tuEsc(x)}</li>`).join('')}</ul>` : ''}
@@ -7750,10 +7790,10 @@ TRIP.feed = (S, tok) => {
   if (!t) { S.bank += tok; return; }
   const api = TRIP.api;
   if (tripFeed(t, tok, tuUnit(), S)) { tuUI(t).msg = []; if (api) tuDraw(api); return; }
-  if (t.pick != null && !t.room && typeof document !== 'undefined') {   // 走路中：只更新进度条，不整屏重画
-    const need = needTok(t, tuUnit()), bar = document.getElementById('tuBar'), tx = document.getElementById('tuProg');
-    if (bar) bar.style.width = Math.min(100, Math.round(t.prog / need * 100)) + '%';
-    if (tx) tx.textContent = `${fmtTok(t.prog)} / ${fmtTok(need)} 元气 · 写代码的 token 推着蛊往前走`;
+  if (t.pick != null && !t.room && typeof document !== 'undefined') {   // 走路中：只把地图上的朱线往前长、改数字，不整屏重画
+    const ln = document.getElementById('tuWalkLn'), tx = document.getElementById('tuProg'), p = tuWalkPc(t);
+    if (ln) { const [x1, y1, x2, y2] = ln.dataset.x.split(',').map(Number); ln.setAttribute('x2', x1 + (x2 - x1) * p); ln.setAttribute('y2', y1 + (y2 - y1) * p); }
+    if (tx) tx.textContent = `${fmtTok(t.prog)} / ${fmtTok(needTok(t, tuUnit()))} 元气`;
   }
 };
 

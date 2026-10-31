@@ -47,7 +47,7 @@ export const MECHS = [
 export const MECH = Object.fromEntries(MECHS.map(m => [m.id, m]));
 
 // ───────────── 秘境祝福：部分房间三选一，只在这一趟有效，出秘境清零 ─────────────
-// eff = 每场挂给我方每只出场蛊；trip = 秘境里的规则改动（路程、篝火、掉落、坊市、视野、开打前回血）；fights = 只管接下来几场（不写 = 这一趟一直有效）
+// eff = 每场挂给我方每只出场蛊；trip = 秘境里的规则改动（路程、篝火、掉落、坊市、救回剩几成血、开打前回血）；fights = 只管接下来几场（不写 = 这一趟一直有效）
 export const BLESSES = [
   { id: 'xiansheng', n: '先声', d: '每场开战蛊力就是满的，第一次出手直接放主动技', eff: [{ when: 'start', op: 'gp', tg: 'self', v: 100 }] },
   { id: 'tiejia', n: '铁甲', d: '每场开战得满血 20% 的护体', eff: [{ when: 'start', op: 'shield', tg: 'self', mx: 0.2, up: 0 }] },
@@ -68,11 +68,11 @@ export const BLESSES = [
   { id: 'guhuo', n: '篝火旺', d: '篝火回满血的 100%（原来一半）', trip: { camp: 1 } },
   { id: 'fengshou', n: '丰收', d: '打赢战斗多掉一份食物', trip: { food: 1 } },
   { id: 'shuke', n: '熟客', d: '坊市的东西半价', trip: { price: 0.5 } },
-  { id: 'qianli', n: '千里眼', d: '地图多看一层', trip: { see: 1 } },
+  { id: 'qiangjiu', n: '抢救', d: '打赢后倒下的蛊救回时剩三成血（原来只剩 1 血）', trip: { rescue: 0.3 } },
   { id: 'baoyou', n: '庇佑', d: '开打前全队回满血 25%', trip: { pre: 0.25 }, fights: 3 },
 ];
 export const BLESS = Object.fromEntries(BLESSES.map(b => [b.id, b]));
-export const blessLast = b => (b.fights ? `接下来 ${b.fights} 场战斗` : '这一趟秘境里一直有效，回洞府清零');
+export const blessLast = b => (b.fights ? `管接下来 ${b.fights} 场战斗` : '这一趟一直有效');
 
 // ───────────── 劫数：通关一个秘境后能开劫一到劫十，每级叠一条限制（劫 n 含劫 1…n 全部）─────────────
 // 解锁条件由道途决定（洞府一侧）；秘境只认 tripStart 的 opts.jie，结果里带回 jie，洞府记每个秘境打到第几劫
@@ -116,8 +116,8 @@ export function skyEff(sky, daoId, k = 1) {
 }
 // 祝福的规则改动合在一起（只算还在有效期里的）
 export function blessRules(list) {
-  const r = { road: 1, camp: null, food: 0, price: 1, see: 0, pre: 0 };
+  const r = { road: 1, camp: null, food: 0, price: 1, rescue: 0, pre: 0 };
   (list || []).forEach(x => { const b = BLESS[x.id]; if (!b || !b.trip || (b.fights && (x.left | 0) <= 0)) return; const t = b.trip;
-    if (t.road) r.road *= t.road; if (t.camp != null) r.camp = Math.max(r.camp || 0, t.camp); if (t.price) r.price *= t.price; r.food += t.food || 0; r.see += t.see || 0; r.pre += t.pre || 0; });
+    if (t.road) r.road *= t.road; if (t.camp != null) r.camp = Math.max(r.camp || 0, t.camp); if (t.price) r.price *= t.price; r.food += t.food || 0; r.rescue = Math.max(r.rescue, t.rescue || 0); r.pre += t.pre || 0; });
   return r;
 }

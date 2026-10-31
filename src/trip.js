@@ -274,6 +274,7 @@ export function tripStart(seed, land, team, opts = {}) {   // land = 秘境 id�
   const t = { v: 2, seed: String(seed), land: L.id, realm: L.realm, quota: L.quota, d: 0, lane: null, pick: null, prog: 0, order: fielded.map(g => g.uid), hp: {}, mx: {}, dead: [], fallen: [],
     loot: { foods: [], gu: [] }, log: [], room: null, end: null, kills: {}, saved: [], seen: [], rooms: 0, short: 1, foodPool: (opts.foods || []).slice(), spPool: opts.sp && opts.sp.length ? opts.sp.slice() : null,
     kalpa: Math.max(0, Math.min(JIE_MAX, opts.kalpa | 0)), sky: plan.sky, boss: plan.boss, bless: [], offer: null, reward: null, got: null,
+    map: tripMap(seed, L.realm), path: [],                                                                   // 整张地图进秘境时就生成好存下；path = 每层走的哪条路
     pre: Math.min(1, tf.reduce((a, f) => a + (f.trip === 'heal' ? (f.pct || 0) / 100 : 0), 0)),                 // 回春茶、续命汤：每场开打前全队回的比例
     road: tf.reduce((a, f) => a * (f.trip === 'road' ? 1 - (f.pct || 0) / 100 : 1), 1),                       // 寻路图：路程乘几
     revive: Math.max(0, ...tf.map(f => (f.trip === 'revive' ? (f.pct || 0) / 100 : 0))), revived: null,       // 定魂香：第一只倒下的蛊下一场以几成血站起来
@@ -283,8 +284,8 @@ export function tripStart(seed, land, team, opts = {}) {   // land = 秘境 id�
   return t;
 }
 const tlog = (t, s) => { t.log.push(s); if (t.log.length > 60) t.log.splice(0, t.log.length - 60); };
-const MAPC = new Map();   // 地图由种子现算，不进存档
-export function tripMapOf(t) { const k = t.seed + '|' + t.realm; if (!MAPC.has(k)) { if (MAPC.size > 8) MAPC.clear(); MAPC.set(k, tripMap(t.seed, t.realm)); } return MAPC.get(k); }
+const MAPC = new Map();   // 旧存档没存地图时由种子现算
+export function tripMapOf(t) { if (t.map) return t.map; const k = t.seed + '|' + t.realm; if (!MAPC.has(k)) { if (MAPC.size > 8) MAPC.clear(); MAPC.set(k, tripMap(t.seed, t.realm)); } return MAPC.get(k); }
 export const tripAlive = t => t.order.filter(u => !t.dead.includes(u));
 // 这一层能选哪几条路
 export function tripReach(t) {
@@ -336,7 +337,7 @@ export function roomFoe(t) {
 }
 export const tripLand = t => landOf(t.land || t.realm);
 function leave(t) {   // 房间处理完：进下一层（首领打完就结束）
-  t.lane = t.pick; t.pick = null; t.prog = 0; t.room = null; t.d++;
+  (t.path || (t.path = []))[t.d] = t.pick; t.lane = t.pick; t.pick = null; t.prog = 0; t.room = null; t.d++;
   if (t.d >= tripMapOf(t).length) tripEnd(t, 'clear');
 }
 // 出战阵容：出征时的站位，去掉倒下的；每只带 hpNow（上一场剩的血）
@@ -374,7 +375,7 @@ export function tripFight(t, team, fielded, res) {
     const hp = Math.max(0, Math.round(hpEnd[i] || 0)), st = stat[i] || null, real = by[g.uid];
     if (st) t.kills[g.uid] = (t.kills[g.uid] || 0) + (st.kills | 0);
     if (hp <= 0) {   // 倒下了但这一场没输：救回，剩 1 血（定魂香：第一只以几成血站起来）
-      saved.push(g.uid); if (!t.saved.includes(g.uid)) t.saved.push(g.uid); t.hp[g.uid] = 1;
+      saved.push(g.uid); if (!t.saved.includes(g.uid)) t.saved.push(g.uid); t.hp[g.uid] = Math.max(1, Math.round(t.mx[g.uid] * blessRules(t.bless).rescue));   // 祝福「抢救」：救回剩三成
       if (t.revive && !t.revived) { t.revived = g.uid; t.hp[g.uid] = Math.max(1, Math.round(t.mx[g.uid] * t.revive)); }
       return;
     }
@@ -490,7 +491,12 @@ export function tripPreview(seed, land, kalpa = 0, o = {}) {
     kalpa: { n: t.kalpa, name: JIE_NAMES[t.kalpa] || '普通', rules: JIE.slice(0, t.kalpa).map(j => j.n) }, reward: landReward(L, { ...o, kalpa: t.kalpa }) };
 }
 // 一趟里的天象、首领机制、劫数（界面在顶上和开打前写明）
-export const tripMods = t => ({ sky: SKY[t.sky] || null, mechs: bossMechs(t), kalpa: t.kalpa || 0, kalpaName: JIE_NAMES[t.kalpa] || '', rules: JIE.slice(0, t.kalpa || 0).map(j => j.n), boss: (landOf(t.land || t.realm).bosses || [])[t.boss || 0] || null });
+//   boss = { i, mech, n, team }（team 已算上劫数多用的额度）
+export function tripMods(t) {
+  const L = landOf(t.land || t.realm), B = (L.bosses || [])[t.boss || 0] || null, add = jieRules(t.kalpa).boss;
+  return { sky: SKY[t.sky] || null, mechs: bossMechs(t), kalpa: t.kalpa || 0, kalpaName: JIE_NAMES[t.kalpa] || '', rules: JIE.slice(0, t.kalpa || 0).map(j => j.n),
+    boss: B && { ...B, team: add ? slim(landBoss(L, t.boss || 0, add)) : B.team } };
+}
 export function acceptXing(team, uid, key) { const g = team.find(x => x.uid === uid); if (g && XING[key]) { g.xing = key; return true; } return false; }
 // 奇遇：选第 i 个选项。返回 { ok, lines, offer? }
 export function tripEvent(t, team, i, unit = 0, purse = null) {

@@ -1094,11 +1094,6 @@ body:has(#lgx) :is(.float,.inkburst,.cut,.stamp,.chain){visibility:hidden}   /* 
 .trip{margin-top:6px}
 .tu-head{display:flex;align-items:center;gap:10px;margin:4px 0 8px}
 .tu-head .lbl{white-space:nowrap}
-.tu-dots{display:flex;align-items:center;gap:3px;flex:1;min-width:0}
-.tu-dots i{flex:1;max-width:22px;height:6px;border:1px solid var(--line2);border-radius:1px}
-.tu-dots i.past{background:var(--mu);border-color:var(--mu)}
-.tu-dots i.now{border-color:var(--zhu2);background:color-mix(in srgb,var(--zhu2) 40%,transparent)}
-.tu-dots i.boss{flex:0 0 18px;height:18px;font:12px/16px var(--kai);text-align:center;color:var(--zhu2);border-color:var(--zhu2)}
 .tu-flee{padding:5px 12px;border:1px solid var(--line2);border-radius:3px;font:14px var(--kai);color:var(--mu)}
 .tu-flee:hover{color:var(--tx);border-color:var(--tx)}
 .tu-team{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;margin-bottom:8px}
@@ -1120,31 +1115,10 @@ body:has(#lgx) :is(.float,.inkburst,.cut,.stamp,.chain){visibility:hidden}   /* 
 .tu-cap{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin:6px 0 5px;font:14px var(--kai);color:var(--mu);letter-spacing:.06em}
 .tu-cap small{font:11px var(--sans);letter-spacing:0}
 .tu-cap.sub{margin-top:0}
-.tu-row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
-.tu-room{display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 4px 7px;background:var(--paper);color:var(--ink);border-radius:3px;box-shadow:0 1px 0 var(--shadow);text-align:center;min-height:84px;transition:transform .15s}
-button.tu-room:hover{transform:translateY(-2px)}
-.tu-room.none{visibility:hidden}
-.tu-room.off{background:transparent;color:var(--mu);box-shadow:none;outline:1px dashed var(--faint);outline-offset:-1px}
-.tu-room.cur{outline:2px solid var(--zhu2);outline-offset:2px}
-.tu-room span{font:15px/1.1 var(--kai)}
-.tu-room small{font-size:11px;color:#5b5244;font-variant-numeric:tabular-nums}
-.tu-room.off small{color:var(--mu)}
-.tu-row.next .tu-room{min-height:0;padding:5px 4px;flex-direction:row;justify-content:center;gap:6px}
-.tu-row.next .tu-room small{display:none}
-.tu-row.next .tu-seal{width:22px;height:22px;font-size:13px}
 .tu-seal{display:inline-grid;place-items:center;flex:0 0 auto;width:30px;height:30px;font:18px/1 var(--kai);border:1.5px solid currentColor;border-radius:2px}
 .t-elite .tu-seal,.t-boss .tu-seal{background:var(--zhu);color:var(--on-zhu);border-color:var(--zhu)}
 .t-event .tu-seal{color:var(--qing)}
-.tu-room.off .tu-seal{background:transparent;color:inherit;border-color:currentColor}
-.tu-links{display:block;width:100%;height:22px;margin:2px 0}
-.tu-links line{stroke:var(--line2);stroke-width:1.5;vector-effect:non-scaling-stroke}
 .tu-hint{font-size:12px;color:var(--mu);margin:8px 0 0;line-height:1.5}
-.tu-walk{display:flex;gap:10px;align-items:center;margin-top:10px;padding:10px;border:1px solid var(--line);border-radius:3px;background:var(--bg2)}
-.tu-walk > div{flex:1;min-width:0}
-.tu-walk p{margin:0 0 6px;font:15px var(--kai)}
-.tu-bar{height:6px;background:var(--faint2);border-radius:1px;overflow:hidden;margin-bottom:4px}
-.tu-bar i{display:block;height:100%;background:var(--qing);transition:width .8s linear}
-.tu-walk small{font-size:12px;color:var(--mu);font-variant-numeric:tabular-nums}
 .tu-panel{background:var(--bg2);border:1px solid var(--line);border-radius:4px;padding:12px 14px 14px}
 .tu-panel h3{display:flex;align-items:center;gap:8px;margin:2px 0 6px;font:22px var(--kai);color:var(--strong)}
 .tu-panel p{margin:0 0 8px;line-height:1.6}
@@ -1188,7 +1162,7 @@ button.tu-room:hover{transform:translateY(-2px)}
 .tu-bag{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;margin-top:10px;padding:8px 2px 0;border-top:1px solid var(--line);font-size:13px}
 .tu-bag .lbl{font-size:15px}
 .tu-bag small{flex-basis:100%;font-size:11px;color:var(--mu)}
-@media (max-width:400px){.tu-team{grid-template-columns:repeat(2,minmax(0,1fr))}.tu-room{min-height:78px}}
+@media (max-width:400px){.tu-team{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .tu-saved{padding:6px 10px;border-left:3px solid var(--qing);background:color-mix(in srgb,var(--qing) 10%,transparent);font-size:13px}
 /* 秘境：天象、劫数、祝福、首领机制、渡劫掉落 */
 .tu-mods{display:flex;flex-wrap:wrap;gap:5px;margin:-2px 0 8px}
@@ -1212,3 +1186,70 @@ button.tu-room:hover{transform:translateY(-2px)}
 .tu-card .tu-art{width:56px}
 .tu-first{list-style:none;margin:0 0 8px;padding:6px 10px;border-left:3px solid var(--zhu2);background:color-mix(in srgb,var(--zhu2) 10%,transparent);font:15px/1.7 var(--kai)}
 .tu-drop{font-style:normal;margin-left:6px;font-size:11px;color:var(--zhu);border:1px solid var(--zhu);padding:0 3px;border-radius:2px}
+/* 秘境整张地图（杀戮尖塔式）、地图旁的天象和首领、队伍战斗信息 */
+.tu-head .tu-jie{font-style:normal;font:12px var(--kai);color:var(--zhu2);border:1px solid var(--zhu2);padding:0 4px;border-radius:2px;vertical-align:2px;letter-spacing:0}
+.tu-syn{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;margin:0 0 6px;font-size:13px;line-height:1.5}
+.tu-syn .lbl{font-size:12px}
+.tu-g{grid-template-columns:34px 1fr;padding:4px 7px 4px 3px}
+.tu-g .tu-art{width:34px}
+.tu-gi b{display:flex;align-items:center;gap:2px}
+.tu-dao{font-style:normal;font:11px/1.2 var(--kai);padding:0 2px;margin-right:2px;border:1px solid currentColor;border-radius:2px;color:var(--qing);flex:0 0 auto}
+.tu-tag{font-style:normal;font:10px/1.2 var(--kai);padding:0 2px;margin-left:2px;border:1px solid currentColor;border-radius:2px;flex:0 0 auto;cursor:help}
+.tu-tag.xg{color:var(--zhu)}
+.tu-tag.gear{color:#7a5d24}
+.tu-st{display:flex;gap:7px;align-items:center;font-size:11px;line-height:1.1;font-variant-numeric:tabular-nums}
+.tu-st .v::before{font-size:9px}
+.tu-state{font-style:normal;font:10px var(--kai);color:var(--zhu);margin-left:auto}
+.tu-mapwrap{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,46%);gap:8px;align-items:start}
+.tu-mapcol{min-width:0}
+.tu-scroll{max-height:min(60vh,470px);overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;border:1px solid var(--line);border-radius:3px;background:var(--bg2)}
+.tu-tower{position:relative;margin:0 6px}
+.tu-lines{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.tu-lines line{stroke:var(--line2);stroke-width:1.3;vector-effect:non-scaling-stroke;stroke-dasharray:2 3}
+.tu-lines line.off{opacity:.6}
+.tu-lines line.open{stroke:var(--zhu2);stroke-width:1.8;stroke-dasharray:none}
+.tu-lines line.done{stroke:var(--mu);stroke-width:2.6;stroke-dasharray:none;opacity:.55}
+.tu-lines line.base{stroke:var(--zhu2);opacity:.45}
+.tu-lines line.walk{stroke:var(--zhu2);stroke-width:3.2;stroke-dasharray:none;stroke-linecap:round;transition:x2 .8s linear,y2 .8s linear}
+.tu-cell{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;z-index:1;padding:0;border:0;background:none;color:inherit}
+.tu-cell .tu-seal{width:26px;height:26px;font-size:15px;background:var(--paper);color:var(--ink);border-color:var(--ink)}
+.tu-cell.t-event .tu-seal{color:var(--qing);border-color:var(--qing)}
+.tu-cell.t-elite .tu-seal,.tu-cell.t-boss .tu-seal{background:var(--zhu);color:var(--on-zhu);border-color:var(--zhu)}
+.tu-cell.t-bless .tu-seal{color:#3f6b3a;border-color:#3f6b3a}
+.tu-cell.t-boss .tu-seal{width:34px;height:34px;font-size:19px}
+.tu-cell.t-start .tu-seal{width:20px;height:20px;font-size:11px;border-style:dashed;background:transparent;color:var(--mu);border-color:var(--mu)}
+.tu-cell.off .tu-seal,.tu-cell.skip .tu-seal{opacity:.32}
+.tu-cell.past .tu-seal{background:var(--mu);color:var(--bg2);border-color:var(--mu);opacity:.65}
+.tu-cell.cur .tu-seal{background:var(--zhu2);color:#fff;border-color:var(--zhu2);opacity:1;box-shadow:0 0 0 3px color-mix(in srgb,var(--zhu2) 30%,transparent)}
+.tu-cell.reach{cursor:pointer}
+.tu-cell.reach .tu-seal{outline:2px solid var(--zhu2);outline-offset:2px;animation:tuPulse 1.6s ease-in-out infinite}
+.tu-cell.reach:hover .tu-seal{transform:scale(1.08)}
+.tu-cell.reach small{position:absolute;top:calc(100% + 3px);font-size:10px;line-height:1.1;white-space:nowrap;color:var(--zhu2);background:var(--bg2);padding:0 2px;font-variant-numeric:tabular-nums}
+.tu-pop{display:none;position:absolute;top:calc(100% + 6px);left:50%;transform:translateX(-50%);width:168px;padding:6px 8px;background:var(--paper);color:var(--ink);border:1px solid var(--line2);border-radius:3px;box-shadow:0 2px 8px var(--shadow);text-align:left;z-index:5;font-size:11px;line-height:1.45}
+.tu-pop b{display:block;font:14px var(--kai)}
+.tu-pop small{display:block;font-size:11px}
+.tu-cell.t-boss:hover .tu-pop,.tu-cell.t-boss:focus-within .tu-pop{display:block}
+.tu-pop-team{display:flex;flex-wrap:wrap;gap:3px;margin-top:4px}
+.tu-pop-team i{position:relative;display:block;width:28px;height:28px;background:var(--paper2);border-radius:2px}
+.tu-pop-team i svg{width:100%;height:100%;display:block}
+.tu-pop-team em{position:absolute;right:1px;bottom:-1px;font:10px var(--kai);font-style:normal;color:var(--zhu)}
+.tu-walkcap{margin-top:6px}
+.tu-walkcap small{color:var(--zhu2);font-variant-numeric:tabular-nums}
+.tu-side{display:grid;gap:6px;font-size:12px;line-height:1.5;min-width:0}
+.tu-sc{padding:5px 8px 6px;border-left:3px solid var(--qing);background:color-mix(in srgb,var(--qing) 9%,transparent);border-radius:0 2px 2px 0}
+.tu-sc p{margin:2px 0 0}
+.tu-sc p.k{margin:0;font-size:10px;color:var(--mu);letter-spacing:.12em}
+.tu-sc b{display:block;font:15px/1.3 var(--kai);color:var(--strong)}
+.tu-sc em{font-style:normal;font-weight:600;margin-right:2px}
+.tu-sc small{display:block;font-size:10px;color:var(--mu)}
+.tu-sc.boss{border-left-color:var(--zhu2);background:color-mix(in srgb,var(--zhu2) 9%,transparent)}
+.tu-sc.jie{border-left-color:var(--zhu)}
+.tu-sc.jie ol{margin:2px 0 0;padding-left:16px}
+.tu-sc.bless{border-left-color:#3f6b3a;background:color-mix(in srgb,#3f6b3a 9%,transparent)}
+@keyframes tuPulse{50%{outline-offset:4px;outline-color:color-mix(in srgb,var(--zhu2) 45%,transparent)}}
+@media (prefers-reduced-motion:reduce){.tu-cell.reach .tu-seal{animation:none}.tu-lines line.walk{transition:none}}
+@media (max-width:330px){.tu-mapwrap{grid-template-columns:1fr}}
+.tu-got li > span:not(.tu-art){min-width:0}
+@media (max-width:420px){.tu-cards{grid-template-columns:1fr}.tu-card{display:grid;grid-template-columns:auto 1fr;column-gap:10px;align-items:baseline}.tu-card b{grid-row:span 2}.tu-card small{border:0;padding:0;margin:0}.tu-card .tu-art{grid-row:span 2}}
+.tu-cards.two{grid-template-columns:repeat(2,minmax(0,1fr))}
+@media (max-width:420px){.tu-cards.two{grid-template-columns:repeat(2,minmax(0,1fr))}.tu-cards.two .tu-card{display:flex}}
