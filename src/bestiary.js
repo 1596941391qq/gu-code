@@ -75,7 +75,7 @@ const stun = (ctx, u, n = 1, k = 'stun') => { if (!ctx.alive(u)) return; u.f[k] 
 const by = (arr, key) => arr.reduce((b, x) => (b === null || key(x) > key(b) ? x : b), null);   // 取最大者，平手取靠前
 const setTr = (ctx, u) => { if (ctx.roster[u.uid]) ctx.roster[u.uid].tr = { ...u.tr }; };
 const puppetOf = (ctx, u, x, full) => {
-  const p = ctx.summon(u.side, 99, { sp: 'puppet', atk: Math.max(1, full ? x.atk : Math.ceil(x.atk / 2)), hp: Math.max(1, full ? x.mx : Math.ceil(x.mx / 2)) }, u);
+  const p = ctx.summon(u.side, 99, { sp: 'kuilei', atk: Math.max(1, full ? x.atk : Math.ceil(x.atk / 2)), hp: Math.max(1, full ? x.mx : Math.ceil(x.mx / 2)) }, u);
   if (p) { p.tr = {}; Object.entries(x.tr).forEach(([k, l]) => { if (k !== 'strings') giveTr(p, k, l); }); setTr(ctx, p); } return p;
 };
 // 词条上限：每只蛊最多 3 个词条，五转蛊和仙蛊最多 4 个（吞噬、承嗣、拟态、傀儡加词条时都受此限）
@@ -375,7 +375,7 @@ NEW_SPECIES.forEach(s => {
   s.how = TD[s.t](s.v) + (s.meta ? '；' + s.meta : '');
 });
 
-export const NEW_SUMMONS = { antling: '兵蚁', aphidling: '蚜虫', spiderling: '小蛛', fuzi: '子蚨', bee: '工蜂', puppet: '傀儡' };
+export const NEW_SUMMONS = { antling: '兵蚁', aphidling: '蚜虫', spiderling: '小蛛', fuzi: '子蚨', bee: '工蜂', kuilei: '傀儡' };
 export const NEW_POOL = [0, 1, 2, 3, 4, 5].map(t => NEW_SPECIES.filter(s => !s.legend && s.tier === t).map(s => s.id));
 export const IMMORTALS = NEW_SPECIES.filter(s => s.immortal).map(s => s.id);
 export const LEGENDS = IMMORTALS;   // 旧称，等同 IMMORTALS

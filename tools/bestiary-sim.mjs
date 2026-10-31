@@ -7,6 +7,7 @@ import path from 'node:path'; import { fileURLToPath, pathToFileURL } from 'node
 import * as core from '../src/core.js';
 import { battle as battleOrig } from '../src/battle.js';
 import * as BXmod from '../src/bestiary.js';
+import { ART2 } from '../src/art2.js';
 const { makeRng, genTeam, comboOf, SP, SPECIES, TRAITS, TRAIT_KEYS, COMBOS, COMBO, SUMMON_NAMES, POOL_TIERS, addTrait, MARK_KEYS } = core;
 const { NEW_SPECIES, NEW_TRAITS, NEW_COMBOS, NEW_SUMMONS, NEW_POOL, LEGENDS, META, NEW_RECIPES, FOODS, SCHOOLS, OLD_EXTRA, trCapOf } = BXmod;
 
@@ -56,7 +57,7 @@ COMBOS.unshift(...tri); COMBOS.push(...duo); NEW_COMBOS.forEach(c => { COMBO[c.i
 Object.assign(SUMMON_NAMES, NEW_SUMMONS);
 for (let i = 0; i < 6; i++) POOL_TIERS[i] = [...(POOL_TIERS[i] || []), ...NEW_POOL[i]];
 const counts = NEW_POOL.map(p => p.length);
-console.log(`合并：物种 ${SPECIES.length} 种进随机池 + 传说 ${LEGENDS.length}（共 ${Object.keys(SP).length}）；新蛊按池 ${counts.join('/')}；词条 ${Object.keys(TRAITS).length}（可突变 ${TRAIT_KEYS.length}）；杀招 ${COMBOS.length}`);
+console.log(`合并：物种 ${SPECIES.length} 种进随机池 + 六转仙蛊 ${LEGENDS.length}（共 ${Object.keys(SP).length}）；新蛊按池 ${counts.join('/')}；词条 ${Object.keys(TRAITS).length}（可突变 ${TRAIT_KEYS.length}）；杀招 ${COMBOS.length}`);
 const allIds = Object.keys(SP), dupAb = allIds.map(id => SP[id].ab).filter((a, i, arr) => arr.indexOf(a) !== i), dupN = allIds.map(id => SP[id].n).filter((a, i, arr) => arr.indexOf(a) !== i);
 if (dupAb.length || dupN.length) fails.push(`重名：简字 ${dupAb.join(',')} 名字 ${dupN.join(',')}`);
 for (const s of NEW_SPECIES) { if (!TRAITS[s.t]) fails.push(`${s.n} 词条 ${s.t} 未定义`); }
@@ -81,6 +82,7 @@ for (const r of NEW_RECIPES) {
 }
 if (!META.canOwn([{ sp: 'boar' }], 'guangyin') || META.canOwn([{ sp: 'guangyin' }], 'guangyin') || !META.canOwn([{ sp: 'boar' }], 'boar')) fails.push('仙蛊唯一规则不对');
 if (META.feedMul({ sp: 'bfly' }, 'gemini') !== 1.3 || META.feedMul({ sp: 'bfly' }, 'gpt') !== 1 || META.feedMul({ sp: 'boar' }, 'qwen') !== 1.1) fails.push('喂食倍率不对');
+const noArt = [...NEW_SPECIES.map(x => x.id), ...Object.keys(NEW_SUMMONS)].filter(id => !ART2[id] || !ART2[id].b); if (noArt.length) fails.push('缺美术：' + noArt.join(','));
 const outs = new Set(NEW_RECIPES.map(r => r.out));
 console.log(`蛊方 ${NEW_RECIPES.length} 条，产出 ${outs.size} 种（二转 ${[...outs].filter(x => rankOf(x) === 2).length} / 三转 ${[...outs].filter(x => rankOf(x) === 3).length} / 四转 ${[...outs].filter(x => rankOf(x) === 4).length} / 五转 ${[...outs].filter(x => rankOf(x) === 5).length}）；喂食偏好 ${Object.keys(FOODS).map(f => f + ' ' + [...NEW_SPECIES, ...Object.values(OLD_EXTRA)].filter(s => s.food === f).length).join(' / ')}`);
 
