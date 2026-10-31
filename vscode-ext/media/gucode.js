@@ -336,6 +336,8 @@ function decodeTeam(code) {
     return { team, realm, name: unutf8(nm), marks };
   } catch (e) { return null; }
 }
+// 战斗手感：暴击概率与倍数（种子随机，复盘可复现）
+const BATTLE = { crit: 0.10, critMul: 2 };
 // 战斗回放节奏（毫秒，1 倍速基准）。界面按 playMs 自动缩放，使一局约 15–25 秒
 const EV_MS = { begin: 900, turn: 220, clash: 640, hit: 60, dmg: 200, buff: 110, trig: 300, combo: 1700, comboQuiet: 180, summon: 260, faint: 400, end: 300 };
 function playMs(log) {
@@ -344,6 +346,7 @@ function playMs(log) {
   return t;
 }
 const tempoFor = ms => Math.min(2.3, Math.max(0.6, 20000 / Math.max(1, ms)));
+function fmtNum(n) { n = Math.round(n || 0); const a = Math.abs(n); return a >= 1e8 ? (n / 1e8).toFixed(a >= 1e10 ? 0 : 2) + '亿' : a >= 1e4 ? (n / 1e4).toFixed(a >= 1e6 ? 0 : 1) + '万' : String(n); }
 function fmtTok(n) { n = n || 0; return n >= 1e9 ? (n / 1e9).toFixed(2) + 'B' : n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(Math.round(n)); }
 
 // ---- src/battle.js
@@ -379,7 +382,7 @@ function battle(ta, tb, seed, ma = [], mb = []) {
   const shield = (u, n) => { if (!alive(u)) return; u.sh = Math.min(99, u.sh + n); ev('buff', { uid: u.uid, sh: n }); };
   const comboEv = u => ev('combo', { uid: u.uid, n: u.cname });
 
-  function deal(src, tg, amt, kind) {
+  function deal(src, tg, amt, kind, crit) {
     if (!alive(tg) || amt <= 0) return;
     if (tg.q.includes('greedy')) amt += 1;
     const had = tg.sh > 0; let a = amt;
@@ -387,7 +390,7 @@ function battle(ta, tb, seed, ma = [], mb = []) {
     tg.hp -= a;
     if (tg.hp <= 0 && tg.q.includes('lastgasp') && !tg.f.gasp) { tg.hp = 1; tg.f.gasp = 1; ev('trig', { uid: tg.uid, q: 'lastgasp' }); }
     if (tg.hp <= 0 && src) tg.killer = src;
-    ev('dmg', { uid: tg.uid, n: a, blk: amt - a, k: kind });
+    ev('dmg', { uid: tg.uid, n: a, blk: amt - a, k: kind, src: src ? src.side : -1, crit: crit ? 1 : 0 });
     hook(tg, 'hurt', { src, kind, had });
   }
   function summon(side, idx, spec, by) {
@@ -489,8 +492,9 @@ function battle(ta, tb, seed, ma = [], mb = []) {
     if (!S[0].length || !S[1].length) continue;
     const a = S[0][0], b = S[1][0];
     const pa = Math.max(1, a.atk - (a.q.includes('timid') ? 2 : 0)), pb = Math.max(1, b.atk - (b.q.includes('timid') ? 2 : 0));
+    const ca = rng() < BATTLE.crit, cb = rng() < BATTLE.crit;
     ev('clash', { a: a.uid, b: b.uid });
-    deal(a, b, pa, 'hit'); deal(b, a, pb, 'hit');
+    deal(a, b, ca ? pa * BATTLE.critMul : pa, 'hit', ca); deal(b, a, cb ? pb * BATTLE.critMul : pb, 'hit', cb);
     reap();
   }
   ev('end', { w: winner });
@@ -804,7 +808,8 @@ const $ = (s, r = document) => r.querySelector(s);
 const el = html => { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstElementChild; };
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-const fresh = () => ({ v: 2, started: false, name: '', team: [], realm: 0, nodes: 0, compass: [], sel: null, prog: 0, wh: 0, bank: 0, repair: 0, will: 3, willT: 0, willK: 0, total: 0, muts: 0, wins: 0, losses: 0, seed: (Math.random() * 1e9) | 0, step: 0, sound: false, speed: 1, theme: 'auto', mute: false, stone: 5, stoneK: 0, shop: [], pending: null, marks: [], ghosts: null, floor: 1, endless: 0, codex: { sp: [], combo: [] } });
+const fresh = () => ({ v: 2, started: false, name: '', team: [], realm: 0, nodes: 0, compass: [], sel: null, prog: 0, wh: 0, bank: 0, repair: 0, will: 3, willT: 0, willK: 0, total: 0, muts: 0, wins: 0, losses: 0, seed: (Math.random() * 1e9) | 0, step: 0, sound: false, speed: 1, theme: 'auto', mute: false, stone: 5, stoneK: 0, shop: [], pending: null, marks: [], ghosts: null, floor: 1, endless: 0, codex: { sp: [], combo: [] }, streak: 0, bestStreak: 0, day: '', dayWin: false });
+const today = () => { const d = new Date(); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); };
 const curCap = () => Math.max(slotCap(S.realm), S.team.length);
 const buyCost = () => S.marks.includes('shiJing') ? 2 : ECON.buy, refCost = () => S.marks.includes('shiJing') ? 0 : ECON.refresh;
 function migrate(s) { if (!s || !s.v) return null; if (s.v === 1) { s.v = 2; s.stone = 5 + Math.min(20, s.nodes || 0); s.will = Math.max(s.will || 0, 3); } return s.v === 2 ? s : null; }
@@ -819,9 +824,9 @@ const trChars = tr => (Array.isArray(tr) ? tr : Object.entries(tr)).map(([id, v]
 // ---------- 存档 ----------
 let saveT;
 function save() {
-  clearTimeout(saveT);
+  if (saveT) return;   // 节流而非防抖：持续有 token 流入时也能按时落盘
   saveT = setTimeout(() => {
-    codexScan();
+    saveT = null; codexScan();
     if (VSC) { const n = S.sel != null ? S.compass[S.sel] : null; VSC.postMessage({ type: 'save', data: S, status: { started: S.started, node: n ? NODES[n.type].n : null, cost: n ? n.cost * src.unit : 0, prog: S.prog, will: S.will, realm: S.realm } }); }
     else try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {}
   }, 400);
@@ -866,6 +871,10 @@ function thump(vol = 0.5) {
   const len = AC.sampleRate * 0.05, nb = AC.createBuffer(1, len, AC.sampleRate), d = nb.getChannelData(0); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
   const n = AC.createBufferSource(), ng = AC.createGain(), bp = AC.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1800; ng.gain.value = vol * 0.35; n.buffer = nb; n.connect(bp).connect(ng).connect(AC.destination); n.start(t);
 }
+function ding(at = 0, vol = 0.12, f0 = 2350) {   // 钱币：非谐泛音的短促金属声
+  const t = AC.currentTime + at;
+  [[f0, 1], [f0 * 1.51, 0.6], [f0 * 2.37, 0.35]].forEach(([f, v]) => { const o = AC.createOscillator(), g = AC.createGain(); o.frequency.value = f; g.gain.setValueAtTime(vol * v, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35); o.connect(g).connect(AC.destination); o.start(t); o.stop(t + 0.4); });
+}
 function glitch() { const len = AC.sampleRate * 0.16, b = AC.createBuffer(1, len, AC.sampleRate), d = b.getChannelData(0); for (let i = 0; i < len; i++) d[i] = (Math.floor(i / 70) % 2 ? 1 : -1) * Math.random() * (1 - i / len) * 0.45; const s = AC.createBufferSource(), g = AC.createGain(); g.gain.value = 0.22; s.buffer = b; s.connect(g).connect(AC.destination); s.start(); }
 function snd(kind) {
   if (S.mute) return;
@@ -876,6 +885,10 @@ function snd(kind) {
     else if (kind === 'faint') pluck(QIN[0], 0, 0.28);
     else if (kind === 'combo') { pluck(QIN[0], 0, 0.4); pluck(QIN[4], 0.05, 0.3); pluck(QIN[7], 0.1, 0.25); glitch(); }
     else if (kind === 'win') [5, 7, 9].forEach((i, k) => pluck(QIN[i], k * 0.14, 0.3));
+    else if (kind === 'coin') ding(0);
+    else if (kind === 'coins') [0, 0.07, 0.15, 0.26].forEach(t => ding(t));
+    else if (kind === 'clack') thump(0.25);
+    else if (kind === 'tick') ding(0, 0.06, 1500 + Math.random() * 300);
     else if (kind === 'lose') [6, 3, 0].forEach((i, k) => pluck(QIN[i], k * 0.2, 0.28));
   } catch (e) {}
 }
@@ -1184,7 +1197,12 @@ function applySnap(s, ros) {
 }
 const bnode = uid => document.querySelector(`#arena [data-uid="${uid}"]`);
 function blog(t) { const b = $('#blog'); if (b) b.textContent = t; }
-let tempo = 1;
+let tempo = 1, chain = { side: -1, n: 0 }, finalBlow = null, dispK = 1;
+function showChain(n, side) {
+  const a = $('#arena'); if (!a) return; const old = a.querySelector('.chain'); if (old) old.remove();
+  const c = el(`<span class="chain ${side ? 'foe' : ''}" style="font-size:${Math.min(64, 30 + n * 4)}px">${n} 连！</span>`); a.appendChild(c); setTimeout(() => c.remove(), 900);
+  snd('tick');
+}
 // 杀招招牌演出：宣纸横幅滑入、招名逐字落墨、朱印砸下、轻震屏
 async function comboCut(name, node, r) {
   const total = EV_MS.combo * tempo / S.speed, chars = [...name];
@@ -1208,7 +1226,13 @@ async function animEv(e, ros, seen) {
       blog(`${nm(e.a)} ⟷ ${nm(e.b)}`);
       await sleep(dur * 0.62); shake(3); snd('hit'); await sleep(dur * 0.38); return;
     }
-    case 'dmg': { fxFloat(e.uid, e.n > 0 ? '-' + e.n : '', 'dmg', e.blk); const n = bnode(e.uid); if (n) { n.classList.remove('hit'); void n.offsetWidth; n.classList.add('hit'); } return D(e.k === 'hit' ? EV_MS.hit : EV_MS.dmg); }
+    case 'dmg': {
+      fxFloat(e.uid, e.n > 0 ? (e.crit ? '暴 ' : '') + '-' + fmtNum(e.n * dispK) : '', e.crit ? 'dmg crit' : e.k === 'skill' ? 'dmg skill' : 'dmg', e.blk ? fmtNum(e.blk * dispK) : 0);
+      const n = bnode(e.uid); if (n) { n.classList.remove('hit'); void n.offsetWidth; n.classList.add('hit'); }
+      if (e.crit) { shake(5); snd('clack'); }
+      if (e.src >= 0 && e.n > 0) { chain = chain.side === e.src ? { side: e.src, n: chain.n + 1 } : { side: e.src, n: 1 }; if (chain.n >= 3) showChain(chain.n, e.src); }
+      return D(e.k === 'hit' ? EV_MS.hit : EV_MS.dmg);
+    }
     case 'buff': fxFloat(e.uid, e.sh ? `护+${e.sh}` : `+${e.a}/+${e.h}`.replace('/+0', '').replace('+0/', ''), 'buff'); return D(EV_MS.buff);
     case 'trig': {
       const lab = e.id ? TRAITS[e.id].n : e.mk ? '道痕·' + MARKS[e.mk].n : QUIRKS[e.q].n, ch = e.id ? TRAITS[e.id].ch : e.mk ? '道' : QUIRKS[e.q].n[0];
@@ -1222,7 +1246,15 @@ async function animEv(e, ros, seen) {
       return comboCut(e.n, n, ros[e.uid]);
     }
     case 'summon': blog(`${nm(e.uid)} 现身`); return D(EV_MS.summon);
-    case 'faint': { const n = bnode(e.uid); if (n) n.classList.add('die'); blog(`${nm(e.uid)} 阵亡`); snd('faint'); return D(EV_MS.faint); }
+    case 'faint': {
+      const n = bnode(e.uid);
+      if (e === finalBlow && n) {   // 斩杀特写：慢放、墨迹炸开
+        const r = n.getBoundingClientRect(), ink = el('<span class="inkburst"></span>'); ink.style.left = (r.left + r.width / 2) + 'px'; ink.style.top = (r.top + r.height / 2) + 'px';
+        document.body.appendChild(ink); setTimeout(() => ink.remove(), 1400); $('#arena').classList.add('slowmo'); shake(10); snd('combo');
+        blog(`斩 · ${nm(e.uid)}`); n.classList.add('die'); await sleep(400 + EV_MS.faint * tempo / S.speed); $('#arena').classList.remove('slowmo'); return;
+      }
+      if (n) n.classList.add('die'); blog(`${nm(e.uid)} 阵亡`); snd('faint'); return D(EV_MS.faint);
+    }
     case 'end': return D(EV_MS.end);
   }
 }
@@ -1231,7 +1263,11 @@ async function playBattle(B) {
   const ov = el(`<div class="battle" id="battle"><div class="bbar"><span class="btitle">${esc(B.title)}</span><span class="bturn" id="bturn">开战</span><button class="ib" data-act="speed" id="bspd">${S.speed}×</button><button class="ib" data-act="skip">跳过</button></div>
   <div class="arena" id="arena"><div class="side sb" id="sideB"></div><div class="mid"><i></i><span>斗</span><i></i></div><div class="side sa" id="sideA"></div></div><div class="blog" id="blog"></div></div>`);
   document.body.appendChild(ov);
-  const log = B.res.log, ros = B.res.roster, seen = new Set(); tempo = tempoFor(playMs(log));
+  const log = B.res.log, ros = B.res.roster, seen = new Set(); tempo = tempoFor(playMs(log)); chain = { side: -1, n: 0 };
+  finalBlow = B.res.winner === 'draw' ? null : [...log].reverse().find(e => e.t === 'faint') || null;
+  const hpSum = s => s.reduce((a, x) => a + x[2], 0), s0 = log[0].s[0], s1 = log[log.length - 1].s[0];
+  B.comeback = B.res.winner === 'A' && hpSum(s1) <= 0.2 * hpSum(s0);
+  B.crits = log.filter(e => e.t === 'dmg' && e.crit && e.src === 0).length;
   applySnap(log[0].s, ros);
   for (const e of log) { if (skip) break; await animEv(e, ros, seen); if (skip) break; applySnap(e.s, ros); }
   applySnap(log[log.length - 1].s, ros);
@@ -1278,16 +1314,42 @@ function showResult(B) {
     window.__guFoe = win || draw ? B.A : B.B;
     btns = `<button class="zhu" data-act="duelWinner">挑战胜者阵容</button>` + (S.started ? '' : `<button data-act="closeBattle">开始养自己的蛊</button>`);
   }
-  let gain = 0;
-  if (B.kind === 'trib' || B.kind === 'ghost' || B.kind === 'endless') gain = win ? ECON.win[B.kind === 'ghost' ? (B.tier || 'mid') : B.kind] : ECON.lose;
-  if (gain && S.marks.includes('shengCai')) gain = Math.ceil(gain * 1.5);
-  if (gain) { S.stone += gain; txt += ` 元石 +${gain}。`; }
+  let base = 0; const mults = [];
+  if (B.kind === 'trib' || B.kind === 'ghost' || B.kind === 'endless') base = win ? ECON.win[B.kind === 'ghost' ? (B.tier || 'mid') : B.kind] : ECON.lose;
+  if (base && win) {
+    S.streak++; S.bestStreak = Math.max(S.bestStreak, S.streak);
+    if (S.streak >= 2) mults.push([`${S.streak} 连胜`, +(1 + 0.25 * Math.min(S.streak - 1, 8)).toFixed(2)]);
+    if (S.day !== today()) { S.day = today(); S.dayWin = false; }
+    if (!S.dayWin) { S.dayWin = true; mults.push(['每日首胜', 3]); }
+    if (B.comeback) mults.push(['绝境翻盘', 2]);
+    if (B.crits >= 3) mults.push([`暴击 ${B.crits} 次`, 1.2]);
+  } else if (base && !draw) S.streak = 0;
+  if (base && S.marks.includes('shengCai')) mults.push(['生财有道', 1.5]);
+  const gain = Math.round(mults.reduce((a, m) => a * m[1], base)); S.stone += gain; B.pay = { base, mults, gain };
   if (B.kind === 'ghost') S.ghosts = null;
   B.loot = loot; window.__guB = B; snd(win ? 'win' : draw ? 'pluck' : 'lose');
-  const panel = el(`<div class="result"><div class="rseal${win ? '' : ' lose'}">${win ? '胜' : draw ? '和' : '败'}</div><p class="rtxt">${txt}</p>
+  const panel = el(`<div class="result"><div class="rseal${win ? '' : ' lose'}">${win ? '胜' : draw ? '和' : '败'}</div>${B.comeback ? '<span class="goldtag">绝境翻盘</span>' : ''}<p class="rtxt">${txt}</p>
+  ${base ? `<div class="payout" data-act="payskip"><span class="plab">元石</span><b class="pnum">0</b><div class="pmul"></div></div>` : ''}
   ${loot.map((l, i) => `<button class="loot" data-act="loot" data-i="${i}">${esc(l.t)}</button>`).join('')}
   <div class="rbtns">${btns}${loot.length ? '' : `<button data-act="closeBattle">${S.started ? '回空窍' : '关闭'}</button>`}<button data-act="copyReplay">复制复盘链接</button></div></div>`);
-  $('#battle').appendChild(panel); save();
+  $('#battle').appendChild(panel); save(); renderMeta();
+  if (base) payout(panel.querySelector('.payout'), base, mults);
+}
+let payFast = false;
+async function payout(box, base, mults) {
+  payFast = false; const num = box.querySelector('.pnum'), row = box.querySelector('.pmul'); let cur = 0;
+  const roll = (to, ms) => new Promise(res => { const from = cur, t0 = performance.now(); const f = now => { const k = Math.min(1, (now - t0) / ms); cur = Math.round(from + (to - from) * (1 - Math.pow(1 - k, 3))); num.textContent = fmtNum(cur); if (k < 1 && !payFast) requestAnimationFrame(f); else { cur = to; num.textContent = fmtNum(to); res(); } }; requestAnimationFrame(f); });
+  await sleep(500); await roll(base, 450); snd('coin');
+  let val = base;
+  for (const [lab, m] of mults) {
+    if (payFast) break; await sleep(300);
+    row.appendChild(el(`<span class="mcard"><small>${esc(lab)}</small><b>×${m}</b></span>`)); snd('clack');
+    box.animate([{ transform: 'translateY(3px)' }, { transform: 'none' }], { duration: 180 });
+    val = val * m; await roll(Math.round(val), 420);
+  }
+  const total = Math.round(mults.reduce((a, m) => a * m[1], base));
+  if (payFast) row.innerHTML = mults.map(([lab, m]) => `<span class="mcard"><small>${esc(lab)}</small><b>×${m}</b></span>`).join('');
+  num.textContent = fmtNum(total); num.classList.add('final'); snd(mults.length ? 'coins' : 'coin');
 }
 function closeBattle() {
   const b = $('#battle'); if (b) b.remove(); inBattle = false;
@@ -1394,6 +1456,7 @@ const ACT = {
   marksInfo() { if (S.marks.length) sheet(`<h3>道痕</h3><p class="sm">整局被动，渡劫成功时三选一。</p><ul>${S.marks.map(k => `<li><b>${MARKS[k].n}</b>${MARKS[k].d}</li>`).join('')}</ul>`); },
   speed() { S.speed = S.speed === 1 ? 2 : 1; $('#bspd').textContent = S.speed + '×'; save(); },
   skip() { skip = true; },
+  payskip() { payFast = true; },
   loot(a) {
     const l = window.__guB.loot[+a.dataset.i], L = S.team[0];
     if (l.k === 'mark') { if (!S.marks.includes(l.id)) S.marks.push(l.id); }

@@ -287,6 +287,28 @@ textarea{font-family:var(--mono);resize:vertical}
 .tier{font:400 15px/1 var(--kai);padding:5px 6px;border-radius:2px;color:var(--on-zhu)}
 .t-easy{background:#4f6b5c}.t-mid{background:#7a5a2a}.t-hard{background:var(--zhu)}
 
+/* ---------- 战斗爽感：暴击、连击、斩杀、结算倍率 ---------- */
+:root{--gold:#d9a441;--gold-dk:#7a2a1c}
+:root[data-theme=light]{--gold:#a8741a;--gold-dk:#f8f3e7}
+.float.skill{font-size:28px}
+.float.crit{font-size:36px;color:var(--gold);text-shadow:1px 1px 0 var(--gold-dk),-1px -1px 0 var(--gold-dk),0 0 3px var(--fshadow);animation-duration:1.2s}
+.chain{position:absolute;left:50%;top:50%;z-index:20;transform:translate(-50%,-50%) rotate(-6deg);font:400 40px/1 var(--kai);color:var(--zhu2);pointer-events:none;text-shadow:1px 1px 0 var(--fshadow);animation:stamp .3s cubic-bezier(.2,1.4,.4,1) both}
+.chain.foe{color:var(--mu)}
+.arena{position:relative}
+.arena.slowmo .bu{transition:transform .4s}
+.inkburst{position:fixed;z-index:44;width:220px;height:220px;margin:-110px 0 0 -110px;border-radius:50%;pointer-events:none;background:radial-gradient(circle,rgba(28,25,21,.85) 0 18%,rgba(28,25,21,.45) 32%,transparent 64%);filter:url(#wash);animation:burst 1.3s ease-out forwards}
+:root[data-theme=dark] .inkburst{background:radial-gradient(circle,rgba(181,48,31,.8) 0 16%,rgba(181,48,31,.35) 32%,transparent 64%)}
+@keyframes burst{0%{transform:scale(.2);opacity:1}35%{transform:scale(1.1);opacity:.95}100%{transform:scale(1.35);opacity:0}}
+.goldtag{font:400 15px/1 var(--kai);color:#3a2a08;background:var(--gold);padding:5px 10px;border-radius:2px;letter-spacing:.2em;animation:stamp .4s .2s cubic-bezier(.2,1.4,.4,1) both}
+.payout{display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;min-width:220px}
+.plab{font:13px var(--kai);color:var(--mu)}
+.pnum{font:700 40px/1 var(--mono);color:var(--gold);font-variant-numeric:tabular-nums}
+.pnum.final{animation:pulse .5s ease;font-size:48px}
+.pmul{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;min-height:4px}
+.mcard{display:flex;flex-direction:column;align-items:center;background:var(--paper);color:var(--ink);border:1.5px solid var(--zhu);border-radius:2px;padding:3px 8px 4px;transform:rotate(-3deg);animation:stamp .32s cubic-bezier(.2,1.4,.4,1) both}
+.mcard small{font:11px var(--kai);color:#5b5244}
+.mcard b{font:700 18px/1 var(--mono);color:var(--zhu)}
+
 /* ---------- 杀招招牌演出 ---------- */
 :root{--band:#e7ddc7;--band-tx:#1c1915}
 :root[data-theme=light]{--band:#1f1b16;--band-tx:#f3ead6}

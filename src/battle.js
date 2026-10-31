@@ -1,5 +1,5 @@
 // 蛊码 GuCode · 斗蛊引擎（纯函数，种子随机，可复现）。输出事件流 + 每步快照，渲染层只负责回放。
-import { makeRng, SP, SUMMON_NAMES, comboOf } from './core.js';
+import { makeRng, SP, SUMMON_NAMES, comboOf, BATTLE } from './core.js';
 
 const MAXTURN = 40, MAXOPS = 4000, CAP = 5;
 
@@ -30,7 +30,7 @@ export function battle(ta, tb, seed, ma = [], mb = []) {
   const shield = (u, n) => { if (!alive(u)) return; u.sh = Math.min(99, u.sh + n); ev('buff', { uid: u.uid, sh: n }); };
   const comboEv = u => ev('combo', { uid: u.uid, n: u.cname });
 
-  function deal(src, tg, amt, kind) {
+  function deal(src, tg, amt, kind, crit) {
     if (!alive(tg) || amt <= 0) return;
     if (tg.q.includes('greedy')) amt += 1;
     const had = tg.sh > 0; let a = amt;
@@ -38,7 +38,7 @@ export function battle(ta, tb, seed, ma = [], mb = []) {
     tg.hp -= a;
     if (tg.hp <= 0 && tg.q.includes('lastgasp') && !tg.f.gasp) { tg.hp = 1; tg.f.gasp = 1; ev('trig', { uid: tg.uid, q: 'lastgasp' }); }
     if (tg.hp <= 0 && src) tg.killer = src;
-    ev('dmg', { uid: tg.uid, n: a, blk: amt - a, k: kind });
+    ev('dmg', { uid: tg.uid, n: a, blk: amt - a, k: kind, src: src ? src.side : -1, crit: crit ? 1 : 0 });
     hook(tg, 'hurt', { src, kind, had });
   }
   function summon(side, idx, spec, by) {
@@ -140,8 +140,9 @@ export function battle(ta, tb, seed, ma = [], mb = []) {
     if (!S[0].length || !S[1].length) continue;
     const a = S[0][0], b = S[1][0];
     const pa = Math.max(1, a.atk - (a.q.includes('timid') ? 2 : 0)), pb = Math.max(1, b.atk - (b.q.includes('timid') ? 2 : 0));
+    const ca = rng() < BATTLE.crit, cb = rng() < BATTLE.crit;
     ev('clash', { a: a.uid, b: b.uid });
-    deal(a, b, pa, 'hit'); deal(b, a, pb, 'hit');
+    deal(a, b, ca ? pa * BATTLE.critMul : pa, 'hit', ca); deal(b, a, cb ? pb * BATTLE.critMul : pb, 'hit', cb);
     reap();
   }
   ev('end', { w: winner });
