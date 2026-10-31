@@ -37,9 +37,12 @@ export const ARENAS = [4, 9, 15, 22];
 export const arenaOf = team => ARENAS.find(q => quotaOf(team) <= q) || 0;   // 这队最低能进几点场（超过 22 点返回 0）
 // 各转的主色（升转外貌、转数角标用）：一转青铜、二转赤铁、三转白银、四转黄金、五转紫晶
 export const ZHENYUAN = { colors: ['#a0703f', '#a0703f', '#a4442c', '#9aa4ab', '#d9a441', '#7d62a8'] };
-// 价格（元气 = 消耗的 token）：单位是「千」，乘 tokens.js 的 unit 才是 token 数（插件 8000，网页 200）。
-// gu 买一只蛊；refresh 转市；sell 卖蛊退回 = sell × 3^(合成次数)（三只合一只，退回也按三倍走）；食物的价格 = FOODS[].cost × food
-export const PRICE = { gu: 75, refresh: 25, sell: 25, food: 25 };
+// 价格（元气 = 消耗的 token）：单位是「千」，乘 tokens.js 的 unit 才是 token 数（插件 8000，网页 200）。数字按真实画像调过，见 tools/econ-sim.mjs：
+// 中位数玩家（每天约 120 活跃分钟 × 21.4 万）走一趟秘境之后剩下的元气，大约够养出一只五转。
+// gu 一转蛊的价钱，原生 N 转的蛊 × rankK^(N−1)（三只合一只，价钱也按三倍走，买五转原生蛊和自己合出来花的一样多）；
+// refresh 转市；sell 卖蛊退回 = sell × rankK^(转数−1)（按现在的转数，约买价的三分之一）；食物的价格 = FOODS[].cost × food
+export const PRICE = { gu: 20, rankK: 3, refresh: 8, sell: 7, food: 7 };
+export const guCost = sp => PRICE.gu * Math.pow(PRICE.rankK, baseRank(sp) - 1);   // 单位同 PRICE；蛊市里「升转露」多升的那一转不加价
 // 蛊囊（场下）：凑合成用，不上场、不跟去渡劫，放在里面绝对安全。固定 8 格
 export const BAG = { cap: 8 };
 export const bagCap = () => BAG.cap;
@@ -247,7 +250,7 @@ export function mergeAll(team, bag = [], pick) {
   }
   return done;
 }
-export const sellValue = g => PRICE.sell * Math.pow(3, fuseLv(g));   // 单位同 PRICE
+export const sellValue = g => PRICE.sell * Math.pow(PRICE.rankK, rankOf(g) - 1);   // 单位同 PRICE
 
 // ---------- 食物 ----------
 // 喂加攻血的食物：只喂还没吃满 ATE_MAX 次的，返回真正吃到的。永久加成记在 bonusA/bonusH（合成换表值时保留）

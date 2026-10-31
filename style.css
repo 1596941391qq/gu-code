@@ -547,7 +547,7 @@ button.mg{font:inherit;font-size:11px;border:0;cursor:pointer;position:relative;
 .tu-tag.fimg{width:18px;height:18px;padding:0;display:inline-block;vertical-align:middle}.tu-tag.fimg svg{width:100%;height:100%;display:block}
 .wbuy small{font-size:11px;color:#5b5244}
 .wbuy .tag{font:600 13px var(--mono)}.wbuy .tag.poor{color:var(--atk);opacity:.75}
-.wbuy .fu{font:11px var(--kai);color:var(--zhu2)}
+.wbuy .fu{font:11px/1 var(--kai);color:var(--on-zhu)}
 .shead{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .pantry{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:10px}.pfood{font:13px var(--kai);padding:3px 9px}
 .gorow{margin:16px 0 4px;display:flex;gap:8px;align-items:stretch}.gorow .go{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:2px}

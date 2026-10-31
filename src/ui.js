@@ -1,5 +1,5 @@
 // 蛊码 GuCode · 界面与流程：洞府（养成）、斗幽灵与战帖（切磋）、战斗回放、秘境接口。规则只认 docs/design.md
-import { SPECIES, SP, TRAITS, REALMS, SLOTS, RANK, COMBOS, COMBO, COMBOS_ALL, setComboLocks, makeRng, hashStr, newGu, starterTeam, baseRank, rankOf, rankName, statFor, STAT_SCALE, HP_SCALE, fuseW, natOf, natMulFor, awOf, QUOTA, quotaOf, ARENAS, arenaOf, GHOST_NAMES, ATE_MAX, ateOf, canEat, statTable, XING, driveCap, quotaTeam, poolFor, BAG, bagCap, canBuy, placeGu, mergeAll, sellValue, comboMissing, COL_NAMES, cellOf, cellPos, freeCell, autoPlace, sortTeam, daoOf, rollShop, foodCost, feedStat, PRICE, genTeam, posLinks, encodeTeam, decodeTeam, EV_MS, playMs, tempoFor, fmtNum, fmtTok } from './core.js';
+import { SPECIES, SP, TRAITS, REALMS, SLOTS, RANK, COMBOS, COMBO, COMBOS_ALL, setComboLocks, makeRng, hashStr, newGu, starterTeam, baseRank, rankOf, rankName, statFor, STAT_SCALE, HP_SCALE, fuseW, natOf, natMulFor, awOf, QUOTA, quotaOf, ARENAS, arenaOf, GHOST_NAMES, ATE_MAX, ateOf, canEat, statTable, XING, driveCap, quotaTeam, poolFor, BAG, bagCap, canBuy, placeGu, mergeAll, sellValue, guCost, comboMissing, COL_NAMES, cellOf, cellPos, freeCell, autoPlace, sortTeam, daoOf, rollShop, foodCost, feedStat, PRICE, genTeam, posLinks, encodeTeam, decodeTeam, EV_MS, playMs, tempoFor, fmtNum, fmtTok } from './core.js';
 import { battle, synergyOf, battleProfile, skillText } from './battle.js';
 import { guSVG, ART_DEFS } from './art.js';
 import { TokenSource, VSC } from './tokens.js';
@@ -32,7 +32,7 @@ const TXT = {
   bagSub: '场下 · 凑合成用 · 不跟去渡劫，绝对安全',
   bagTip: () => `蛊囊 ${S.bag.length}/${BC()}：场下的蛊放这里，不上场、不跟去渡劫，所以绝对安全。主要用来凑合成：空窍和蛊囊里同种同转的蛊凑够三只，自动合成高一转。拖进空窍就上场。`,
   shopHead: '蛊市',
-  shopTip: '花元气买蛊和食物。什么道的蛊都会刷，罗盘选中的道出现得稍多一点（+5%）。转市换一批，冻结的货下次还在。',
+  shopTip: '花元气买蛊和食物。原生转数越高的蛊越贵，每高一转贵三倍，和自己买三只合一只花的一样多。什么道的蛊都会刷，罗盘选中的道出现得稍多一点（+5%）。转市换一批，冻结的货下次还在。',
   refresh: c => `转市 · ${c}`,
   freeze: on => on ? '解冻' : '冻结',
   daoNone: '罗盘：渡劫回来可以转一次',
@@ -403,7 +403,7 @@ function wareHTML(w, i) {
     const f = FOOD[w.id], c = price(foodCost(w.id));
     return `<div class="ware food${w.frozen ? ' frozen' : ''}${w.sold ? ' sold' : ''}"><button class="wbuy" data-act="ware" data-i="${i}" data-tip-fn="ware"${w.sold ? ' disabled' : ''}><span class="fart">${foodSVG(w.id)}</span><b>${esc(f.n)}</b><small>${FOOD_KIND[f.kind]}</small><span class="tag">${w.sold ? '已购' : fmtTok(c)}</span></button></div>`;
   }
-  const s = SP[w.sp], wr = w.rank || baseRank(w.sp), st = statFor(w.sp, wr), c = price(PRICE.gu), merge = !w.sold && owned(w.sp, wr) >= 2, gain = !w.sold && !merge ? resoGain(S.team, w.sp) : null;
+  const s = SP[w.sp], wr = w.rank || baseRank(w.sp), st = statFor(w.sp, wr), c = price(guCost(w.sp)), merge = !w.sold && owned(w.sp, wr) >= 2, gain = !w.sold && !merge ? resoGain(S.team, w.sp) : null;
   return `<div class="ware${w.frozen ? ' frozen' : ''}${w.sold ? ' sold' : ''}${merge ? ' merge' : ''}"><button class="wbuy" data-act="ware" data-i="${i}" data-tip-fn="ware"${w.sold ? ' disabled' : ''}><span class="art">${guSVG(w.sp, { rank: wr })}</span>${dzHTML(w.sp)}${w.rank ? `<span class="rk rk${wr}">${RANK.ch[wr]}</span>` : ''}${gearHTML({ food: w.gear })}<b>${s.n}</b><span class="st"><i class="a">${st.atk}</i><i class="h">${st.hp}</i></span><span class="tag">${w.sold ? '已购' : (merge ? '合成 · ' : '') + fmtTok(c)}</span>${merge ? '<span class="fu">可合成</span>' : gain ? `<span class="fu rzg">${TXT.resoGain}</span>` : ''}</button></div>`;
 }
 // 收着还没生效的食物：下一场战斗带着的、下一次转市的
@@ -606,7 +606,7 @@ function meters() {
   if (sl.length >= 2) setHTML(sr, sl.map(x => `<span class="schip${x.rate > 0 ? '' : ' off'}">${esc(x.name)} <b>${fmtTok(x.rate)}/s</b></span>`).join(''));
   const st = $('#srcTag'); st.textContent = VSC ? TXT.srcLive : TXT.srcDemo; st.classList.toggle('demo', !VSC);
   const dm = $('#demo'); dm.hidden = !!VSC || src.mode !== 'demo'; dm.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.m === src.demo));   // 插件里永远不显示模拟开关
-  document.querySelectorAll('.wbuy .tag').forEach(t => { const w = S.shop[+t.closest('.wbuy').dataset.i]; if (w && !w.sold) t.classList.toggle('poor', S.bank < price(w.kind === 'food' ? foodCost(w.id) : PRICE.gu)); });
+  document.querySelectorAll('.wbuy .tag').forEach(t => { const w = S.shop[+t.closest('.wbuy').dataset.i]; if (w && !w.sold) t.classList.toggle('poor', S.bank < price(w.kind === 'food' ? foodCost(w.id) : guCost(w.sp))); });
 }
 // ---------- 主题：自动跟随系统 / VS Code，或手动日、夜 ----------
 let veinRGB = '111,183,164';
@@ -990,7 +990,7 @@ const TIPS = {
   gu: t => { const i = S.team.findIndex(g => g.uid === t.dataset.uid); return guTip(S.team[i], S.team, i); },
   bag: () => esc(TXT.bagTip()),
   bg: t => { const g = S.bag[+t.dataset.i]; return g ? guTip(g) + '<small>在蛊囊里：不上场、不跟去渡劫，拖进空窍才上场</small>' : ''; },
-  ware: t => { const w = S.shop[+t.dataset.i]; if (!w) return ''; if (w.kind === 'food') { const f = FOOD[w.id]; return `${fi(f.id)}<b>${esc(f.n)}</b> · ${FOOD_KIND[f.kind]}<br>${esc(f.d)}<br><small>价格 ${fmtTok(price(foodCost(w.id)))} 元气</small>`; } const wr = w.rank || baseRank(w.sp), n = owned(w.sp, wr), ng = newGu(w.sp, wr); if (w.gear) ng.food = w.gear; return guTip(ng).replace('<small>点开看完整详情</small>', '') + `<small>价格 ${fmtTok(price(PRICE.gu))} 元气 · 点开看完整详情</small>` + (n >= 2 ? `<p>你已有 ${n} 份${RANK.names[wr]}${SP[w.sp].n}，买下当场合成${RANK.names[wr + 1]}</p><p>${esc(TXT.mergeAfter(mergePreview(w.sp, wr)))}</p>` : '' + (n < 2 && resoGain(S.team, w.sp) ? `<p>${esc(TXT.resoGainTip(resoGain(S.team, w.sp)))}</p>` : '')); },
+  ware: t => { const w = S.shop[+t.dataset.i]; if (!w) return ''; if (w.kind === 'food') { const f = FOOD[w.id]; return `${fi(f.id)}<b>${esc(f.n)}</b> · ${FOOD_KIND[f.kind]}<br>${esc(f.d)}<br><small>价格 ${fmtTok(price(foodCost(w.id)))} 元气</small>`; } const wr = w.rank || baseRank(w.sp), n = owned(w.sp, wr), ng = newGu(w.sp, wr); if (w.gear) ng.food = w.gear; return guTip(ng).replace('<small>点开看完整详情</small>', '') + `<small>价格 ${fmtTok(price(guCost(w.sp)))} 元气 · 点开看完整详情</small>` + (n >= 2 ? `<p>你已有 ${n} 份${RANK.names[wr]}${SP[w.sp].n}，买下当场合成${RANK.names[wr + 1]}</p><p>${esc(TXT.mergeAfter(mergePreview(w.sp, wr)))}</p>` : '' + (n < 2 && resoGain(S.team, w.sp) ? `<p>${esc(TXT.resoGainTip(resoGain(S.team, w.sp)))}</p>` : '')); },
 };
 let tipT = 0, tipEl = null, tipFor = null, tipLongT = 0, tipLongAt = -1e9;
 function tipShow(t) {
@@ -1076,7 +1076,7 @@ function buyWare(i) {
     useFood(w.id, 'shop', i); return;
   }
   if (!canBuy(S.team, w.sp, curCap(), S.bag, BC())) { note(TXT.bagFull); return; }
-  if (!pay(PRICE.gu)) return;
+  if (!pay(guCost(w.sp))) return;
   const g = newGu(w.sp, w.rank || undefined); if (w.gear && FOOD[w.gear]) g.food = w.gear; w.sold = true; w.frozen = false;
   note(TXT.bought(g)); achieve('buys', 1); closeSheet();
   placeNew(g, 'shop'); snd('coin');
@@ -1094,7 +1094,7 @@ const ACT = {
     const i = +a.dataset.i, w = S.shop[i]; if (!w) return;
     if (w.kind === 'food') { const f = FOOD[w.id]; sheet(`<div class="fhead"><span class="fbig">${foodSVG(f.id)}</span><div><h3>${esc(f.n)} <small>${FOOD_KIND[f.kind]}</small></h3><p>${esc(f.d)}</p></div></div><div class="row2"><button data-act="freeze" data-i="${i}">${TXT.freeze(w.frozen)}</button><button class="zhu" data-act="buy" data-i="${i}"${!w.sold && canPay(foodCost(w.id)) ? '' : ' disabled'}>买下 ${fmtTok(price(foodCost(w.id)))}</button></div><p class="sm">余 ${fmtTok(S.bank)} 元气</p>`); return; }
     const g = newGu(w.sp); guDetail(g, { kind: 'shop' });
-    const sh = $('.sheet'); if (sh) sh.insertAdjacentHTML('beforeend', `<div class="row2"><button data-act="freeze" data-i="${i}">${TXT.freeze(w.frozen)}</button><button class="zhu" data-act="buy" data-i="${i}"${!w.sold && canPay(PRICE.gu) ? '' : ' disabled'}>${owned(w.sp) >= 2 ? '买下并合成 ' : '买下 '}${fmtTok(price(PRICE.gu))}</button></div><p class="sm">余 ${fmtTok(S.bank)} 元气</p>`);
+    const sh = $('.sheet'); if (sh) sh.insertAdjacentHTML('beforeend', `<div class="row2"><button data-act="freeze" data-i="${i}">${TXT.freeze(w.frozen)}</button><button class="zhu" data-act="buy" data-i="${i}"${!w.sold && canPay(guCost(w.sp)) ? '' : ' disabled'}>${owned(w.sp) >= 2 ? '买下并合成 ' : '买下 '}${fmtTok(price(guCost(w.sp)))}</button></div><p class="sm">余 ${fmtTok(S.bank)} 元气</p>`);
   },
   buy(a) { buyWare(+a.dataset.i); },
   freeze(a) { const w = S.shop[+a.dataset.i]; if (!w) return; w.frozen = !w.frozen; closeSheet(); renderShop(); save(); },
