@@ -319,12 +319,12 @@ async function run(el, res, opts, resolve) {
     ['burn', 'chill', 'stun', 'web', 'grd', 'mark', 'seal'].forEach(k => u.el.classList.toggle('s-' + k, !!sx[k]));
     u.el.classList.toggle('s-psn', !!(sx.psn || sx.para));
   }
-  // 快照：[[uid, 攻, 血, 护体, 蛊力, 速, 行, 列]] × 两方
+  // 快照：[[uid, 攻, 血, 护体, 蛊力, 速, 行, 列, 状态, 血上限]] × 两方
   function applySnap(s) {
     if (!s) return; const seen = new Set();
-    s.forEach(side => side.forEach(([uid, atk, hp, sh, gp, spd, r, c, sx]) => {
+    s.forEach(side => side.forEach(([uid, atk, hp, sh, gp, spd, r, c, sx, mx]) => {
       seen.add(uid); let u = U[uid]; if (!u) { u = mkUnit(uid); if (!u) return; u.r = r; u.c = c; place(u); }
-      const moved = u.r !== r || u.c !== c; u.atk = atk; u.hp = hp; u.sh = sh; u.gp = gp; u.spd = spd; if (moved) { u.r = r; u.c = c; place(u); }
+      const moved = u.r !== r || u.c !== c; u.atk = atk; u.hp = hp; u.sh = sh; u.gp = gp; u.spd = spd; if (mx) u.mx = mx; if (moved) { u.r = r; u.c = c; place(u); }
       setBars(u); setSt(u, sx);
     }));
     Object.values(U).forEach(u => { if (u.alive && !seen.has(u.uid)) { u.alive = false; u.el.classList.add('die'); } });

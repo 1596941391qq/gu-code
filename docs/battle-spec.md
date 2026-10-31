@@ -323,7 +323,7 @@ const res = battle(teamA, teamB, seed, opts);
 
 ## 9. 事件（log）
 
-每个事件 `{ t, …, s? }`；`s` = 这一步之后的快照 `[[buid, 攻, 血, 护体, 蛊力, 速, 行, 列, 状态] …]`（A、B 两方各一组），`lite` 时省略。状态 = `0` 或 `{ psn: 每轮伤害, burn: [每轮伤害, 剩几轮], chill: 层, stun, web, grd: 护的次数, mark, seal, taunt, para, by: { 状态: 谁挂的 buid } }`，画面的状态图标和层数都读它。
+每个事件 `{ t, …, s? }`；`s` = 这一步之后的快照 `[[buid, 攻, 血, 护体, 蛊力, 速, 行, 列, 状态, 血上限] …]`（A、B 两方各一组），`lite` 时省略。状态 = `0` 或 `{ psn: 每轮伤害, burn: [每轮伤害, 剩几轮], chill: 层, stun, web, grd: 护的次数, mark, seal, taunt, para, by: { 状态: 谁挂的 buid } }`，画面的状态图标和层数都读它。
 
 | t | 字段 | 说明 |
 |---|---|---|

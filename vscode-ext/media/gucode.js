@@ -2958,7 +2958,7 @@ function battle(ta, tb, seed, opts = {}) {
   const iv = u => ivOf(u.spd);
   // 快照第 9 项：身上的状态 { 毒每轮伤害 psn, 灼 burn: [每轮伤害, 剩几轮], 寒层 chill, 眩 stun, 网 web, 护 grd, 印 mark, 封 seal, 嘲 taunt, 寄 para, by: { 状态: 谁挂的 uid } }，没有就是 0
   const stOf = u => { const f = u.f, o = {}; let any = 0; for (const k of ['psn', 'para', 'chill', 'stun', 'web', 'grd', 'mark', 'seal', 'taunt']) if (f[k] > 0) { o[k] = f[k]; any = 1; } if (f.burn && f.burn.n > 0) { o.burn = [f.burn.v, f.burn.n]; any = 1; } if (any && f.by) o.by = f.by; return any ? o : 0; };
-  const snap = () => S.map(a => a.map(u => [u.uid, u.atk, Math.max(0, u.hp), u.sh, u.gp | 0, Math.round(u.spd), u.r, u.c, stOf(u)]));
+  const snap = () => S.map(a => a.map(u => [u.uid, u.atk, Math.max(0, u.hp), u.sh, u.gp | 0, Math.round(u.spd), u.r, u.c, stOf(u), u.mx]));
   const ev = (t, o = {}) => {
     o.t = t; if (ctx.nat) o.nat = 1;
     if (t === 'combo') { const u = byId[o.uid]; if (u) { o.id = u.combo; if (!told.has(o.uid)) { told.add(o.uid); o.quiet = 0; o.big = 1; } } }
@@ -7133,12 +7133,12 @@ async function run(el, res, opts, resolve) {
     ['burn', 'chill', 'stun', 'web', 'grd', 'mark', 'seal'].forEach(k => u.el.classList.toggle('s-' + k, !!sx[k]));
     u.el.classList.toggle('s-psn', !!(sx.psn || sx.para));
   }
-  // 快照：[[uid, 攻, 血, 护体, 蛊力, 速, 行, 列]] × 两方
+  // 快照：[[uid, 攻, 血, 护体, 蛊力, 速, 行, 列, 状态, 血上限]] × 两方
   function applySnap(s) {
     if (!s) return; const seen = new Set();
-    s.forEach(side => side.forEach(([uid, atk, hp, sh, gp, spd, r, c, sx]) => {
+    s.forEach(side => side.forEach(([uid, atk, hp, sh, gp, spd, r, c, sx, mx]) => {
       seen.add(uid); let u = U[uid]; if (!u) { u = mkUnit(uid); if (!u) return; u.r = r; u.c = c; place(u); }
-      const moved = u.r !== r || u.c !== c; u.atk = atk; u.hp = hp; u.sh = sh; u.gp = gp; u.spd = spd; if (moved) { u.r = r; u.c = c; place(u); }
+      const moved = u.r !== r || u.c !== c; u.atk = atk; u.hp = hp; u.sh = sh; u.gp = gp; u.spd = spd; if (mx) u.mx = mx; if (moved) { u.r = r; u.c = c; place(u); }
       setBars(u); setSt(u, sx);
     }));
     Object.values(U).forEach(u => { if (u.alive && !seen.has(u.uid)) { u.alive = false; u.el.classList.add('die'); } });
