@@ -1998,6 +1998,9 @@ const rankName = g => RANK.names[rankOf(g)] + SP[g.sp].n;          // 「一转�
 const QUOTA = [4, 7, 10, 14, 18, 22];
 const quotaOf = team => (team || []).reduce((s, g) => s + rankOf(g), 0);
 const driveCap = r => Math.min(RANK.max, (r | 0) + 1);   // 驱使上限：境界 r 只能让 r+1 转及以下的蛊上阵
+// 斗幽灵、战帖按额度分场：上阵转数总和不超过这一场的额度就能进（和秘境一样只限总和，不限只数和单只转数）
+const ARENAS = [4, 9, 15, 22];
+const arenaOf = team => ARENAS.find(q => quotaOf(team) <= q) || 0;   // 这队最低能进几点场（超过 22 点返回 0）
 // 各转的主色（升转外貌、转数角标用）：一转青铜、二转赤铁、三转白银、四转黄金、五转紫晶
 const ZHENYUAN = { colors: ['#a0703f', '#a0703f', '#a4442c', '#9aa4ab', '#d9a441', '#7d62a8'] };
 // 价格（元气 = 消耗的 token）：单位是「千」，乘 tokens.js 的 unit 才是 token 数（插件 8000，网页 200）。
@@ -2273,10 +2276,6 @@ function arrangeTeam(team) {
   team.splice(0, n, ...best); return team;
 }
 
-function ghostTrio(rng, realm) {
-  const names = [...GHOST_NAMES], n = slotCap(realm);
-  return [['easy', '易', 0, Math.max(1, n - 1)], ['mid', '中', 0.25, n], ['hard', '难', 0.6, Math.min(SLOTS, n + 1)]].map(([tier, label, up, k]) => ({ tier, label, name: names.splice(rng.int(names.length), 1)[0], team: genTeam(rng, { realm, n: k, up }) }));
-}
 const GHOST_NAMES = ['夜码人', '零点蛊师', '断点散人', '递归僧', '缓存道人', '并发狂徒', '栈溢出', '空指针', '热重载', '回滚真人', '合并冲突', '无限循环'];
 
 // ---------- 界壁坐标码：阵容 → 位流 → base64url ----------
@@ -5934,13 +5933,12 @@ const TXT = {
   landsHead: '选秘境',
   landsSub: '每个秘境写明出战额度：上阵蛊的转数加起来不能超过它。敌人按额度配，不看你的蛊池。渡过本境界任一秘境最深处的首领劫，开放下一境界的秘境。',
   landLock: '渡过上一境界的首领劫后开放',
-  landLine: l => `${REALMS[l.realm]} · 额度 ${l.quota}${l.cap ? ` · 最高${RANK.names[l.cap]}` : ''} · 敌人多${DAO[l.dao] ? DAO[l.dao].n : '杂道'}`,
+  landLine: l => `${REALMS[l.realm]} · 额度 ${l.quota} · 敌人多${DAO[l.dao] ? DAO[l.dao].n : '杂道'}`,
   quotaTip: (u, q) => `上阵蛊的转数加起来是 ${u}，这个秘境的额度是 ${q}。额度 9 可以带三只三转，也可以一只五转加两只二转；只限转数总和，不限只数。`,
   driveTip: () => `${REALMS[S.realm]}境界能驱使${RANK.names[driveCap(S.realm)]}及以下的蛊上阵；渡劫成功后能驱使更高转数的蛊。`,
   whyEmpty: '空窍里还没有蛊',
   whyQuota: (u, q) => `上阵转数 ${u}，超过额度 ${q}：收一只进蛊囊再出征`,
   whyDrive: g => `${rankName(g)}要${REALMS[rankOf(g) - 1]}境界才能驱使：先收进蛊囊`,
-  whyCap: (g, l) => `「${l.n}」最高只让${RANK.names[l.cap]}的蛊上场，${rankName(g)}先收进蛊囊`,
   driveNo: g => `${REALMS[S.realm]}境界只能驱使${RANK.names[driveCap(S.realm)]}及以下的蛊，${rankName(g)}先留在蛊囊`,
   overDrive: '境界不够，驱使不了：出征前收进蛊囊',
   ateLine: g => `加攻血的食物 已吃 ${ateOf(g)}/${ATE_MAX}`,
@@ -5967,6 +5965,12 @@ const TXT = {
   floor: g => `洞府里一只蛊都没有了，免费领到${rankName(g)}`,
   poor: (need) => `元气不够：还差 ${fmtTok(need)}，写会儿代码就有了`,
   spar: '纯切磋：不死蛊，也不给东西',
+  arenaSub: '按额度分场：你和对手上阵蛊的转数总和都不超过这一场的额度，谁和谁打都公平。',
+  arenaName: q => `${q} 点场`,
+  arenaMine: (u, q) => `你的空窍：转数 ${u} / 额度 ${q}`,
+  arenaOver: (u, q) => `你的空窍转数 ${u}，超过 ${q} 点场：收几只进蛊囊，或者换高一档的场`,
+  arenaNone: u => `转数 ${u}，超过最高的 22 点场`,
+  duelArena: q => `这张战帖是 ${q} 点场：双方上阵转数都不超过 ${q}`,
   trib: r => `渡劫成功 · ${REALMS[r]}`,
   tribLines: r => [`开放额度 ${QUOTA[r]} 的秘境`, `能驱使${RANK.names[driveCap(r)]}及以下的蛊上阵`, `蛊市进新档：能买到${RANK.names[Math.min(5, r + 1)]}的蛊`, '罗盘会转出新的道'],
   comboFirst: c => `杀招成形 · ${c.n}`,
@@ -6280,7 +6284,6 @@ function goWhy(land = curLand()) {
   if (!S.team.length) return TXT.whyEmpty;
   const used = quotaOf(S.team); if (used > land.quota) return TXT.whyQuota(used, land.quota);
   const over = S.team.find(g => rankOf(g) > driveCap(S.realm)); if (over) return TXT.whyDrive(over);
-  const big = land.cap && S.team.find(g => rankOf(g) > land.cap); if (big) return TXT.whyCap(big, land);
   return '';
 }
 function landCard(l, lock) {
@@ -6511,9 +6514,24 @@ function spar(kind, foe) {
   const res = battle(placed(A.team), placed(Bt.team), 'r:' + seed, { sota });
   save(); playBattle({ kind, title: (kind === 'duel' ? '战帖 · ' : '幽灵 · ') + (foe.name || '无名'), res, A, B: Bt, sota, replay: [ca, cb, seed, kind[0], 's' + sotaFlag(sota)].join('.') });
 }
-function openGhosts() {
-  if (!S.ghosts || S.ghosts.realm !== S.realm) { S.ghosts = { realm: S.realm, list: ghostTrio(R(), S.realm).map(o => ({ tier: o.tier, label: o.label, name: o.name, code: encodeTeam(o.team, { name: '幽灵·' + o.name, realm: S.realm }) })) }; save(); }
-  sheet(`<h3>斗幽灵</h3><p class="sm">${TXT.spar}。阵容摆在明面上，打完能复制复盘链接。</p>${S.ghosts.list.map((o, i) => { const d = decodeTeam(o.code); return `<div class="foeopt"><div class="fh"><b class="tier t-${o.tier}">${o.label}</b><span class="fn">${esc(o.name)}</span></div>${miniRow(d.team)}<button class="zhu" data-act="ghostGo" data-i="${i}">切磋</button></div>`; }).join('')}<div class="row2"><button data-act="ghostNew">换一批</button></div>`);
+// 斗幽灵：先挑几点场，再从三个幽灵里挑一个。幽灵阵容用秘境一侧的按额度出敌（满额度，和玩家同口径）
+const ghostFoe = (seed, q, dao) => (TRIP.foeFor ? TRIP.foeFor(seed, q, { kind: 'ghost', dao }) : quotaTeam(makeRng('ghost:' + seed), q, { dao }));
+function rollGhosts(q) {
+  const r = R(), names = [...GHOST_NAMES], daos = DAOS.map(d => d.id), tag = (S.seed + ':' + S.step).toString(36);
+  S.ghosts = { q, list: [0, 1, 2].map(i => { const dao = daos.splice(r.int(daos.length), 1)[0], name = names.splice(r.int(names.length), 1)[0];
+    return { name, dao, code: encodeTeam(ghostFoe(tag + ':' + i, q, dao), { name: '幽灵·' + name, realm: S.realm }) }; }) };
+  save();
+}
+const myArenaTeam = () => (S.team.length ? S.team : starterTeam());
+function openGhosts(q) {
+  const mine = myArenaTeam(), used = quotaOf(mine);
+  q = q || (S.ghosts && S.ghosts.q) || arenaOf(mine) || ARENAS[ARENAS.length - 1];
+  if (!S.ghosts || S.ghosts.q !== q || !S.ghosts.list) rollGhosts(q);
+  const over = used > q ? TXT.arenaOver(used, q) : '';
+  sheet(`<h3>斗幽灵</h3><p class="sm">${TXT.spar}。${esc(TXT.arenaSub)}</p>
+  <div class="segs arenas">${ARENAS.map(a => `<button data-act="arena" data-q="${a}" class="${a === q ? 'on' : ''}">${TXT.arenaName(a)}</button>`).join('')}</div>
+  <p class="sm ${over ? 'err' : ''}">${esc(over || TXT.arenaMine(used, q))}</p>
+  ${S.ghosts.list.map((o, i) => { const d = decodeTeam(o.code); return `<div class="foeopt"><div class="fh"><span class="fn">${esc(o.name)}</span><small>${DAO[o.dao] ? '多' + DAO[o.dao].n : ''} · 转数 ${quotaOf(d.team)}</small></div>${miniRow(d.team)}<button class="zhu" data-act="ghostGo" data-i="${i}"${over ? ' disabled' : ''}>切磋</button></div>`; }).join('')}<div class="row2"><button data-act="ghostNew">换一批</button></div>`);
 }
 function parseReplay(text) {
   const m = String(text || '').match(/r=([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)\.([0-9a-z]+)(?:\.([tgd]))?(?:\.s([0-3]))?/); if (!m) return null;
@@ -6535,12 +6553,12 @@ const INSTALL_URL = 'https://github.com/1596941391qq/gu-code#安装插件获取�
 const baseURL = () => (/^https?:/.test(location.protocol) ? location.origin + location.pathname : SHARE_BASE);
 function replayURL(link) { return baseURL() + '#r=' + link; }
 function shareURL(code) { return baseURL() + '#c=' + code; }
-function shareText(code) { return `${S.trial ? TXT.trialText : ''}我在《蛊码》养了一窝蛊（${REALMS[S.realm]}），敢接战帖吗？\n界壁坐标码：${code}`; }
+function shareText(code) { const q = arenaOf(myArenaTeam()); return `${S.trial ? TXT.trialText : ''}我在《蛊码》养了一窝蛊（${REALMS[S.realm]}${q ? ' · ' + TXT.arenaName(q) : ''}），敢接战帖吗？\n界壁坐标码：${code}`; }
 function myCode() { return encodeTeam(S.team.length ? S.team : starterTeam(), { name: S.name, realm: S.realm, trial: S.trial }); }
 let cardURL = '';
 async function openShare() {
   const code = myCode(), url = shareURL(code);
-  sheet(`<h3>界壁坐标码${trialTag(S.trial)}</h3>${S.trial ? `<p class="trialnote">${TXT.trialShare}</p>` : ''}<p class="sm">发给朋友。对方打开链接，或在蛊码里粘贴坐标码，就会和你空窍里这支阵容切磋。</p>
+  sheet(`<h3>界壁坐标码${trialTag(S.trial)}</h3>${S.trial ? `<p class="trialnote">${TXT.trialShare}</p>` : ''}<p class="sm">发给朋友。对方打开链接，或在蛊码里粘贴坐标码，就会和你空窍里这支阵容切磋。${(() => { const u = quotaOf(myArenaTeam()), q = arenaOf(myArenaTeam()); return q ? `你的空窍转数 ${u}，算 ${TXT.arenaName(q)}：对方上阵转数也不能超过 ${q}。` : esc(TXT.arenaNone(u)) + '，别人接不了这张战帖。'; })()}</p>
   <label class="row"><span>蛊师名号</span><input id="nm" maxlength="8" value="${esc(S.name)}" placeholder="无名蛊师"></label>
   <div class="code" id="codeTxt">${code}</div>
   <div class="row2"><button data-act="copyCode">复制坐标码</button><button data-act="copyLink">复制战帖链接</button></div>
@@ -6555,9 +6573,9 @@ function openDuelInput() {
 }
 function openDuel(foe) {
   if (!foe) return; window.__guFoe = foe;
-  const mine = S.team.length ? S.team : starterTeam();
-  sheet(`<p class="eyebrow">界壁震动</p><h3 class="duelh">有人向你下战帖${trialTag(foe.trial)}</h3><p class="sm">来自 <b>${esc(foe.name || '无名蛊师')}</b> · ${REALMS[foe.realm] || '凡人'}${foe.old ? ' · 旧版坐标码（只认物种和转数）' : ''}</p>${foe.trial ? `<p class="trialnote">${TXT.trialFoe}</p>` : ''}${miniRow(foe.team)}
-  <p class="vsline">— 你的${S.team.length ? '空窍' : '初始阵容'} —</p>${miniRow(mine)}<p class="sm">${TXT.spar}</p><div class="row2"><button class="zhu big" data-act="duelFight">应战</button></div>`);
+  const mine = myArenaTeam(), q = arenaOf(foe.team), used = quotaOf(mine), why = !q ? TXT.arenaNone(quotaOf(foe.team)) : used > q ? TXT.arenaOver(used, q) : '';
+  sheet(`<p class="eyebrow">界壁震动</p><h3 class="duelh">有人向你下战帖${trialTag(foe.trial)}</h3><p class="sm">来自 <b>${esc(foe.name || '无名蛊师')}</b> · ${REALMS[foe.realm] || '凡人'}${foe.old ? ' · 旧版坐标码（只认物种和转数）' : ''}</p>${foe.trial ? `<p class="trialnote">${TXT.trialFoe}</p>` : ''}${q ? `<p class="sm">${esc(TXT.duelArena(q))}</p>` : ''}${miniRow(foe.team)}
+  <p class="vsline">— 你的${S.team.length ? '空窍' : '初始阵容'} · 转数 ${used} —</p>${miniRow(mine)}<p class="sm ${why ? 'err' : ''}">${esc(why || TXT.spar)}</p><div class="row2"><button class="zhu big" data-act="duelFight"${why ? ' disabled' : ''}>应战</button></div>`);
 }
 function checkHash() {
   const h = location.hash; if (!/[#&](c|r)=/.test(h)) return;
@@ -6750,15 +6768,16 @@ const ACT = {
   land(a) { const l = landById(a.dataset.id); if (!l || l.realm > S.realm) return; S.land = l.id; closeSheet(); renderHome(); save(); },
   goConfirm() { closeSheet(); if (goWhy()) return; if (!TRIP.start) { note(TXT.goSoon); return; } S.trip = S.trip || { at: Date.now(), land: curLand().id }; save(); renderHome(); TRIP.start(TRIP.api); },
   ghost() { openGhosts(); },
-  ghostNew() { S.ghosts = null; openGhosts(); },
-  ghostGo(a) { const o = S.ghosts && S.ghosts.list[+a.dataset.i]; if (!o) return; closeSheet(); const d = decodeTeam(o.code); spar('ghost', { team: d.team, name: o.name, realm: S.realm }); },
+  ghostNew() { const q = S.ghosts && S.ghosts.q; S.ghosts = null; openGhosts(q); },
+  arena(a) { openGhosts(+a.dataset.q); },
+  ghostGo(a) { const o = S.ghosts && S.ghosts.list[+a.dataset.i]; if (!o || quotaOf(myArenaTeam()) > S.ghosts.q) return; closeSheet(); const d = decodeTeam(o.code); spar('ghost', { team: d.team, name: o.name, realm: S.realm }); },
   share() { openShare(); },
   copyCode(a) { copy(myCode(), a); },
   copyLink(a) { const c = myCode(); copy(shareText(c) + '\n' + shareURL(c), a); },
   savePng() { if (!cardURL) return; if (VSC) { VSC.postMessage({ type: 'savePng', data: cardURL }); return; } const l = document.createElement('a'); l.href = cardURL; l.download = 'gucode.png'; l.click(); },
   duelInput() { openDuelInput(); },
   duelGo() { if (!openLinkText($('#duelIn').value)) $('#duelErr').textContent = '坐标码或复盘链接不对，或者被截断了。'; },
-  duelFight() { closeSheet(); spar('duel', window.__guFoe); },
+  duelFight() { const f = window.__guFoe, q = f && arenaOf(f.team); if (!f || !q || quotaOf(myArenaTeam()) > q) return; closeSheet(); spar('duel', f); },
   replayGo() { const rp = window.__guRp; closeSheet(); playBattle({ kind: 'replay', title: `复盘 · ${rp.B.name || '无名'} 对 ${rp.A.name || '无名'}`, res: battle(placed(rp.A.team), placed(rp.B.team), 'r:' + rp.seed, { sota: rp.sota }), A: rp.A, B: rp.B, sota: rp.sota, replay: rp.replay }); },
   copyReplay(a) { const B = window.__guB; if (!B) return; const w = B.res.winner, an = B.A.name || '无名', bn = B.B.name || '无名', wt = w === 'draw' ? '打成平手' : (w === 'A' ? an : bn) + ' 胜'; copy(`${(B.A.trial || B.B.trial) ? TXT.trialText : ''}《蛊码》复盘：${an} 对 ${bn}，${wt}。点开看整场：\n${replayURL(B.replay)}`, a); },
   closeBattle() { closeBattle(); },
