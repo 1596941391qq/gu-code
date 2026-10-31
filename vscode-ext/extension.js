@@ -77,7 +77,7 @@ function updateStatus() {
   let text;
   if (!st || !st.started) text = '$(bug) 蛊码';
   else {
-    const pct = st.node && st.cost ? Math.min(99, Math.floor(100 * (st.prog + (ready ? 0 : W.pending)) / st.cost)) + '%' : '待择路';
+    const pct = st.where || '洞府';   // 出征状态：在洞府 / 秘境第 N 层
     text = meter.rawRate > 0 ? `$(bug) ${fmt(meter.rawRate)}/s · ${pct}` : `$(bug) 静 · ${pct}`;
   }
   statusItem.text = text;
@@ -154,6 +154,8 @@ function whenReady(f) { if (ready && activeHost()) f(); else queue.push(f); }
 function activate(context) {
   ctx = context;
   latestSave = ctx.globalState.get('gucode.save'); latestStatus = ctx.globalState.get('gucode.status');
+  // v2 玩法不读旧存档：第一次遇到旧版本（v 不是 3）时原样备份到 gucode.save.bak-v2，再清空，游戏从零开始
+  if (latestSave && latestSave.v !== 3) { if (!ctx.globalState.get('gucode.save.bak-v2')) ctx.globalState.update('gucode.save.bak-v2', latestSave); latestSave = null; ctx.globalState.update('gucode.save', null); ctx.globalState.update('gucode.status', null); latestStatus = null; }
   const pend = ctx.globalState.get('gucode.pending'); if (pend) { W.pending = pend.tokens || 0; W.pendingHot = pend.hot || 0; }
   statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 90);
   statusItem.command = 'gucode.open'; statusItem.text = '$(bug) 蛊码'; statusItem.show();
