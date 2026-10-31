@@ -1,16 +1,28 @@
 // node tools/trip-test.mjs —— 秘境自检：同种子同图、不卡死、撤退/全灭都走得通、各层死亡率、战利品曲线、节奏（真实 token 画像）
-import { makeRng, genTeam, slotCap, arrangeTeam, XING } from '../src/core.js';
+import { makeRng, arrangeTeam, autoPlace, XING, NORMAL_SPECIES, baseRank, daoOf, statFor, RANK } from '../src/core.js';
 import { battle } from '../src/battle.js';
 import * as T from '../src/trip.js';
-if (process.env.FOE) Object.assign(T.TRIP_CFG.foe, JSON.parse(process.env.FOE)); if (process.env.BOSS) Object.assign(T.TRIP_CFG.boss, JSON.parse(process.env.BOSS));
+if (process.env.FOE) Object.assign(T.TRIP_CFG.foe, JSON.parse(process.env.FOE));   // 调参：FOE='{"st":{...},"qk":0.1}' node tools/trip-test.mjs
 let bad = 0; const ok = (c, m) => { console.log((c ? 'OK  ' : 'FAIL') + ' ' + m); if (!c) bad++; };
-// 死亡率两项要等新战斗引擎（m5-battle：速度轮次、血量 ×4）合进来再调 TRIP_CFG.foe.s / boss.all；在那之前只报数，STRICT=1 时算失败
 const pend = (c, m) => console.log((c ? 'OK  ' : '待调') + ' ' + m);
 const UNIT = 8000;   // 插件模式：每「千」= 8000 元气
-// 战斗：引擎支持 hpNow/hpEnd 后直接用；还不支持时把剩血当满血喂进去，用最后一帧快照读剩血（和 trip.js 的兜底一致）
-const fight = (f, foe, seed) => { let r = battle(f, foe, seed); if (!r.hpEnd) { r = battle(f.map(g => ({ ...g, hp: g.hpNow ?? g.hp })), foe, seed); r.hpEnd = T.hpFromLog(r, f.length); } return r; };
-// 玩家模型：v2 的同境界阵容（genTeam，满编，部分升转）
-const player = (rng, r, up = 0.3) => arrangeTeam(genTeam(rng, { realm: r, up }));
+const fight = (f, foe, seed) => battle(f, foe, seed, { lite: true });   // 新引擎：带 hpNow 进场，读 hpA / statA
+// 玩家模型（按额度配队，不看境界蛊池）：
+//   一般 avg：额度用满，物种随便挑（不管道），默认摆法，喂过一次加攻血的食物（按攻血 +10% 折算）
+//   凑合 poor：只用了七成额度，不喂食物
+//   配得好 good：额度用满，六成同一道（吃共鸣），食物喂满（按 +25% 折算），默认摆法
+function teamBy(rng, quota, style = 'avg') {
+  const cap = T.rankCapOf(quota), daos = [...new Set(NORMAL_SPECIES.map(x => x.id).map(daoOf))], main = rng.pick(daos);
+  let left = Math.round(quota * (style === 'poor' ? 0.7 : 1)); const ranks = [];
+  while (left > 0 && ranks.length < 7) { const hi = Math.min(cap, left), r = hi > 1 && rng() < 0.3 ? hi - 1 : hi; ranks.push(r); left -= r; }
+  const team = ranks.map((r, i) => {
+    const ok = NORMAL_SPECIES.map(x => x.id).filter(id => baseRank(id) <= r), same = ok.filter(id => daoOf(id) === main);
+    const sp = rng.pick(style === 'good' && same.length && i < Math.ceil(ranks.length * 0.6) ? same : ok), st = statFor(sp, r), k = { good: 1.25, avg: 1.1, poor: 1 }[style] || 1.1;
+    return { uid: 'p' + i, sp, rank: r, atk: Math.round(st.atk * k), hp: Math.round(st.hp * k), food: null, xing: null };
+  });
+  return autoPlace(arrangeTeam(team));
+}
+const player = (rng, r, style) => teamBy(rng, T.QUOTA[Math.max(0, Math.min(5, r))], style);
 
 console.log('# 1 地图');
 {
@@ -18,14 +30,32 @@ console.log('# 1 地图');
   ok(a === b && a !== c, '同种子两次地图相同，换种子不同');
   let minOpt = 9; for (let k = 0; k < 500; k++) { const m = T.tripMap('m' + k, k % 5); for (let d = 0; d < m.length - 1; d++) for (const r of m[d].rooms) { const nx = T.nextLanes(m, d, r.lane); minOpt = Math.min(minOpt, nx.length); if (!nx.every(l => m[d + 1].rooms.some(x => x.lane === l))) bad++; } }
   ok(minOpt >= 1, `每个房间都有下一步（普通层 2 条，首领前汇成 1 条）`);
-  const p = T.foeTeam('s', 1, 3, 0, 'fight', 100), q = T.foeTeam('s', 1, 3, 0, 'fight', 100);
-  ok(JSON.stringify(p.map(g => [g.sp, g.atk, g.hp])) === JSON.stringify(q.map(g => [g.sp, g.atk, g.hp])), '同种子同层同路的敌阵相同');
+  const p = T.foeTeam('s', 'shangjia', 3, 0, 'fight'), q = T.foeTeam('s', 'shangjia', 3, 0, 'fight');
+  ok(JSON.stringify(p.map(g => [g.sp, g.atk, g.hp, g.pos])) === JSON.stringify(q.map(g => [g.sp, g.atk, g.hp, g.pos])), '同种子同层同路的敌阵相同（含站位）');
 }
 
-console.log('# 2 整趟模拟（随机选路、不撤退）');
+console.log('# 1b 秘境列表与按额度出敌');
+{
+  ok([0, 1, 2, 3, 4, 5].every(r => { const L = T.landsOf(r); return L.length >= 2 && L.length <= 3 && L.every(l => l.quota === T.QUOTA[r]) && new Set(L.map(l => l.dao)).size === L.length && new Set(L.map(l => JSON.stringify(l.boss))).size === L.length; }),
+    `每个境界 2–3 个秘境，额度相同（${T.QUOTA.join('/')}），主道、首领都不同：${T.LANDS.map(l => l.n).join('、')}`);
+  ok(T.LANDS.every(l => l.d && l.boss.length >= 2 && l.boss.every(g => g.rank <= l.cap)), '每个秘境有介绍、首领阵容，转数不超过这个境界能驱使的');
+  let over = 0, under = 0, capBad = 0, det = 0; const fr = { room0: [], room8: [], elite: [], boss: [], ghost: [] };
+  for (const q of [4, 7, 9, 10, 14, 15, 18, 22]) for (let k = 0; k < 60; k++) {
+    const use = (o) => { const f = T.foeByBudget(makeRng(`fb${q}:${k}`), q, o); if (f.some(g => g.rank > T.rankCapOf(q))) capBad++; return f.reduce((a, g) => a + g.rank, 0) / q; };
+    fr.room0.push(use({ kind: 'room', depth: 0 })); fr.room8.push(use({ kind: 'room', depth: 8 })); fr.elite.push(use({ kind: 'elite' })); fr.boss.push(use({ kind: 'boss' })); fr.ghost.push(use({ kind: 'ghost' }));
+    const a = T.foeFor('same' + k, q, { kind: 'ghost' }), b = T.foeFor('same' + k, q, { kind: 'ghost' }); if (JSON.stringify(a) !== JSON.stringify(b)) det++;
+  }
+  const avg = a => a.reduce((x, y) => x + y, 0) / a.length;
+  console.log('  用掉的额度（平均）:', Object.entries(fr).map(([k, a]) => `${k} ${Math.round(avg(a) * 100)}%`).join('  '));
+  ok(avg(fr.room0) >= 0.55 && avg(fr.room0) <= 0.7 && avg(fr.room8) >= 0.95 && avg(fr.elite) >= 0.95 && avg(fr.boss) >= 1.08 && avg(fr.boss) <= 1.25, '浅层六成、深层和精英满额、首领超额约 20%（向下取整）');
+  ok(!capBad && !det, '敌蛊转数不超过额度对应的上限；同种子同额度永远同一伙（斗幽灵、战帖也用）');
+  const t = T.tripStart('lnd', 'caohai', player(makeRng('l'), 2)); ok(t.land === 'caohai' && t.quota === 10 && t.realm === 2, '按秘境 id 开局，记下额度和境界');
+}
+
+console.log('# 2 整趟模拟（配队一般、随机选路、不撤退）');
 function runTrip(r, k, o = {}) {
-  const rng = makeRng(`p${r}:${k}`), team = o.team || player(rng, r, o.up ?? 0.3), purse = { bank: o.bank || 0 };
-  const t = T.tripStart('t' + r + ':' + k, r, team);
+  const rng = makeRng(`p${r}:${k}:${o.style || ''}`), team = o.team || player(rng, r, o.style), purse = { bank: o.bank || 0 }, L = T.landsOf(r);
+  const t = T.tripStart('t' + r + ':' + k, o.land || L[k % L.length].id, team);
   const rec = { fights: [], rooms: 0, stuck: false, t };
   for (let guard = 0; !t.end && guard < 60; guard++) {
     if (o.retreatAt != null && t.d >= o.retreatAt && !t.room) { T.tripEnd(t, 'retreat'); break; }
@@ -48,7 +78,7 @@ function runTrip(r, k, o = {}) {
   if (!t.end) rec.stuck = true;
   return rec;
 }
-const R = [0, 1, 2, 3, 4], N = 300, stuck = [], byD = {}, boss = { n: 0, units: 0, dead: 0 };
+const R = [0, 1, 2, 3, 4, 5], N = 300, stuck = [], byD = {}, boss = { n: 0, units: 0, dead: 0 };
 const ends = { retreat: 0, wipe: 0, clear: 0 };
 for (const r of R) for (let k = 0; k < N; k++) {
   const rec = runTrip(r, k); if (rec.stuck) stuck.push(r + ':' + k); ends[rec.t.end ? rec.t.end.why : 'retreat']++;
@@ -56,36 +86,57 @@ for (const r of R) for (let k = 0; k < N; k++) {
 }
 ok(!stuck.length, `不卡死（${R.length * N} 趟，卡住 ${stuck.length}）`);
 console.log('  结局分布（随机选路、从不撤退）:', JSON.stringify(ends));
+if (process.env.DBG) { const z = {}; for (const r of R) for (let k = 0; k < 150; k++) { const rec = runTrip(r, k); rec.fights.forEach(f => { if (f.d > 2) return; const key = r + ':' + f.d; const b = z[key] || (z[key] = [0, 0]); b[0] += f.n; b[1] += f.dead; }); } console.log('  浅层按境界:层', Object.entries(z).map(([k, [u, d]]) => `${k} ${(100 * d / u).toFixed(0)}%`).join(' ')); }
 console.log('  每场每只蛊的死亡率:', Object.entries(byD).sort().map(([k, b]) => `${k} ${(100 * b.dead / b.units).toFixed(1)}%（${b.n} 场，败 ${(100 * b.loss / b.n).toFixed(0)}%）`).join('  '));
-const shallow = byD['fight浅']; (process.env.STRICT ? ok : pend)(shallow && shallow.dead / shallow.units < 0.05, `浅层（第 1–3 层）战斗每场死亡率 < 5%：${(100 * shallow.dead / shallow.units).toFixed(1)}%`);
+const shallow = byD['fight浅']; ok(shallow && shallow.dead / shallow.units < 0.05, `浅层（第 1–3 层）战斗每场死亡率 < 5%：${(100 * shallow.dead / shallow.units).toFixed(1)}%`);
 
 console.log('# 3 首领（渡劫）：战力不够时');
 {
-  // 战力不够 = 出征时攻血总和只有首领的 75%–90%（同境界满编、少升转）。带着一路的伤进首领房
-  const rows = [];
-  for (const r of R) {
-    let units = 0, dead = 0, n = 0, wins = 0; const bp = T.teamPow(T.bossTeam(r));
-    for (let k = 0; k < 400 && n < 150; k++) {
-      const rng = makeRng(`u${r}:${k}`), team = player(rng, r, 0.3), p = T.teamPow(team), ratio = p / bp;
-      if (ratio < 0.75 || ratio > 0.9) continue;
-      const t = T.tripStart('boss' + k, r, team); t.d = T.TRIP_CFG.depth - 1; t.lane = 1;
-      team.forEach((g, i) => { t.hp[g.uid] = Math.max(1, Math.round(g.hp * (0.7 + 0.3 * rng()))); });   // 一路下来剩 70%–100% 血
-      T.tripPick(t, 1, UNIT, { bank: 1e12 });
-      const f = T.fieldTeam(t, team), res = fight(f, T.roomFoe(t), 'bb' + k), out = T.tripFight(t, team, f, res);
-      units += f.length; dead += out.dead.length; n++; if (out.win) wins++;
+  // 配队一般（额度用满、不管道、不喂食物），一路下来剩 70%–100% 血进首领房；对比配得好、凑合（七成额度）的
+  const bossRun = (style) => {
+    const rows = [];
+    for (const r of R) {
+      let units = 0, dead = 0, n = 0, wins = 0;
+      for (const land of T.landsOf(r)) for (let k = 0; k < 80; k++) {
+        const rng = makeRng(`u${land.id}:${k}`), team = player(rng, r, style);
+        const t = T.tripStart('boss' + k, land.id, team); t.d = T.TRIP_CFG.depth - 1; t.lane = 1;
+        team.forEach(g => { t.hp[g.uid] = Math.max(1, Math.round(g.hp * (0.7 + 0.3 * rng()))); });
+        T.tripPick(t, 1, UNIT, { bank: 1e12 });
+        const f = T.fieldTeam(t, team), res = fight(f, T.roomFoe(t), 'bb' + k), out = T.tripFight(t, team, f, res);
+        units += f.length; dead += out.dead.length; n++; if (out.win) wins++;
+      }
+      rows.push([r, n, dead / units, wins / n]);
     }
-    rows.push([r, n, units ? dead / units : 0, n ? wins / n : 0]);
-  }
-  rows.forEach(([r, n, d, w]) => console.log(`  境界 ${r}：样本 ${n}，每只蛊死亡率 ${(100 * d).toFixed(0)}%，胜率 ${(100 * w).toFixed(0)}%`));
-  const all = rows.filter(x => x[1] >= 20), avg = all.reduce((a, x) => a + x[2], 0) / Math.max(1, all.length);
-  (process.env.STRICT ? ok : pend)(avg >= 0.3 && avg <= 0.5, `首领在战力不够时每只蛊死亡率平均 30%–50%：${(100 * avg).toFixed(0)}%`);
+    return rows;
+  };
+  const show = (nm, rows) => console.log(`  ${nm}：` + rows.map(([r, n, d, w]) => `境界${r} 死${(100 * d).toFixed(0)}%/胜${(100 * w).toFixed(0)}%`).join('  '));
+  const mean = rows => rows.reduce((a, x) => a + x[2], 0) / rows.length;
+  const A = bossRun('avg'), G = bossRun('good'), P = bossRun('poor');
+  show('配队一般', A); show('配得好  ', G); show('凑合    ', P);
+  ok(mean(A) >= 0.3 && mean(A) <= 0.5, `首领：配队一般时每只蛊死亡率平均 30%–50%：${(100 * mean(A)).toFixed(0)}%`);
+  ok(mean(G) <= mean(A) * 0.7 && mean(P) > mean(A), `同一秘境，配得好的明显更安全（${(100 * mean(G)).toFixed(0)}% < 一般 ${(100 * mean(A)).toFixed(0)}% < 凑合 ${(100 * mean(P)).toFixed(0)}%）`);
+}
+{
+  console.log('# 3b 整趟对比（同一批秘境，随机选路、不撤退）');
+  const sum = style => { let units = 0, dead = 0, wipe = 0, clear = 0, n = 0; for (const r of R) for (let k = 0; k < 120; k++) { const rec = runTrip(r, k, { style }); n++; if (rec.t.end.why === 'wipe') wipe++; if (rec.t.end.why === 'clear') clear++; rec.fights.forEach(f => { units += f.n; dead += f.dead; }); } return { d: dead / units, wipe: wipe / n, clear: clear / n }; };
+  const a = sum('avg'), g = sum('good'), p = sum('poor'), f = x => `每场每只死 ${(100 * x.d).toFixed(1)}%，全灭 ${(100 * x.wipe).toFixed(0)}%，通关 ${(100 * x.clear).toFixed(0)}%`;
+  console.log('  一般:', f(a)); console.log('  配得好:', f(g)); console.log('  凑合:', f(p));
+  ok(g.d < a.d * 0.75 && g.clear > a.clear && p.d > a.d, '整趟下来也是配得好的死得少、通关多');
+}
+
+if (process.env.TUNE) {   // 给每个秘境的首领算 bk：配队一般、带 70%–100% 血进场，每只蛊死亡率约 40%
+  const rate = (L, bk) => { const keep = L.bk; L.bk = bk; let u = 0, d = 0; const boss = T.landBoss(L); L.bk = keep;
+    for (let k = 0; k < 240; k++) { const rng = makeRng(`tu${L.id}:${k}`), a = teamBy(rng, L.quota, 'avg').map(g => ({ ...g, hpNow: Math.max(1, Math.round(g.hp * (0.7 + 0.3 * rng()))) })); const r = fight(a, boss, 'tb' + k); u += a.length; d += r.hpA.filter(h => h <= 0).length; }
+    return d / u; };
+  const out = {}; for (const L of T.LANDS) { let lo = 0.4, hi = 3; for (let i = 0; i < 9; i++) { const m = (lo + hi) / 2; if (rate(L, m) < 0.4) lo = m; else hi = m; } out[L.id] = +((lo + hi) / 2).toFixed(2); console.log(`  ${L.n} bk=${out[L.id]} → 死亡率 ${(100 * rate(L, out[L.id])).toFixed(0)}%`); }
+  console.log('  ' + JSON.stringify(out));
 }
 
 console.log('# 4 撤退与全灭');
 {
   let a = null; for (let k = 0; k < 50 && !(a && a.t.end.why === 'retreat'); k++) a = runTrip(2, k, { retreatAt: 2 }); ok(a.t.end && a.t.end.why === 'retreat' && !a.t.end.wiped, '撤退：走到第 3 层主动撤退能结束');
   const res = T.tripResult(a.t); ok(res && Array.isArray(res.loot.gu) && res.loot.gu.every(g => g.sp && g.rank) && !('stone' in res.loot) && res.survivors.length + res.dead.length === a.t.order.length, '撤退结果：带回战利品（新蛊写成 {sp, rank}，没有元石），活着的 + 倒下的 = 出征的');
-  let wipe = null; for (let k = 0; k < 200 && !wipe; k++) { const rng = makeRng('w' + k), weak = player(rng, 0, 0).slice(0, 1); weak[0].hp = 2; weak[0].atk = 1; const rec = runTrip(3, k, { team: weak }); if (rec.t.end && rec.t.end.wiped) wipe = rec; }
+  let wipe = null; for (let k = 0; k < 200 && !wipe; k++) { const rng = makeRng('w' + k), weak = player(rng, 0, 'poor').slice(0, 1); weak[0].hp = 2; weak[0].atk = 1; const rec = runTrip(3, k, { team: weak }); if (rec.t.end && rec.t.end.wiped) wipe = rec; }
   ok(wipe && T.tripResult(wipe.t).loot.gu.length === 0 && T.tripResult(wipe.t).loot.foods.length === 0 && wipe.t.end.dead.length === wipe.t.order.length, '全灭：全员倒下，战利品全丢');
   const t = T.tripStart('qi', 0, player(makeRng('q'), 0)), purse = { bank: 5e6 };
   T.tripPick(t, 0, UNIT, purse); ok(t.room && purse.bank < 5e6, '出征先花攒着的元气：攒够一个房间就一口气走到');
@@ -99,6 +150,7 @@ console.log('# 5 战利品曲线（每个房间平均，境界 2，打赢时）'
   const el = T.roomLoot('E', 2, 5, 0, 'elite'), bs = T.roomLoot('B', 2, 9, 1, 'boss');
   console.log('  精英（第 6 层）:', T.lootText(el), '  首领:', T.lootText(bs));
   ok(T.roomLoot('x', 2, 8, 0, 'fight').foods !== undefined && !('stone' in T.roomLoot('x', 2, 8, 0, 'fight')), '战利品只有新蛊和食物，没有货币');
+  { let bad2 = 0; for (let k = 0; k < 300; k++) T.roomLoot('s' + k, 2, 8, 0, 'boss').foods.forEach(id => { if (id === 'map') bad2++; }); ok(!bad2, '不再掉和元石有关的寻宝图'); }
 }
 
 console.log('# 6 节奏（真实画像：中位数 21.4 万 token/活跃分钟，缓存读取 ×0.1）');

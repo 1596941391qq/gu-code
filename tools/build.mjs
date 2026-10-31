@@ -4,7 +4,7 @@ import fs from 'node:fs'; import path from 'node:path'; import { fileURLToPath }
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // 数据文件（daos / foods / timeline）在 core 前；hooks 是洞府与秘境的接口登记表；trip / trip-ui 由秘境一侧提供，文件不在时跳过
 const order = ['bestiary', 'daos', 'foods', 'timeline', 'core', 'battle', 'art2', 'art', 'qr', 'tokens', 'card', 'fx', 'combo-fx', 'battle-view', 'meta', 'hooks', 'ledger', 'trip', 'trip-ui', 'ui'];
-const OPTIONAL = new Set(['trip', 'trip-ui']);
+const OPTIONAL = new Set(['trip', 'trip-ui', 'combo-fx', 'battle-view']);   // combo-fx / battle-view 由特效、战斗画面一侧提供，没合进来时跳过
 // 这些文件的顶层小工具名与别的文件重复（如 art2 与 art 的 INK/aE），整个包进一层函数，只把 export 的名字放出来
 const WRAP = new Set(['bestiary', 'art2', 'battle', 'combo-fx', 'battle-view']);
 let out = '/* 蛊码 GuCode —— 由 tools/build.mjs 从 src/ 生成，请改 src/ 再构建 */\n(() => {\n"use strict";\n';
