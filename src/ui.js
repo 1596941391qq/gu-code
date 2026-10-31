@@ -648,7 +648,7 @@ function veinLoop(ts) {
 function fxFloat(uid, txt, k, blk) {
   const n = document.querySelector(`[data-uid="${uid}"]`); if (!n || (!txt && !blk)) return;
   const r = n.getBoundingClientRect();
-  const f = el(`<span class="float ${k || ''}">${esc(txt)}${blk ? `<em>挡${blk}</em>` : ''}</span>`);
+  const f = el(`<span class="float ${k || ''}">${esc(txt)}${blk ? `<em>护体挡下 ${blk}</em>` : ''}</span>`);
   f.style.left = (r.left + r.width / 2 + (Math.random() * 16 - 8)) + 'px'; f.style.top = (r.top + r.height * 0.35) + 'px';
   f.style.setProperty('--rot', (Math.random() * 14 - 7).toFixed(1) + 'deg');
   document.body.appendChild(f); setTimeout(() => f.remove(), 1100);
@@ -699,7 +699,7 @@ async function comboCut(name, node, r) {
   await sleep(total * (0.8 - chars.length * 0.07)); cut.classList.add('out'); if (node) node.classList.remove('caster');
   setTimeout(() => cut.remove(), 400);
 }
-const STATUS_N = { psn: '中毒', para: '寄生', stun: '定身', web: '落网', miss: '扑空', swap: '换位', strip: '破甲', tie: '系丝', blitz: '疾袭', luck: '鸿运', hex: '夺志' };
+const STATUS_N = { psn: '中毒', para: '寄生', stun: '眩晕', web: '落网', miss: '扑空', swap: '换位', strip: '破甲', tie: '系丝', blitz: '疾袭', luck: '鸿运', hex: '夺志' };
 async function animEv(e, ros, seen) {
   const D = ms => sleep(ms * tempo / S.speed), nm = uid => ros[uid] ? ros[uid].name : '';
   switch (e.t) {
@@ -714,14 +714,14 @@ async function animEv(e, ros, seen) {
       await sleep(dur * 0.62); shake(3); snd('hit'); await sleep(dur * 0.38); return;
     }
     case 'dmg': {
-      fxFloat(e.uid, e.n > 0 ? (e.crit ? '暴 ' : '') + '-' + fmtNum(e.n * dispK) : '', e.crit ? 'dmg crit' : e.k === 'skill' ? 'dmg skill' : 'dmg', e.blk ? fmtNum(e.blk * dispK) : 0);
+      fxFloat(e.uid, e.n > 0 ? (e.crit ? '暴击 ' : '') + '-' + fmtNum(e.n * dispK) : '', e.crit ? 'dmg crit' : e.k === 'skill' ? 'dmg skill' : 'dmg', e.blk ? fmtNum(e.blk * dispK) : 0);
       const n = bnode(e.uid); if (n) { n.classList.remove('hit'); void n.offsetWidth; n.classList.add('hit'); }
       if (e.crit) { shake(5); snd('clack'); }
       if (e.src >= 0 && e.n > 0) { chain = chain.side === e.src ? { side: e.src, n: chain.n + 1 } : { side: e.src, n: 1 }; if (chain.n >= 3) showChain(chain.n, e.src); }
       return D(e.k === 'hit' ? EV_MS.hit : EV_MS.dmg);
     }
-    case 'buff': fxFloat(e.uid, e.sh ? `护+${e.sh}` : e.a < 0 ? `${e.a} 攻` : `+${e.a}/+${e.h}`.replace('/+0', '').replace('+0/', ''), e.a < 0 ? 'dmg' : 'buff'); return D(EV_MS.buff);
-    case 'status': { const lab = STATUS_N[e.k]; if (lab) { fxFloat(e.uid, lab, 'dmg skill'); blog(`${nm(e.uid)} · ${lab}`); } return D(EV_MS.status); }   // 蛊典扩充的状态：中毒/寄生/定身/落网/扑空/换位/破甲/系丝
+    case 'buff': fxFloat(e.uid, e.sh ? `护体 +${e.sh}` : e.a < 0 ? `${e.a} 攻` : `+${e.a}/+${e.h}`.replace('/+0', '').replace('+0/', ''), e.a < 0 ? 'dmg' : 'buff'); return D(EV_MS.buff);
+    case 'status': { const lab = STATUS_N[e.k]; if (lab) { fxFloat(e.uid, lab, 'dmg skill'); blog(`${nm(e.uid)} · ${lab}`); } return D(EV_MS.status); }   // 蛊典扩充的状态：中毒/寄生/眩晕/落网/扑空/换位/破甲/系丝
     case 'trig': {
       const t = e.id && TRAITS[e.id], lab = t ? t.n : (e.id || ''), ch = t ? t.ch : '技';
       const n = bnode(e.uid); if (n) { const g = el(`<span class="tg">${esc(ch)}</span>`); n.appendChild(g); setTimeout(() => g.remove(), 700); }

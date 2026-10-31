@@ -6,7 +6,7 @@
 // ───────────── 天象：每趟秘境一个，进秘境前写明，双方每场都吃 ─────────────
 // all = 每只蛊都挂；dao = 只挂给这一道的蛊。k = 劫数「天象加重」时数值乘几倍（scaleEff）
 export const SKIES = [
-  { id: 'duwu', n: '毒雾', d: '每轮开始，场上每只蛊挂 1 层毒（每层每轮掉满血 2%）',
+  { id: 'duwu', n: '毒雾', d: '每轮开始，场上每只蛊挂 1 层中毒（每层每轮掉满血 2%）',
     all: [{ when: 'round', op: 'st', tg: 'self', k: 'psn', n: 1, mx: 0.02, up: 0 }] },
   { id: 'lingchao', n: '灵潮', d: '每次出手攒的蛊力翻倍，主动技来得快一倍',
     all: [{ when: 'start', op: 'flag', tg: 'self', k: 'gpMul', v: 2 }] },
@@ -32,10 +32,10 @@ export const SKY = Object.fromEntries(SKIES.map(s => [s.id, s]));
 // ───────────── 首领机制：每个首领一条，专克一种打法，开打前写明 ─────────────
 // on = 'lead' 只挂在领头身上 / 'team' 首领一方每只都挂；k = 克什么打法（写给玩家看）
 export const MECHS = [
-  { id: 'baidu', n: '百毒不侵', k: '克毒', d: '首领一方受到的毒伤只剩两成', on: 'team', eff: [{ when: 'take', op: 'mul', v: 0.2, if: 'kind=psn' }] },
+  { id: 'baidu', n: '百毒不侵', k: '克毒', d: '首领一方受到的中毒伤害只剩两成', on: 'team', eff: [{ when: 'take', op: 'mul', v: 0.2, if: 'kind=psn' }] },
   { id: 'zhanruo', n: '斩弱', k: '克铺小蛊、带残血', d: '每轮开始，领头对你血最少的那只打一下（攻 ×0.8，无视护体）', on: 'lead', eff: [{ when: 'round', op: 'dmg', tg: 'foe.low', atk: 0.8, pierce: 1, up: 0 }] },
   { id: 'fanzhen', n: '反震', k: '克单体猛攻', d: '领头被普攻打中，把这一下的 40% 反弹回去', on: 'lead', eff: [{ when: 'hit', op: 'dmg', tg: 'src', n: 0.4, up: 0, if: 'kind=hit' }] },
-  { id: 'fengli', n: '封力', k: '克主动技', d: '开战时封住你全队的蛊力 2 轮', on: 'lead', eff: [{ when: 'start', op: 'st', tg: 'foe.all', k: 'seal', n: 2 }] },
+  { id: 'fengli', n: '封力', k: '克主动技', d: '开战时你全队被封印 2 轮（蛊力不涨）', on: 'lead', eff: [{ when: 'start', op: 'st', tg: 'foe.all', k: 'seal', n: 2 }] },
   { id: 'tiebi', n: '铁壁', k: '克技能流', d: '首领一方受到的技能伤害 −40%', on: 'team', eff: [{ when: 'take', op: 'mul', v: 0.6, if: 'kind=skill' }] },
   { id: 'kuangbao', n: '狂暴', k: '克拖延、续航', d: '第 4 轮起，首领一方每轮攻 +25%（最多三次）', on: 'team', eff: [{ when: 'round', op: 'buff', tg: 'self', atk: 0.25, if: 'round>=4', max: 3 }] },
   { id: 'xianfa', n: '先发制人', k: '克慢速后手', d: '首领一方速 +30%', on: 'team', eff: [{ when: 'start', op: 'buff', tg: 'self', spd: 0.3 }] },
@@ -58,11 +58,11 @@ export const BLESSES = [
   { id: 'jingji', n: '荆棘', d: '被普攻打中，反伤这一下的 30%', eff: [{ when: 'hit', op: 'dmg', tg: 'src', n: 0.3, up: 0, if: 'kind=hit' }] },
   { id: 'zhuiming', n: '追命', d: '打血量不到一半的敌蛊，伤害 ×1.3', eff: [{ when: 'deal', op: 'mul', v: 1.3, if: 'tg.hp<50' }] },
   { id: 'buqu', n: '不屈', d: '每场第一次受到致命伤，留 1 血', eff: [{ when: 'lethal', op: 'endure', v: 0, max: 1 }] },
-  { id: 'pojia', n: '破甲', d: '普攻打中给目标挂「印」1 轮（受到的伤害 +25%）', eff: [{ when: 'attack', op: 'st', tg: 'tg', k: 'mark', n: 1 }] },
+  { id: 'pojia', n: '破甲', d: '普攻打中给目标挂「印记」1 轮（受到的伤害 +25%）', eff: [{ when: 'attack', op: 'st', tg: 'tg', k: 'mark', n: 1 }] },
   { id: 'tongxin', n: '同心', d: '有友蛊倒下时，攻 +15%', eff: [{ when: 'allyDeath', op: 'buff', tg: 'self', atk: 0.15 }] },
   { id: 'xuli', n: '蓄力', d: '每次出手多攒一半蛊力', eff: [{ when: 'pre', op: 'gp', tg: 'self', v: 17 }] },
   { id: 'shouwang', n: '守望', d: '站最前的蛊开战得满血 40% 的护体', eff: [{ when: 'start', op: 'shield', tg: 'self', mx: 0.4, up: 0, if: 'front' }] },
-  { id: 'dushang', n: '毒上加毒', d: '你挂的毒层数翻倍', eff: [{ when: 'start', op: 'flag', tg: 'self', k: 'psnMul', v: 2 }] },
+  { id: 'dushang', n: '毒上加毒', d: '你挂的中毒层数翻倍', eff: [{ when: 'start', op: 'flag', tg: 'self', k: 'psnMul', v: 2 }] },
   { id: 'zhuangshan', n: '撞山', d: '击退把敌蛊撞上别的蛊时，撞伤翻倍', eff: [{ when: 'start', op: 'flag', tg: 'self', k: 'bumpMul', v: 2 }] },
   { id: 'fengxing', n: '风行', d: '剩下的路程少走 25%', trip: { road: 0.75 } },
   { id: 'guhuo', n: '篝火旺', d: '篝火回满血的 100%（原来一半）', trip: { camp: 1 } },

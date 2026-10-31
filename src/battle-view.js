@@ -6,6 +6,7 @@ import { FOOD } from './foods.js';
 import { DAO } from './daos.js';
 import { playCombo } from './combo-fx.js';
 import { skillText, TUNE } from './battle.js';
+import { ST_NAME, ST_COLOR, GL, glossHTML, glossTable } from './gloss.js';
 
 const CSS = `
 .gbv{--a:var(--qing,#6fb7a4);--b:var(--zhu2,#d8553f);--pp:var(--paper,#e7ddc7);--ik:var(--ink,#1c1915);position:relative;user-select:none;-webkit-user-select:none;color:var(--tx,#ddd3bf);font:13px/1.4 var(--sans,system-ui)}
@@ -129,7 +130,7 @@ const CSS = `
 @keyframes gbvstar{0%{transform:translate(0,0) scale(.2) rotate(0);opacity:0}30%{opacity:1}100%{transform:translate(var(--x),var(--y)) scale(1) rotate(180deg);opacity:0}}
 .sx-web svg{inset:-10%;width:120%;height:120%;animation:gbvweb .7s ease-out both}
 @keyframes gbvweb{0%{transform:translateY(-60%) scale(1.3);opacity:0}50%{opacity:1}100%{transform:none;opacity:.9}}
-.sx-seal i{left:50%;top:30%;width:26px;height:26px;margin:-13px;background:#b5301f;color:#fbefdc;font:16px/26px var(--kai,serif);text-align:center;border-radius:3px;animation:gbvstamp .55s cubic-bezier(.3,1.6,.5,1) both}
+.sx-seal i{left:50%;top:30%;width:44px;height:26px;margin:-13px -22px;background:#b5301f;color:#fbefdc;font:16px/26px var(--kai,serif);text-align:center;border-radius:3px;animation:gbvstamp .55s cubic-bezier(.3,1.6,.5,1) both}
 @keyframes gbvstamp{0%{transform:scale(2.6) rotate(-14deg);opacity:0}100%{transform:rotate(-6deg);opacity:1}}
 .sx-dust i{left:50%;bottom:-6%;width:46%;height:22%;margin-left:-23%;border-radius:50%;background:radial-gradient(ellipse,rgba(170,150,120,.7),rgba(170,150,120,0) 70%);animation:gbvdust .6s ease-out both}
 @keyframes gbvdust{0%{transform:translateX(var(--x)) scale(.3);opacity:.9}100%{transform:translateX(var(--x)) scale(1.6);opacity:0}}
@@ -212,18 +213,18 @@ const CSS = `
 .gbv.calm .gbv-card{animation-name:gbvfadein!important}
 :root[data-theme=light] .gbv{--logop:#a92a1a;--logme:#1e6e59}
 `;
-const ST_CH = { psn: '毒', para: '寄', burn: '灼', chill: '寒', stun: '眩', web: '网', guard: '护', grd: '护', taunt: '嘲', mark: '印', seal: '封' };
-const ST_N = { psn: '中毒', para: '寄生', burn: '灼烧', chill: '寒', freeze: '冻住', stun: '眩晕', web: '落网', guard: '护', taunt: '嘲讽', mark: '印记', seal: '封', miss: '扑空', swap: '换位', strip: '破甲', tie: '系丝', blitz: '疾袭', luck: '鸿运', hex: '夺志', clean: '净' };
+// 状态名字一律用 gloss.js 的全称（灼烧、中毒、冰寒、格挡……），不用单字简称
+const ST_N = { ...ST_NAME, miss: '扑空', swap: '换位', strip: '破甲', tie: '系丝', blitz: '疾袭', luck: '鸿运', hex: '夺志', clean: '清掉减益' };
 const CN = ['', '一', '二', '三', '四', '五', '仙'];
 const ST_ORDER = ['burn', 'psn', 'para', 'chill', 'stun', 'web', 'grd', 'mark', 'seal', 'taunt'];
-const ST_COL = { burn: '#e8642c', psn: '#6fbf45', para: '#6fbf45', chill: '#6fb0e8', stun: '#d6a93a', web: '#bdb6a6', grd: '#d9bd6a', guard: '#d9bd6a', mark: '#d8453a', seal: '#8a8070', taunt: '#d9bd6a', summon: '#b59ad6' };
-const stNum = (k, v) => k === 'burn' ? v[1] : v;   // 图标上的数：灼 = 还剩几轮，毒 = 每轮掉多少，其余 = 层数 / 次数 / 轮数
+const ST_COL = ST_COLOR;   // 图标底色和「状态说明」表同一套（gloss.js）
+const stNum = (k, v) => k === 'burn' ? v[1] : v;   // 图标上的数：灼烧 = 还剩几轮，中毒 = 每轮掉多少，其余 = 层数 / 次数 / 轮数
 const ST_DESC = {
   burn: v => `还剩 ${v[1]} 轮，每轮烧 ${v[0]}（护体挡不住）`, psn: v => `每轮掉 ${v} 血，不会自己消失（护体挡不住）`, para: v => `每轮掉 ${v} 血`,
   chill: v => `${v} 层，速 -${Math.round(TUNE.chill * 100 * v)}%，叠到 3 层冻住一次；每轮退一层`, stun: v => `跳过接下来 ${v} 次出手`, web: v => `接下来 ${v} 次普攻落空`,
   grd: v => `接下来 ${v} 次挨打伤害减半`, mark: v => `还剩 ${v} 轮，受到的伤害 +25%`, seal: v => `还剩 ${v} 轮，蛊力不涨`, taunt: v => `还剩 ${v} 轮，敌方单体攻击优先打它`,
 };
-const ST_LOG = { psn: n => `中毒（每轮 ${n}）`, para: n => `寄生（每轮 ${n}）`, burn: n => `灼烧 ${n} 轮`, chill: n => `寒 ${n} 层`, freeze: () => '冻住', stun: n => `眩晕 ${n} 次`, web: n => `落网 ${n} 次`, guard: n => `护 ${n} 次`, mark: n => `印记 ${n} 轮`, seal: n => `封 ${n} 轮`, taunt: n => `嘲讽 ${n} 轮` };
+const ST_LOG = { psn: n => `中毒（每轮 ${n}）`, para: n => `寄生（每轮 ${n}）`, burn: n => `灼烧 ${n} 轮`, chill: n => `冰寒 ${n} 层`, freeze: () => '冻住', stun: n => `眩晕 ${n} 次`, web: n => `落网 ${n} 次`, guard: n => `格挡 ${n} 次`, mark: n => `印记 ${n} 轮`, seal: n => `封印 ${n} 轮`, taunt: n => `嘲讽 ${n} 轮` };
 const FL_IC = {
   burn: '<svg viewBox="0 0 10 13" width="11" height="14"><path d="M5 0C6 3 9 4.5 9 8.2A4 4 0 0 1 1 8.2C1 6 2.6 4.8 3.2 3.2 3.9 4.6 4.6 5 5 5.2 5.4 3.6 5.6 1.8 5 0Z" fill="#f0602a"/><path d="M5 6.2C5.6 7.4 6.8 8 6.8 9.4A1.8 1.8 0 0 1 3.2 9.4C3.2 8.4 4.2 7.6 5 6.2Z" fill="#ffd36a"/></svg>',
   psn: '<svg viewBox="0 0 12 12" width="12" height="12"><circle cx="4.2" cy="7.4" r="3.1" fill="rgba(120,200,70,.35)" stroke="#8fd05a" stroke-width="1.4"/><circle cx="8.7" cy="3.4" r="2.1" fill="rgba(120,200,70,.35)" stroke="#8fd05a" stroke-width="1.2"/></svg>',
@@ -315,7 +316,7 @@ async function run(el, res, opts, resolve) {
   function setSt(u, sx) {
     sx = sx || {}; const key = JSON.stringify(sx); if (key === u.sxKey) return; u.sxKey = key; u.sx = sx;
     const L = ST_ORDER.filter(k => sx[k]), MAXI = 3;   // 最多显示 3 枚，多出来的写「+N」，悬停或点按看全部
-    u.ic.innerHTML = L.slice(0, MAXI).map(k => `<b class="${k}">${ST_CH[k]}<em>${stNum(k, sx[k])}</em></b>`).join('') + (L.length > MAXI ? `<b class="more">+${L.length - MAXI}</b>` : '');
+    u.ic.innerHTML = L.slice(0, MAXI).map(k => `<b class="${k}" style="background:${ST_COL[k]}">${ST_NAME[k]}<em>${stNum(k, sx[k])}</em></b>`).join('') + (L.length > MAXI ? `<b class="more">+${L.length - MAXI}</b>` : '');
     ['burn', 'chill', 'stun', 'web', 'grd', 'mark', 'seal'].forEach(k => u.el.classList.toggle('s-' + k, !!sx[k]));
     u.el.classList.toggle('s-psn', !!(sx.psn || sx.para));
   }
@@ -362,9 +363,9 @@ async function run(el, res, opts, resolve) {
     if (!u || skip) return; const p = center(u), f = document.createElement('div'); f.className = 'gbv-fl ' + cls; f.textContent = text;
     f.style.left = p.x + 'px'; f.style.top = (p.y - 6 + dy) + 'px'; stage.appendChild(f); setTimeout(() => f.remove(), 950);
   };
-  const floatSt = (u, n, k) => {   // 每轮结算的跳字：灼橙红带小火苗，毒绿字带气泡
+  const floatSt = (u, n, k) => {   // 每轮结算的跳字：灼烧橙红带小火苗，中毒绿字带气泡
     if (!u || skip) return; const p = center(u), f = document.createElement('div'), c = k === 'burn' ? 'burn' : 'psn';
-    f.className = 'gbv-fl stk ' + c; f.innerHTML = (k === 'doom' ? '' : FL_IC[c]) + '-' + n;
+    f.className = 'gbv-fl stk ' + c; f.innerHTML = (k === 'doom' ? '' : FL_IC[c]) + (ST_NAME[k] || '') + ' -' + n;
     f.style.left = p.x + 'px'; f.style.top = (p.y - 2) + 'px'; stage.appendChild(f); setTimeout(() => f.remove(), 950);
   };
   const skOf = u => !u.ro.summon ? skillText(u.ro.sp, u.ro.rank || 1, { st: { atk: u.atk, mx: u.mx } }) : [];
@@ -382,7 +383,7 @@ async function run(el, res, opts, resolve) {
     else if (k === 'mark') h = SX_SVG.mark;
     else if (k === 'stun') h = [0, 72, 144, 216, 288].map((a, i) => `<i style="--x:${px(Math.cos(a * Math.PI / 180) * 0.5)};--y:${px(Math.sin(a * Math.PI / 180) * 0.25 - 0.1)};animation-delay:${i * 30}ms"></i>`).join('');
     else if (k === 'web') h = SX_SVG.web;
-    else if (k === 'seal') h = '<i>封</i>';
+    else if (k === 'seal') h = '<i>封印</i>';
     else if (k === 'dust') h = [-0.25, 0.25].map(x => `<i style="--x:${px(x)}"></i>`).join('');
     else return;
     d.innerHTML = h; stage.appendChild(d); setTimeout(() => d.remove(), 1100);
@@ -393,14 +394,14 @@ async function run(el, res, opts, resolve) {
     const len = Math.ceil(path.getTotalLength ? path.getTotalLength() : 300); path.style.setProperty('--len', len); path.style.strokeDasharray = len;
     const ring = svgEl('circle', { cx: q.x, cy: q.y, r: 4, fill: 'none', stroke: col, 'stroke-width': 2.5, class: 'gbv-lkr' });
     const tx = svgEl('text', { x: (p.x + 2 * mx + q.x) / 4, y: (p.y + 2 * my + q.y) / 4 + 4, 'text-anchor': 'middle', fill: col, 'font-size': 13, stroke: 'var(--bg,#15130f)', 'stroke-width': 3, 'paint-order': 'stroke', class: 'gbv-lkt' });
-    tx.style.fontFamily = 'var(--kai,serif)'; tx.textContent = '联动·' + (ST_CH[k] || '');
+    tx.style.fontFamily = 'var(--kai,serif)'; tx.textContent = '联动·' + (ST_NAME[k] || '');
     setTimeout(() => { path.remove(); ring.remove(); tx.remove(); }, 820);
   }
   let tipEl = null;
   function showTip(u, pin) {
     hideTip(); const ro = u.ro, t = document.createElement('div'); t.className = 'gbv-tip', sx = u.sx || {};
     const sk = skOf(u).filter(x => !x.locked).map(x => `<span class="tk"><i>${KN[x.kind]}</i>${x.kind === 'aw3' || x.kind === 'aw5' ? '' : '「' + esc(x.n) + '」'}${esc(x.text)}</span>`).join('');
-    const st = ST_ORDER.filter(k => sx[k]).map(k => { const by = sx.by && sx.by[k]; return `<span class="ts"><b style="background:${ST_COL[k]}">${ST_CH[k]} ${stNum(k, sx[k])}</b>${ST_DESC[k](sx[k])}${by && R[by] ? ` · ${esc(R[by].name)}挂的` : ''}</span>`; }).join('');
+    const st = ST_ORDER.filter(k => sx[k]).map(k => { const by = sx.by && sx.by[k]; const g = GL[k]; return `<span class="ts"><b style="background:${ST_COL[k]}">${ST_NAME[k]} ${stNum(k, sx[k])}</b>${g ? `<i class="glk gl-${g.kind}">${g.kind === 'buff' ? '增益' : '减益'}</i> ` : ''}${ST_DESC[k](sx[k])}${by && R[by] ? ` · ${esc(R[by].name)}挂的` : ''}</span>`; }).join('');
     t.innerHTML = `<b>${esc(ro.name)}</b>${ro.rank ? ` · ${CN[ro.rank]}转` : ''} · ${ro.side === me ? '我方' : '敌方'}<br>攻 ${u.atk} · 血 ${Math.max(0, u.hp)}/${u.mx}${u.sh ? ` · 护体 ${u.sh}` : ''} · 速 ${u.spd || ro.spd}${ro.act ? ` · 蛊力 ${u.gp}/${ro.gpMax || 100}` : ''}`
       + (sk || (ro.act ? `<span class="tk"><i>主动</i>「${esc(ro.act.n)}」${esc(ro.act.d || '')}</span>` : '')) + (ro.combo ? `<span class="tk"><i>杀招</i>「${esc(ro.combo.n)}」</span>` : '') + (st ? `<span class="ts" style="margin-top:5px;color:var(--mu)">身上的状态</span>${st}` : '');
     root.appendChild(t); tipEl = t;
@@ -506,7 +507,7 @@ async function run(el, res, opts, resolve) {
       case 'order': drawOrder(null, e.q); await sleep(350); break;
       case 'round': dropCard(); LN = null; round = e.n; root.querySelector('.gbv-rdl').textContent = `第 ${e.n} 轮`; await sleep(180); break;
       case 'act': dropCard(); LN = null; Object.values(U).forEach(x => x.el.classList.toggle('now', x.uid === e.uid)); drawOrder(e.uid, e.q); await sleep(140); break;
-      case 'skip': if (u) float(u, e.k === 'stun' ? '眩晕' : '蓄势', 'tag'); logNew(sideOf(e.uid), `[${tag(sideOf(e.uid))}] ${esc(nm(e.uid))} ${e.k === 'stun' ? '被眩住，跳过' : '被挡在身后，蓄势（蛊力 +）'}`); await sleep(260); break;
+      case 'skip': if (u) float(u, e.k === 'stun' ? '眩晕' : '蓄势', 'tag'); logNew(sideOf(e.uid), `[${tag(sideOf(e.uid))}] ${esc(nm(e.uid))} ${e.k === 'stun' ? '眩晕中，跳过这次出手' : '被挡在身后，蓄势（蛊力 +）'}`); await sleep(260); break;
       case 'atk': {
         const t = U[e.tg]; aimOn(e.cells, false, R[e.uid] && R[e.tg] && R[e.uid].side === R[e.tg].side); LN = null; logWho(e.uid);
         await sleep(240); if (u && t) await shot(e.fx, u, t); aimOff(); castMode = 0; break;
@@ -534,17 +535,17 @@ async function run(el, res, opts, resolve) {
         if (!u) break; const kill = e.s && !e.s.some(sd => sd.some(x => x[0] === e.uid && x[2] > 0));
         if (e.k === 'psn' || e.k === 'para' || e.k === 'burn' || e.k === 'doom') {
           floatSt(u, e.n, e.k); if (!LN || LN.tick !== round) { logNew(null, `第 ${round} 轮结算`); LN.tick = round; LN.arrow = '：'; }
-          logPart(e.uid, 'd', (e.k === 'burn' ? '灼' : e.k === 'doom' ? '劫' : '毒') + '-' + e.n); applySnap(e.s); await sleep(120); break;
+          logPart(e.uid, 'd', (e.k === 'burn' ? '灼烧' : e.k === 'doom' ? '天劫压阵' : e.k === 'para' ? '寄生' : '中毒') + ' -' + e.n); applySnap(e.s); await sleep(120); break;
         }
-        if (!LN) logWho(e.src); logPart(e.uid, 'd', e.n ? (e.crit ? '暴' : '') + '-' + e.n + (e.blk ? `(挡${e.blk})` : '') : `挡${e.blk || 0}`);
-        flash(u); if (e.n) float(u, (e.crit ? '暴 ' : '') + '-' + e.n, e.crit ? 'crit' : '', castMode ? (i % 3) * -6 : 0); if (e.blk) float(u, '挡' + e.blk, 'blk', e.n ? 14 : 0);
+        if (!LN) logWho(e.src); logPart(e.uid, 'd', e.n ? (e.crit ? '暴击 ' : '') + '-' + e.n + (e.blk ? `（护体挡下 ${e.blk}）` : '') : `护体挡下 ${e.blk || 0}`);
+        flash(u); if (e.n) float(u, (e.crit ? '暴击 ' : '') + '-' + e.n, e.crit ? 'crit' : '', castMode ? (i % 3) * -6 : 0); if (e.blk) float(u, '护体挡下 ' + e.blk, 'blk', e.n ? 14 : 0);
         applySnap(e.s);
         if (e.crit || kill) { shake(); await sleep(kill ? 160 : 90); }   // 顿帧：暴击、斩杀停一下
         await sleep(castMode ? 110 : 200); break;
       }
       case 'heal': if (u) { float(u, '+' + e.n, 'heal'); if (LN) logPart(e.uid, 'd', '+' + e.n); } applySnap(e.s); await sleep(120); break;
       case 'buff': {
-        if (!u) break; const p = []; if (e.a) p.push((e.a > 0 ? '+' : '') + e.a + '攻'); if (e.h) p.push((e.h > 0 ? '+' : '') + e.h + '血'); if (e.sh) p.push('+' + e.sh + '护'); if (e.spd) p.push((e.spd > 0 ? '速+' : '速') + e.spd); if (e.adv) p.push('提前'); if (e.delay) p.push('推后');
+        if (!u) break; const p = []; if (e.a) p.push((e.a > 0 ? '+' : '') + e.a + '攻'); if (e.h) p.push((e.h > 0 ? '+' : '') + e.h + '血'); if (e.sh) p.push('护体 +' + e.sh); if (e.spd) p.push((e.spd > 0 ? '速+' : '速') + e.spd); if (e.adv) p.push('提前'); if (e.delay) p.push('推后');
         if (p.length) float(u, p.join(' '), e.a < 0 || e.delay ? 'psn' : 'heal', -12); if (LN && !e.dao && (e.sh || e.a < 0)) logPart(e.uid, 's', e.sh ? `护体 +${e.sh}` : `攻 ${e.a}`); applySnap(e.s); await sleep(e.dao ? 40 : 110); break;
       }
       case 'status': {
@@ -554,15 +555,15 @@ async function run(el, res, opts, resolve) {
         await sleep(calm ? 200 : 300); break;
       }
       case 'trig': { const n = trigName(e); if (u && n) { float(u, n, 'tag', -22); if (!LN || LN.tick) logNew(sideOf(e.uid), `[${tag(sideOf(e.uid))}] ${esc(nm(e.uid))}「${esc(n)}」`); else logEx(`${esc(nm(e.uid))}「${esc(n)}」`); } applySnap(e.s); await sleep(e.id || e.xg ? 200 : 60); break; }
-      case 'link': { const a = U[e.uid], b = U[e.to]; linkFx(a, b, e.k); if (LN) logEx(`联动：${esc(nm(e.uid))} 接上 ${esc(nm(e.to))} 的${ST_N[e.k] || ST_CH[e.k] || ''}`); await sleep(calm ? 120 : 220); break; }
-      case 'summon': applySnap(e.s); if (U[e.uid]) { U[e.uid].el.classList.add('summon'); if (LN) logEx(`召出 ${esc(nm(e.uid))}`); else say(`${nm(e.uid)} 现身`); } await sleep(220); break;
+      case 'link': { const a = U[e.uid], b = U[e.to]; linkFx(a, b, e.k); if (LN) logEx(`联动：${esc(nm(e.uid))} 接上 ${esc(nm(e.to))} 的${ST_N[e.k] || ''}`); await sleep(calm ? 120 : 220); break; }
+      case 'summon': applySnap(e.s); if (U[e.uid]) { U[e.uid].el.classList.add('summon'); if (LN) logEx(`召唤出 ${esc(nm(e.uid))}`); else say(`${nm(e.uid)} 现身`); } await sleep(220); break;
       case 'move': if (u) {
-        if (e.k === 'bump' || e.k === 'wall') { float(u, '撞', 'tag'); flash(u); if (U[e.into]) flash(U[e.into]); shake(); if (LN) logPart(e.uid, 's', '撞上'); }
-        else if (e.k === 'knock' || e.k === 'draw') { stFx(u, 'dust'); float(u, e.k === 'knock' ? '退' : '拉', 'tag', -14); if (LN) logPart(e.uid, 's', e.k === 'knock' ? '击退' : '拉近'); }
-        else if (e.k === 'hold') { float(u, '定', 'tag', -14); if (!calm) anim(u.tok, [{ transform: 'translateX(0)' }, { transform: 'translateX(-3px)' }, { transform: 'translateX(3px)' }, { transform: 'translateX(0)' }], 220); if (LN) logPart(e.uid, 's', '纹丝不动'); }
+        if (e.k === 'bump' || e.k === 'wall') { float(u, '撞上', 'tag'); flash(u); if (U[e.into]) flash(U[e.into]); shake(); if (LN) logPart(e.uid, 's', '撞上'); }
+        else if (e.k === 'knock' || e.k === 'draw') { stFx(u, 'dust'); float(u, e.k === 'knock' ? '击退' : '拉近', 'tag', -14); if (LN) logPart(e.uid, 's', e.k === 'knock' ? '击退' : '拉近'); }
+        else if (e.k === 'hold') { float(u, '纹丝不动', 'tag', -14); if (!calm) anim(u.tok, [{ transform: 'translateX(0)' }, { transform: 'translateX(-3px)' }, { transform: 'translateX(3px)' }, { transform: 'translateX(0)' }], 220); if (LN) logPart(e.uid, 's', '纹丝不动'); }
       } applySnap(e.s); await sleep(e.k === 'knock' || e.k === 'draw' ? 300 : 220); break;
       case 'faint': if (u) {
-        u.alive = false; if (LN) logPart(e.uid, 's', e.eaten ? '被吞' : '倒下'); else say(`${nm(e.uid)} 倒下`);
+        u.alive = false; if (LN) logPart(e.uid, 's', e.eaten ? '被吞噬' : '倒下'); else say(`${nm(e.uid)} 倒下`);
         const by = e.eaten && U[e.by];
         if (by && !skip) {   // 吞：整只被吸到吞它的蛊身上，越吸越小
           const a = center(u), b = center(by);

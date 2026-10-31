@@ -144,8 +144,8 @@ function effNote(list, r, isAct, st) {
     else if (e.op === 'buff') {
       const b = [], A = e.atk ? num(e.atk, st.atk) : 0, H = e.hp ? num(e.hp, st.mx) : 0; if (A) b.push(`攻约 ${A > 0 ? '+' : ''}${A}`); if (H) b.push(`血约 ${H > 0 ? '+' : ''}${H}`);
       if (b.length) parts.push(b.join('、'));
-    } else if (e.op === 'st' && v > 0 && (e.k === 'psn' || e.k === 'burn')) parts.push(e.k === 'psn' ? `毒每轮约掉 ${v} 血` : `灼每轮约烧 ${v}`);
-    else if (e.op === 'summon') parts.push(`召出的约攻 ${num(e.atk || 0.3, st.atk)}、血 ${num(e.mx || 0.3, st.mx)}`);
+    } else if (e.op === 'st' && v > 0 && (e.k === 'psn' || e.k === 'burn')) parts.push(e.k === 'psn' ? `中毒每轮约掉 ${v} 血` : `灼烧每轮约掉 ${v} 血`);
+    else if (e.op === 'summon') parts.push(`召唤出的约攻 ${num(e.atk || 0.3, st.atk)}、血 ${num(e.mx || 0.3, st.mx)}`);
     else if ((e.op === 'knock' || e.op === 'draw') && e.bump !== 0) parts.push(`撞上约 ${num(e.bump != null ? e.bump : 0.4, st.atk)}`);
   }
   return parts.length ? `（这一转${parts.join('，')}）` : '';
