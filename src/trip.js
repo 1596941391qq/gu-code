@@ -39,7 +39,7 @@ export const TRIP_CFG = {
   // 敌阵只按额度配，不看玩家的蛊池（见 foeByBudget）：额度 = 上阵蛊转数总和的上限。敌蛊攻血一律用正常的转数表，不打折、不暗加。
   // 难度只靠「用掉几成额度」调：普通战斗 frac[0] + frac[1]×(层数 − ramp)；精英 elite；首领 boss × 每个秘境的 bk；斗幽灵 ghost 满额。
   // 规则是「赢了救回，输了全死」，所以目标是输的概率：浅层每场 < 5%，精英 15%–20%，首领 35%–45%（配队一般，见 tools/trip-test.mjs）
-  foe: { frac: [0.35, 0.04], ramp: 2, elite: 0.62, boss: 0.85, ghost: 1, maxN: 7, daoP: 0.65 },
+  foe: { frac: [0.4, 0.04], ramp: 2, elite: 0.64, boss: 0.85, ghost: 1, maxN: 7, daoP: 0.65 },
   camp: 0.5,                                   // 篝火：全队回满血的 50%
   // 战利品只有新蛊和食物，越深越多、越稀有：数量 = 基数 + 每层 × 层数（小数部分按几率）；新蛊升一转的几率 up[0] + up[1]×层数，
   // 第 rare 层起一半几率出自高一档蛊池；食物按价钱算稀有，越深越偏向贵的
@@ -94,22 +94,22 @@ export function nextLanes(map, d, lane) {
 // ───────────── 秘境列表：每个境界两三个，同境界额度相同，主道和首领不同。渡过本境界任一秘境的首领 = 渡劫，境界加一 ─────────────
 // 额度 = 上阵蛊转数总和的上限；境界 r 能驱使 r+1 转及以下的蛊（敌人也一样）。名字取原著里的大地名，描述是自己写的
 export const rankCapOf = q => Math.min(RANK.max, q < 7 ? 1 : q < 10 ? 2 : q < 14 ? 3 : q < 18 ? 4 : 5);   // 额度对应的最高转数（斗幽灵 4/9/15/22 档也按这个）
-const LAND_DEF = [   // [id, 名, 境界, 主道, 一句介绍, 首领额度微调 bk（首领用掉的额度再乘几倍；由 TUNE=1 node tools/trip-test.mjs 算出，让配队一般打首领输 40% 左右）]
-  ['qingmao', '青茅山', 0, 'li', '山寨外的竹林里野蛊成群，蛊师入门的第一道坎。', 0.75],
-  ['suishi', '碎石滩', 0, 'jin', '河滩上全是碎石，甲壳硬的野蛊躲在石缝里，不好啃。', 0.75],
-  ['shangjia', '商家城外', 1, 'zhi', '城外的商路上常有劫道的蛊师，阵法摆得比力气重要。', 1.1],
-  ['zhangze', '南疆瘴泽', 1, 'xue', '泥沼里瘴气终年不散，这里的蛊靠吸血熬人。', 1.1],
-  ['caohai', '北原草海', 2, 'nu', '草比人高，牧蛊的部族一放就是一群，以多打少。', 0.9],
-  ['liusha', '西漠流沙', 2, 'jin', '风一起沙就动，披甲的蛊埋在沙下等人踩上来。', 0.8],
+const LAND_DEF = [   // [id, 名, 境界, 主道, 一句介绍, 首领额度微调 bk（首领用掉的额度再乘几倍）, 首领阵容第几版 bv]。bk、bv 由 TUNE=1 node tools/trip-test.mjs 算出，让配队一般打首领输 40% 左右
+  ['qingmao', '青茅山', 0, 'li', '山寨外的竹林里野蛊成群，蛊师入门的第一道坎。', 0.7, 1],
+  ['suishi', '碎石滩', 0, 'jin', '河滩上全是碎石，甲壳硬的野蛊躲在石缝里，不好啃。', 1.1],
+  ['shangjia', '商家城外', 1, 'zhi', '城外的商路上常有劫道的蛊师，阵法摆得比力气重要。', 1.3, 3],
+  ['zhangze', '南疆瘴泽', 1, 'xue', '泥沼里瘴气终年不散，这里的蛊靠吸血熬人。', 0.9, 1],
+  ['caohai', '北原草海', 2, 'nu', '草比人高，牧蛊的部族一放就是一群，以多打少。', 0.8, 1],
+  ['liusha', '西漠流沙', 2, 'jin', '风一起沙就动，披甲的蛊埋在沙下等人踩上来。', 1.3, 2],
   ['wangting', '王庭福地', 3, 'li', '北原诸部争了几百年的福地，守在这里的都是硬骨头。', 1.1],
-  ['jiaodao', '东海礁岛', 3, 'xue', '潮水退了才露出来的礁岛，礁缝里的蛊受了伤反而更凶。', 0.8],
-  ['maigu', '埋骨荒原', 3, 'hun', '大战之后没人收的战场，倒下的蛊在这里不肯散。', 1.35],
-  ['langya', '琅琊福地', 4, 'nu', '云上的福地，满山的毛民听一个声音调遣。', 1.05],
-  ['yitian', '义天山', 4, 'hun', '正魔两道在山上打了一场大仗，山里至今魂火不灭。', 1.25],
-  ['baohuang', '宝黄天', 5, 'jin', '天下蛊师做买卖的地方，守库的蛊一身金甲。'],
-  ['tianting', '天庭', 5, 'zhi', '中洲之上的天庭，一步一阵，算无遗策。', 1.15],
+  ['jiaodao', '东海礁岛', 3, 'xue', '潮水退了才露出来的礁岛，礁缝里的蛊受了伤反而更凶。', 1.1],
+  ['maigu', '埋骨荒原', 3, 'hun', '大战之后没人收的战场，倒下的蛊在这里不肯散。', 1.3],
+  ['langya', '琅琊福地', 4, 'nu', '云上的福地，满山的毛民听一个声音调遣。', 1.2],
+  ['yitian', '义天山', 4, 'hun', '正魔两道在山上打了一场大仗，山里至今魂火不灭。', 1.3, 1],
+  ['baohuang', '宝黄天', 5, 'jin', '天下蛊师做买卖的地方，守库的蛊一身金甲。', 1.3, 2],
+  ['tianting', '天庭', 5, 'zhi', '中洲之上的天庭，一步一阵，算无遗策。'],
 ];
-export const LANDS = LAND_DEF.map(([id, n, realm, dao, d, bk = 1]) => ({ id, n, realm, quota: QUOTA[realm], cap: rankCapOf(QUOTA[realm]), dao, d, bk }));
+export const LANDS = LAND_DEF.map(([id, n, realm, dao, d, bk = 1, bv = 0]) => ({ id, n, realm, quota: QUOTA[realm], cap: rankCapOf(QUOTA[realm]), dao, d, bk, bv }));
 export const LAND = Object.fromEntries(LANDS.map(l => [l.id, l]));
 export const landsOf = realm => LANDS.filter(l => l.realm === realm);
 const landOf = x => (x && typeof x === 'object' ? x : LAND[x] || landsOf(Math.max(0, Math.min(5, x | 0)))[0] || LANDS[0]);
@@ -143,7 +143,7 @@ export function foeByBudget(rng, budget, o = {}) {
 export const bossFrac = land => TRIP_CFG.foe.boss * (landOf(land).bk || 1);
 export function landBoss(land) {
   const L = landOf(land);
-  return foeByBudget(makeRng('boss:v4:' + L.id), L.quota, { dao: L.dao, kind: 'boss', maxRank: L.cap, frac: bossFrac(L) });
+  return foeByBudget(makeRng('boss:v4:' + L.id + (L.bv ? ':' + L.bv : '')), L.quota, { dao: L.dao, kind: 'boss', maxRank: L.cap, frac: bossFrac(L) });
 }
 LANDS.forEach(l => { l.boss = landBoss(l).map(g => ({ sp: g.sp, rank: g.rank, pos: g.pos ? { ...g.pos } : null, boss: g.boss || 0 })); });
 // 房间里的敌阵（同一种子、同一层、同一条路永远是同一伙）
