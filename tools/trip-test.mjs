@@ -208,7 +208,7 @@ console.log('# 7b 赢了救回，输了全死');
 }
 console.log('# 8 奇遇');
 {
-  const FX = ['heal', 'food', 'gu', 'bump', 'xing', 'shortcut', 'slow', 'hurtFront', 'hurtAll', 'healLow', 'pay'];
+  const FX = ['heal', 'food', 'gu', 'bump', 'xing', 'shortcut', 'slow', 'hurtFront', 'hurtAll', 'healLow', 'pay', 'payGu'];
   ok(T.EVENTS.length === 10 && new Set(T.EVENTS.map(e => e.id)).size === 10, `10 个奇遇：${T.EVENTS.map(e => e.n).join('、')}`);
   ok(T.EVENTS.every(e => e.s && e.o.length === 2 && e.o.every(o => o.t && Object.keys(o.fx).every(k => FX.includes(k)) && (!o.fx.xing || XING[o.fx.xing]))), '每个奇遇两个选项，效果都认得');
   ok(T.EVENTS.every(e => e.o.every(o => T.fxText(o.fx).length > 3)), '每个选项的结果都写成了人话');
@@ -220,6 +220,16 @@ console.log('# 8 奇遇');
   t = mk('duzhang'); T.tripEvent(t, team, 0, UNIT, purse); ok(t.short === 0.5 && t.order.every(u => t.hp[u] >= 1 && t.hp[u] < t.mx[u]), '穿瘴气：全队掉血但不会掉到 0，路减半');
   t = mk('xuechi'); t.hp[u0] = 1; T.tripEvent(t, team, 0, UNIT, purse); ok(t.hp[u0] > 1, '赤水潭：回伤得最重的那只');
   t = T.tripStart('tea', 1, team, { trip: ['tea'] }); t.hp[u0] = 1; ok(T.tripPreFight(t) > 0 && t.hp[u0] > 1, '回春茶：每场开打前全队回血');
+}
+console.log('# 8b 坊市和花元气换蛊不比蛊市便宜');
+{
+  const C = await import('../src/core.js'); let cheap = 0, n = 0;
+  for (const r of [0, 1, 2, 3, 4, 5]) for (let k = 0; k < 40; k++) { const t = T.tripStart('mw' + k, T.landsOf(r)[0].id, player(makeRng('mw' + k), r)); t.d = k % 9; t.pick = 0;
+    t.map = [{ rooms: [{ type: 'market', lane: 0, d: t.d, cost: 1 }] }]; t.map[t.d] = t.map[0]; t.prog = 1e9; T.tripPour(t, 1, { bank: 0 });
+    const g = t.room && t.room.wares && t.room.wares.find(x => x.k === 'gu'); if (!g) continue; n++; if (g.price < C.PRICE.gu * Math.pow(C.PRICE.rankK, g.g.rank - 1)) cheap++; }
+  ok(n > 100 && !cheap, `坊市卖的蛊按那只的转数定价，不比蛊市便宜（抽查 ${n} 次，便宜的 ${cheap} 次）`);
+  const t = T.tripStart('pg', T.landsOf(4)[0].id, player(makeRng('pg'), 4)), pay = T.evPay(t, T.EVENT.luonan.o[0].fx, 1);
+  ok(pay === Math.round(T.guPrice(5) * T.TRIP_CFG.pay.gu), `奇遇「分他一些元气」换蛊：四转境界要 ${pay} 千（五转蛊在蛊市 ${T.guPrice(5)} 千的 ${T.TRIP_CFG.pay.gu * 100}%）`);
 }
 console.log('# 9 天象、首领机制、祝福、劫数、渡劫奖励、出征食物');
 {

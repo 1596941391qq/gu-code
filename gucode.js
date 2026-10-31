@@ -2233,9 +2233,12 @@ const ARENAS = [4, 9, 15, 22];
 const arenaOf = team => ARENAS.find(q => quotaOf(team) <= q) || 0;   // 这队最低能进几点场（超过 22 点返回 0）
 // 各转的主色（升转外貌、转数角标用）：一转青铜、二转赤铁、三转白银、四转黄金、五转紫晶
 const ZHENYUAN = { colors: ['#a0703f', '#a0703f', '#a4442c', '#9aa4ab', '#d9a441', '#7d62a8'] };
-// 价格（元气 = 消耗的 token）：单位是「千」，乘 tokens.js 的 unit 才是 token 数（插件 8000，网页 200）。
-// gu 买一只蛊；refresh 转市；sell 卖蛊退回 = sell × 3^(合成次数)（三只合一只，退回也按三倍走）；食物的价格 = FOODS[].cost × food
-const PRICE = { gu: 75, refresh: 25, sell: 25, food: 25 };
+// 价格（元气 = 消耗的 token）：单位是「千」，乘 tokens.js 的 unit 才是 token 数（插件 8000，网页 200）。数字按真实画像调过，见 tools/econ-sim.mjs：
+// 中位数玩家（每天约 120 活跃分钟 × 21.4 万）走一趟秘境之后剩下的元气，大约够养出一只五转。
+// gu 一转蛊的价钱，原生 N 转的蛊 × rankK^(N−1)（三只合一只，价钱也按三倍走，买五转原生蛊和自己合出来花的一样多）；
+// refresh 转市；sell 卖蛊退回 = sell × rankK^(转数−1)（按现在的转数，约买价的三分之一）；食物的价格 = FOODS[].cost × food
+const PRICE = { gu: 20, rankK: 3, refresh: 8, sell: 7, food: 7 };
+const guCost = sp => PRICE.gu * Math.pow(PRICE.rankK, baseRank(sp) - 1);   // 单位同 PRICE；蛊市里「升转露」多升的那一转不加价
 // 蛊囊（场下）：凑合成用，不上场、不跟去渡劫，放在里面绝对安全。固定 8 格
 const BAG = { cap: 8 };
 const bagCap = () => BAG.cap;
@@ -2443,7 +2446,7 @@ function mergeAll(team, bag = [], pick) {
   }
   return done;
 }
-const sellValue = g => PRICE.sell * Math.pow(3, fuseLv(g));   // 单位同 PRICE
+const sellValue = g => PRICE.sell * Math.pow(PRICE.rankK, rankOf(g) - 1);   // 单位同 PRICE
 
 // ---------- 食物 ----------
 // 喂加攻血的食物：只喂还没吃满 ATE_MAX 次的，返回真正吃到的。永久加成记在 bonusA/bonusH（合成换表值时保留）
@@ -8323,8 +8326,10 @@ const TRIP_CFG = {
     boss: { food: [1, 0], gu: [0, 0] },        // 首领另有「渡劫成功必掉」二选一（bossReward）
     up: [0.05, 0.05], rare: 5,
   },
-  market: { heal: 0.4, price: { heal: 35, food: 45, gu: 70 }, realm: 0.25 },   // 坊市价格（千，乘 unit 得元气），每高一境 +25%
-  pay: { realm: 0.25 },                        // 奇遇里要花的元气，每高一境 +25%
+  // 坊市价格（千，乘 unit 得元气）。蛊和食物按洞府蛊市的价钱（core.PRICE）再加秘境溢价，免得坊市成了便宜货源：
+  //   蛊 = 20 × 3^(这只的转数 − 1) × gu；食物 = 价格档 × 7 × food；药汤 = heal 价 × (1 + 境界 × realm)。劫数涨价、祝福「熟客」半价另乘
+  market: { heal: 0.4, price: { heal: 35 }, prem: { gu: 1.25, food: 2 }, realm: 0.25 },
+  pay: { realm: 0.25, gu: 0.75 },              // 奇遇里要花的元气，每高一境 +25%；拿元气换蛊的（payGu）= 这个境界最高转数的蛊在蛊市的价钱 × gu
   bless: 3,                                    // 祝福一次给几个选（灵台房间、打赢精英后）
 };
 // n 名字、ch 地图上的单字、k 图例里的一句用途、tip 地图格子悬停的一句话（是什么、能得到什么）、d 进房间后的说明
@@ -8510,7 +8515,7 @@ const EVENTS = [
   { id: 'xuechi', n: '赤水潭', s: '一潭暗红的水冒着热气。泡进去伤口发烫，出来却像换了一身筋骨。',
     o: [{ t: '让伤得最重的蛊泡进去', fx: { healLow: 0.6 } }, { t: '让最前的蛊泡到发烫', fx: { xing: 'yuxue', hurtFront: 0.25 } }] },
   { id: 'luonan', n: '落难修士', s: '一个修士靠着石头喘气，元气耗尽了，身边一只蛊守着他不肯走。',
-    o: [{ t: '分他一些元气', fx: { pay: 30, gu: 1, bump: 1 } }, { t: '问他前面的路', fx: { shortcut: 0.7 } }] },
+    o: [{ t: '分他一些元气', fx: { pay: 30, payGu: 1, gu: 1, bump: 1 } }, { t: '问他前面的路', fx: { shortcut: 0.7 } }] },
 ];
 const EVENT = Object.fromEntries(EVENTS.map(e => [e.id, e]));
 function pickEvent(seed, d, lane, seen = []) {
@@ -8518,7 +8523,8 @@ function pickEvent(seed, d, lane, seen = []) {
   return rng.pick(pool.length ? pool : EVENTS).id;
 }
 // 一个选项写成人话：结果是什么、放到哪
-const evPay = (t, fx, unit) => fx && fx.pay ? Math.round(fx.pay * unit * (1 + (t ? t.realm : 0) * TRIP_CFG.pay.realm)) : 0;
+const guPrice = rank => PRICE.gu * Math.pow(PRICE.rankK, Math.max(1, rank | 0) - 1);   // 一只 rank 转的蛊在蛊市值多少（千）：买原生的或三合一升上来都是这个价
+const evPay = (t, fx, unit) => !fx || !fx.pay ? 0 : Math.round(unit * (fx.payGu ? guPrice(driveCap(t ? t.realm : 0)) * TRIP_CFG.pay.gu : fx.pay * (1 + (t ? t.realm : 0) * TRIP_CFG.pay.realm)));
 function fxText(fx, pay = 0) {
   const out = [], pc = p => Math.round(p * 100) + '%';
   if (fx.pay) out.push(`花 ${fmtTok(pay || fx.pay)} 元气`);
@@ -8803,8 +8809,11 @@ function tripCamp(t) {
 }
 // 坊市：三样货，花元气（先花攒着的）
 function marketWares(t, r) {   // 价格：每高一境 +25%；劫数涨价、祝福「熟客」半价
-  const M = TRIP_CFG.market, rng = makeRng(`trip:${t.seed}:mk:${t.d}:${r.lane}`), m = (1 + t.realm * M.realm) * jieRules(t.kalpa).price * blessRules(t.bless).price;
-  return [{ k: 'heal', p: M.heal, price: Math.round(M.price.heal * m) }, { k: 'food', id: foodPick(rng, foodPoolOf(t), t.d), price: Math.round(M.price.food * m) }, { k: 'gu', g: lootGu(rng, t.realm, t.d, 0, t.spPool), price: Math.round(M.price.gu * m) }];
+  const M = TRIP_CFG.market, rng = makeRng(`trip:${t.seed}:mk:${t.d}:${r.lane}`), k = jieRules(t.kalpa).price * blessRules(t.bless).price;
+  const fd = foodPick(rng, foodPoolOf(t), t.d), g = lootGu(rng, t.realm, t.d, 0, t.spPool);
+  return [{ k: 'heal', p: M.heal, price: Math.round(M.price.heal * (1 + t.realm * M.realm) * k) },
+    { k: 'food', id: fd, price: Math.round(((FOOD[fd] && FOOD[fd].cost) || 3) * PRICE.food * M.prem.food * k) },
+    { k: 'gu', g, price: Math.round(guPrice(g.rank) * M.prem.gu * k) }];
 }
 const wareTok = (w, unit) => w.price * unit;
 function tripBuy(t, i, unit, purse) {
@@ -9167,7 +9176,7 @@ const TXT = {
   bagSub: '场下 · 凑合成用 · 不跟去渡劫，绝对安全',
   bagTip: () => `蛊囊 ${S.bag.length}/${BC()}：场下的蛊放这里，不上场、不跟去渡劫，所以绝对安全。主要用来凑合成：空窍和蛊囊里同种同转的蛊凑够三只，自动合成高一转。拖进空窍就上场。`,
   shopHead: '蛊市',
-  shopTip: '花元气买蛊和食物。什么道的蛊都会刷，罗盘选中的道出现得稍多一点（+5%）。转市换一批，冻结的货下次还在。',
+  shopTip: '花元气买蛊和食物。原生转数越高的蛊越贵，每高一转贵三倍，和自己买三只合一只花的一样多。什么道的蛊都会刷，罗盘选中的道出现得稍多一点（+5%）。转市换一批，冻结的货下次还在。',
   refresh: c => `转市 · ${c}`,
   freeze: on => on ? '解冻' : '冻结',
   daoNone: '罗盘：渡劫回来可以转一次',
@@ -9538,7 +9547,7 @@ function wareHTML(w, i) {
     const f = FOOD[w.id], c = price(foodCost(w.id));
     return `<div class="ware food${w.frozen ? ' frozen' : ''}${w.sold ? ' sold' : ''}"><button class="wbuy" data-act="ware" data-i="${i}" data-tip-fn="ware"${w.sold ? ' disabled' : ''}><span class="fart">${foodSVG(w.id)}</span><b>${esc(f.n)}</b><small>${FOOD_KIND[f.kind]}</small><span class="tag">${w.sold ? '已购' : fmtTok(c)}</span></button></div>`;
   }
-  const s = SP[w.sp], wr = w.rank || baseRank(w.sp), st = statFor(w.sp, wr), c = price(PRICE.gu), merge = !w.sold && owned(w.sp, wr) >= 2, gain = !w.sold && !merge ? resoGain(S.team, w.sp) : null;
+  const s = SP[w.sp], wr = w.rank || baseRank(w.sp), st = statFor(w.sp, wr), c = price(guCost(w.sp)), merge = !w.sold && owned(w.sp, wr) >= 2, gain = !w.sold && !merge ? resoGain(S.team, w.sp) : null;
   return `<div class="ware${w.frozen ? ' frozen' : ''}${w.sold ? ' sold' : ''}${merge ? ' merge' : ''}"><button class="wbuy" data-act="ware" data-i="${i}" data-tip-fn="ware"${w.sold ? ' disabled' : ''}><span class="art">${guSVG(w.sp, { rank: wr })}</span>${dzHTML(w.sp)}${w.rank ? `<span class="rk rk${wr}">${RANK.ch[wr]}</span>` : ''}${gearHTML({ food: w.gear })}<b>${s.n}</b><span class="st"><i class="a">${st.atk}</i><i class="h">${st.hp}</i></span><span class="tag">${w.sold ? '已购' : (merge ? '合成 · ' : '') + fmtTok(c)}</span>${merge ? '<span class="fu">可合成</span>' : gain ? `<span class="fu rzg">${TXT.resoGain}</span>` : ''}</button></div>`;
 }
 // 收着还没生效的食物：下一场战斗带着的、下一次转市的
@@ -9741,7 +9750,7 @@ function meters() {
   if (sl.length >= 2) setHTML(sr, sl.map(x => `<span class="schip${x.rate > 0 ? '' : ' off'}">${esc(x.name)} <b>${fmtTok(x.rate)}/s</b></span>`).join(''));
   const st = $('#srcTag'); st.textContent = VSC ? TXT.srcLive : TXT.srcDemo; st.classList.toggle('demo', !VSC);
   const dm = $('#demo'); dm.hidden = !!VSC || src.mode !== 'demo'; dm.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.m === src.demo));   // 插件里永远不显示模拟开关
-  document.querySelectorAll('.wbuy .tag').forEach(t => { const w = S.shop[+t.closest('.wbuy').dataset.i]; if (w && !w.sold) t.classList.toggle('poor', S.bank < price(w.kind === 'food' ? foodCost(w.id) : PRICE.gu)); });
+  document.querySelectorAll('.wbuy .tag').forEach(t => { const w = S.shop[+t.closest('.wbuy').dataset.i]; if (w && !w.sold) t.classList.toggle('poor', S.bank < price(w.kind === 'food' ? foodCost(w.id) : guCost(w.sp))); });
 }
 // ---------- 主题：自动跟随系统 / VS Code，或手动日、夜 ----------
 let veinRGB = '111,183,164';
@@ -10125,7 +10134,7 @@ const TIPS = {
   gu: t => { const i = S.team.findIndex(g => g.uid === t.dataset.uid); return guTip(S.team[i], S.team, i); },
   bag: () => esc(TXT.bagTip()),
   bg: t => { const g = S.bag[+t.dataset.i]; return g ? guTip(g) + '<small>在蛊囊里：不上场、不跟去渡劫，拖进空窍才上场</small>' : ''; },
-  ware: t => { const w = S.shop[+t.dataset.i]; if (!w) return ''; if (w.kind === 'food') { const f = FOOD[w.id]; return `${fi(f.id)}<b>${esc(f.n)}</b> · ${FOOD_KIND[f.kind]}<br>${esc(f.d)}<br><small>价格 ${fmtTok(price(foodCost(w.id)))} 元气</small>`; } const wr = w.rank || baseRank(w.sp), n = owned(w.sp, wr), ng = newGu(w.sp, wr); if (w.gear) ng.food = w.gear; return guTip(ng).replace('<small>点开看完整详情</small>', '') + `<small>价格 ${fmtTok(price(PRICE.gu))} 元气 · 点开看完整详情</small>` + (n >= 2 ? `<p>你已有 ${n} 份${RANK.names[wr]}${SP[w.sp].n}，买下当场合成${RANK.names[wr + 1]}</p><p>${esc(TXT.mergeAfter(mergePreview(w.sp, wr)))}</p>` : '' + (n < 2 && resoGain(S.team, w.sp) ? `<p>${esc(TXT.resoGainTip(resoGain(S.team, w.sp)))}</p>` : '')); },
+  ware: t => { const w = S.shop[+t.dataset.i]; if (!w) return ''; if (w.kind === 'food') { const f = FOOD[w.id]; return `${fi(f.id)}<b>${esc(f.n)}</b> · ${FOOD_KIND[f.kind]}<br>${esc(f.d)}<br><small>价格 ${fmtTok(price(foodCost(w.id)))} 元气</small>`; } const wr = w.rank || baseRank(w.sp), n = owned(w.sp, wr), ng = newGu(w.sp, wr); if (w.gear) ng.food = w.gear; return guTip(ng).replace('<small>点开看完整详情</small>', '') + `<small>价格 ${fmtTok(price(guCost(w.sp)))} 元气 · 点开看完整详情</small>` + (n >= 2 ? `<p>你已有 ${n} 份${RANK.names[wr]}${SP[w.sp].n}，买下当场合成${RANK.names[wr + 1]}</p><p>${esc(TXT.mergeAfter(mergePreview(w.sp, wr)))}</p>` : '' + (n < 2 && resoGain(S.team, w.sp) ? `<p>${esc(TXT.resoGainTip(resoGain(S.team, w.sp)))}</p>` : '')); },
 };
 let tipT = 0, tipEl = null, tipFor = null, tipLongT = 0, tipLongAt = -1e9;
 function tipShow(t) {
@@ -10211,7 +10220,7 @@ function buyWare(i) {
     useFood(w.id, 'shop', i); return;
   }
   if (!canBuy(S.team, w.sp, curCap(), S.bag, BC())) { note(TXT.bagFull); return; }
-  if (!pay(PRICE.gu)) return;
+  if (!pay(guCost(w.sp))) return;
   const g = newGu(w.sp, w.rank || undefined); if (w.gear && FOOD[w.gear]) g.food = w.gear; w.sold = true; w.frozen = false;
   note(TXT.bought(g)); achieve('buys', 1); closeSheet();
   placeNew(g, 'shop'); snd('coin');
@@ -10229,7 +10238,7 @@ const ACT = {
     const i = +a.dataset.i, w = S.shop[i]; if (!w) return;
     if (w.kind === 'food') { const f = FOOD[w.id]; sheet(`<div class="fhead"><span class="fbig">${foodSVG(f.id)}</span><div><h3>${esc(f.n)} <small>${FOOD_KIND[f.kind]}</small></h3><p>${esc(f.d)}</p></div></div><div class="row2"><button data-act="freeze" data-i="${i}">${TXT.freeze(w.frozen)}</button><button class="zhu" data-act="buy" data-i="${i}"${!w.sold && canPay(foodCost(w.id)) ? '' : ' disabled'}>买下 ${fmtTok(price(foodCost(w.id)))}</button></div><p class="sm">余 ${fmtTok(S.bank)} 元气</p>`); return; }
     const g = newGu(w.sp); guDetail(g, { kind: 'shop' });
-    const sh = $('.sheet'); if (sh) sh.insertAdjacentHTML('beforeend', `<div class="row2"><button data-act="freeze" data-i="${i}">${TXT.freeze(w.frozen)}</button><button class="zhu" data-act="buy" data-i="${i}"${!w.sold && canPay(PRICE.gu) ? '' : ' disabled'}>${owned(w.sp) >= 2 ? '买下并合成 ' : '买下 '}${fmtTok(price(PRICE.gu))}</button></div><p class="sm">余 ${fmtTok(S.bank)} 元气</p>`);
+    const sh = $('.sheet'); if (sh) sh.insertAdjacentHTML('beforeend', `<div class="row2"><button data-act="freeze" data-i="${i}">${TXT.freeze(w.frozen)}</button><button class="zhu" data-act="buy" data-i="${i}"${!w.sold && canPay(guCost(w.sp)) ? '' : ' disabled'}>${owned(w.sp) >= 2 ? '买下并合成 ' : '买下 '}${fmtTok(price(guCost(w.sp)))}</button></div><p class="sm">余 ${fmtTok(S.bank)} 元气</p>`);
   },
   buy(a) { buyWare(+a.dataset.i); },
   freeze(a) { const w = S.shop[+a.dataset.i]; if (!w) return; w.frozen = !w.frozen; closeSheet(); renderShop(); save(); },
