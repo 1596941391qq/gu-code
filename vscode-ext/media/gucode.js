@@ -835,7 +835,7 @@ const META = {
 return { NAT_BASE, natMulOf, LEAD, trCapOf, NEW_TRAITS, NEW_SPECIES, OLD_EXTRA, NEW_SUMMONS, NEW_POOL, IMMORTALS, LEGENDS, NEW_COMBOS, SCHOOLS, FLOW, OLD_SCHOOL, DOOM, BX, NEW_RECIPES, META };
 })();
 // ---- src/bestiary2.js（包一层，只放出 export）
-const { NAT_UP, natK, natText, NATS, ACTS, ACT_COUNT, SPECIES2, SUMMONS2, ST_GROW, ST120, PATCH64, BATTLE120, DAO120, CANON, NAT_OF, KW, KW120 } = (() => {
+const { NAT_UP, natK, natText, NATS, ACTS, ACT_COUNT, SPECIES2, SUMMONS2, IMMORTAL, ST_GROW, BAL, ST120, PATCH64, BATTLE120, DAO120, CANON, NAT_OF, KW, KW120 } = (() => {
 // 蛊码 GuCode · 蛊典第二卷（v2 第三版规则）：120 种蛊的技能、战斗字段、每转攻血表。纯数据 + 纯函数，不 import 任何文件。
 // 规则：docs/design.md 2.6（只有技能：被动技能 = 本命，必有；约四成另有主动技能；三转、五转各觉醒一次，两个技能一起强化）。
 // 格式：docs/battle-spec.md 第二版（3×3 阵盘、shape 形状、knock/draw/swap/eat、chill 寒、inflict/allyInflict 跨道触发）。
@@ -871,13 +871,13 @@ const natText = (key, rank) => { const t = NATS[key]; return t ? fmt(t.src.d, na
 // ======================= 被动技能（本命）· 120 种 =======================
 const NATS = {
   // ---------- 力道 ----------
-  rage: N('越伤越狂', '猛', '受击', '被打中还活着：攻 +〔6〕%（每场最多 8 次）',
+  rage: N('越伤越狂', '猛', '受击', '开战嘲讽敌方（到下一轮）；被打中还活着：攻 +〔6〕%（每场最多 8 次）',
     ['血量第一次掉到一半以下：冲撞同一行最近的敌蛊，攻击 〔150〕%，击退一格', '第一次受到致命伤时留 1 血，攻 +〔30〕%'],
-    [E('hit', 'buff', 'self', { atk: 0.06, max: 8 })],
+    [E('start', 'st', 'self', { k: 'taunt', n: 2 }), E('hit', 'buff', 'self', { atk: 0.06, max: 8 })],
     [[E('low', 'dmg', 'foe.front', { atk: 1.5 }), E('low', 'knock', 'same', { v: 1 })], [E('lethal', 'endure', null, { v: 0, max: 1 }), E('lethal', 'buff', 'self', { atk: 0.3, max: 1 })]]),
-  blitz: N('黑豕冲阵', '疾', '出手', '第一次普攻额外打出攻击 〔100〕%',
+  blitz: N('黑豕冲阵', '疾', '出手', '第一次普攻额外打出攻击 〔100〕%，并把目标击退一格',
     ['开战先冲：同一行最近的敌蛊受攻击 〔60〕%，击退一格', '打满血的敌蛊，伤害 +40%'],
-    [E('attack', 'dmg', 'tg', { atk: 1.0, if: 'first' })],
+    [E('attack', 'dmg', 'tg', { atk: 1.0, if: 'first' }), E('attack', 'knock', 'tg', { v: 1, if: 'first' })],
     [[E('start', 'dmg', 'foe.front', { atk: 0.6 }), E('start', 'knock', 'same', { v: 1 })], [E('deal', 'mul', null, { v: 1.4, if: 'tg.full' })]]),
   beat: N('战鼓', '战', '每轮', '每轮开始：同一行身前的友蛊攻 +〔5〕%',
     ['同时给它本蛊最大血量 〔5〕% 的护体', '每 3 轮全体友蛊攻 +〔6〕%'],
@@ -899,9 +899,9 @@ const NATS = {
     ['开战得到最大血量 〔10〕% 的护体', '血量第一次掉到一半以下时攻 +〔25〕%'],
     [E('attack', 'dmg', 'tg', { mx: 0.03 }), E('attack', 'knock', 'tg', { v: 1, chance: 0.4 })],
     [[E('start', 'shield', 'self', { mx: 0.1 })], [E('low', 'buff', 'self', { atk: 0.25 })]]),
-  skyhold: N('擎天', '擎', '每轮', '每轮开始攻 +〔4〕%；同一列的友蛊攻 +〔2〕%',
+  skyhold: N('擎天', '擎', '每轮', '每轮开始攻 +〔3〕%；同一列的友蛊攻 +〔2〕%（各最多 6 次）',
     ['开战：同一列的友蛊各得本蛊最大血量 〔10〕% 的护体', '击杀时攻 +〔10〕%'],
-    [E('round', 'buff', 'self', { atk: 0.04 }), E('round', 'buff', 'ally.col', { atk: 0.02 })],
+    [E('round', 'buff', 'self', { atk: 0.03, max: 6 }), E('round', 'buff', 'ally.col', { atk: 0.02, max: 6 })],
     [[E('start', 'shield', 'ally.col', { mx: 0.1 })], [E('kill', 'buff', 'self', { atk: 0.1 })]]),
 
   // ---------- 炎道 ----------
@@ -925,18 +925,18 @@ const NATS = {
     ['血量低于一半时再烧一遍', '倒下时敌方全体灼烧 2 轮（攻击 〔20〕%）'],
     [E('round', 'dmg', 'self', { mx: 0.03, up: 0, pierce: 1 }), E('round', 'dmg', 'foe.all', { atk: 0.1 })],
     [[E('round', 'dmg', 'foe.all', { atk: 0.1, if: 'hp<50' })], [E('death', 'st', 'foe.all', { k: 'burn', n: 2, atk: 0.2 })]]),
-  coal: N('积炭', '炭', '受击', '被普攻打中：打它的那只灼烧 2 轮（攻击 〔12〕%），自己攻 +〔3〕%（每场最多 8 次）',
+  coal: N('积炭', '炭', '受击', '被普攻打中：打它的那只灼烧 2 轮（攻击 〔12〕%），自己攻 +〔2〕%（每场最多 5 次）',
     ['开战得到最大血量 〔10〕% 的护体', '倒下时炭火迸出：最近的敌蛊和它十字范围各受攻击 〔60〕%'],
-    [E('hit', 'st', 'src', { k: 'burn', n: 2, atk: 0.12, if: 'kind=hit' }), E('hit', 'buff', 'self', { atk: 0.03, if: 'kind=hit', max: 8 })],
+    [E('hit', 'st', 'src', { k: 'burn', n: 2, atk: 0.12, if: 'kind=hit' }), E('hit', 'buff', 'self', { atk: 0.02, if: 'kind=hit', max: 5 })],
     [[E('start', 'shield', 'self', { mx: 0.1 })], [E('death', 'dmg', 'foe.front', { atk: 0.6, shape: 'cross' })]]),
-  ignite: N('燧火', '燧', '引燃', '每有敌蛊被点燃（谁点的都算），燧石跟着对它打出攻击 〔25〕%；每 2 轮点燃最近的敌蛊 2 轮（攻击 〔10〕%）',
-    ['单数轮也点', '跟打的伤害再加 〔15〕%'],
-    [E('inflict', 'dmg', 'tg', { atk: 0.25, if: 'k=burn' }), E('allyInflict', 'dmg', 'tg', { atk: 0.25, if: 'k=burn' }), E('round', 'st', 'foe.front', { k: 'burn', n: 2, atk: 0.1, every: 2 })],
-    [[E('round', 'st', 'foe.front', { k: 'burn', n: 2, atk: 0.1, if: 'round%2' })], [E('inflict', 'dmg', 'tg', { atk: 0.15, if: 'k=burn' }), E('allyInflict', 'dmg', 'tg', { atk: 0.15, if: 'k=burn' })]]),
+  ignite: N('燧火', '燧', '引燃', '每有敌蛊被点燃（谁点的都算），燧石跟着对它打出攻击 〔12〕%（每场最多 10 次）；每 2 轮点燃最近的敌蛊 2 轮（攻击 〔10〕%）',
+    ['单数轮也点', '跟打的伤害再加 〔8〕%'],
+    [E('inflict', 'dmg', 'tg', { atk: 0.12, if: 'k=burn', max: 10 }), E('allyInflict', 'dmg', 'tg', { atk: 0.12, if: 'k=burn', max: 10 }), E('round', 'st', 'foe.front', { k: 'burn', n: 2, atk: 0.1, every: 2 })],
+    [[E('round', 'st', 'foe.front', { k: 'burn', n: 2, atk: 0.1, if: 'round%2' })], [E('inflict', 'dmg', 'tg', { atk: 0.08, if: 'k=burn', max: 10 }), E('allyInflict', 'dmg', 'tg', { atk: 0.08, if: 'k=burn', max: 10 })]]),
   lavashell: N('熔壳', '熔', '受击', '被近战打中：打它的那只受本蛊最大血量 〔3〕% 的伤害，灼烧 2 轮（攻击 〔12〕%）',
-    ['开战：上下左右相邻的友蛊各得本蛊最大血量 〔6〕% 的护体', '血量第一次掉到一半以下：熔壳爆开，最近的敌蛊和它周围一圈各受本蛊最大血量 〔8〕%'],
+    ['开战：上下左右相邻的友蛊各得本蛊最大血量 〔4〕% 的护体', '血量第一次掉到一半以下：熔壳爆开，最近的敌蛊和它周围一圈各受本蛊最大血量 〔8〕%'],
     [E('hit', 'dmg', 'src', { mx: 0.03, if: 'melee' }), E('hit', 'st', 'src', { k: 'burn', n: 2, atk: 0.12, if: 'melee' })],
-    [[E('start', 'shield', 'ally.adj', { mx: 0.06 })], [E('low', 'dmg', 'foe.front', { mx: 0.08, shape: 'ring' })]]),
+    [[E('start', 'shield', 'ally.adj', { mx: 0.04 })], [E('low', 'dmg', 'foe.front', { mx: 0.08, shape: 'ring' })]]),
 
   // ---------- 冰雪道 ----------
   frost: N('霜冻', '霜', '出手', '普攻命中：目标寒 1 层（每层速 -15%，叠到三层冻住一次）',
@@ -947,9 +947,9 @@ const NATS = {
     ['开战：上下左右相邻的友蛊各得本蛊最大血量 〔8〕% 的冰茧护体', '开战：敌方速最快的那只寒 2 层'],
     [E('attack', 'st', 'tg', { k: 'chill', n: 1 })],
     [[E('start', 'shield', 'ally.adj', { mx: 0.08 })], [E('start', 'st', 'foe.fast', { k: 'chill', n: 2 })]]),
-  snowhop: N('踏雪', '踏', '出手', '普攻打寒中的敌蛊，额外打出攻击 〔40〕%',
+  snowhop: N('踏雪', '踏', '出手', '普攻打寒中的敌蛊，额外打出攻击 〔40〕%，并让它行动条推后 10%',
     ['第一次普攻让目标寒 2 层', '击杀后行动条提前 40%'],
-    [E('attack', 'dmg', 'tg', { atk: 0.4, if: 'tg.chill' })],
+    [E('attack', 'dmg', 'tg', { atk: 0.4, if: 'tg.chill' }), E('attack', 'delay', 'tg', { v: 0.1, if: 'tg.chill' })],
     [[E('attack', 'st', 'tg', { k: 'chill', n: 2, max: 1 })], [E('kill', 'adv', 'self', { v: 0.4 })]]),
   drag: N('迟滞', '迟', '开战', '开战：敌方速最快的两只各寒 1 层',
     ['每 3 轮再来一次', '寒中的敌蛊打它，伤害 -20%'],
@@ -1007,9 +1007,9 @@ const NATS = {
     ['站在最前（同一行身前没有友蛊）时，再扎回 〔30〕%', '扎中的蛊中毒（攻击 〔15〕%）'],
     [E('hit', 'dmg', 'src', { n: 0.4, if: 'melee' })],
     [[E('hit', 'dmg', 'src', { n: 0.3, if: 'melee&front' })], [E('hit', 'st', 'src', { k: 'psn', atk: 0.15, if: 'melee' })]]),
-  ripen: N('蓄势', '蓄', '每轮', '同一行身前有友蛊挡着时，每轮开始攻血 +〔6〕%',
+  ripen: N('蓄势', '蓄', '每轮', '同一行身前有友蛊挡着时，每轮开始攻血 +〔6〕%；每 3 轮给身前那只友蛊挂「护」1 次',
     ['站在最前时，每轮得到最大血量 〔5〕% 的护体', '蓄势翻倍'],
-    [E('round', 'buff', 'self', { atk: 0.06, hp: 0.06, if: 'back' })],
+    [E('round', 'buff', 'self', { atk: 0.06, hp: 0.06, if: 'back' }), E('round', 'st', 'ally.ahead', { k: 'guard', n: 1, every: 3 })],
     [[E('round', 'shield', 'self', { mx: 0.05, if: 'front' })], [E('round', 'buff', 'self', { atk: 0.06, hp: 0.06, if: 'back' })]]),
   cocoon: N('结茧', '茧', '每轮', '第 3 轮开始破茧：攻 +〔60〕%，回满血（每场一次）',
     ['开战结茧时挂「护」2 次', '第 2 轮先破一层小茧：攻 +〔30〕%'],
@@ -1031,9 +1031,9 @@ const NATS = {
     ['每场 4 株', '有友蛊被召唤时，全体友蛊回复最大血量 〔3〕%'],
     [E('attack', 'st', 'tg', { k: 'psn', atk: 0.1 }), E('kill', 'summon', null, { sp: 'grass', atk: 0.2, mx: 0.2, at: 'back', max: 2 })],
     [[E('kill', 'summon', null, { sp: 'grass', atk: 0.2, mx: 0.2, at: 'back', max: 2 })], [E('summon', 'heal', 'ally.all', { tmx: 0.03 })]]),
-  sunroot: N('扶桑', '桑', '每轮', '每轮开始：全体友蛊回复最大血量 〔3〕%',
+  sunroot: N('扶桑', '桑', '每轮', '每轮开始：全体友蛊回复最大血量 〔2〕%',
     ['同一列的友蛊再得本蛊最大血量 〔5〕% 的护体', '友蛊第一次倒下时，原地发出一株新芽（本蛊攻血 〔15〕%）'],
-    [E('round', 'heal', 'ally.all', { tmx: 0.03 })],
+    [E('round', 'heal', 'ally.all', { tmx: 0.02 })],
     [[E('round', 'shield', 'ally.col', { mx: 0.05 })], [E('allyDeath', 'summon', null, { sp: 'sprout', atk: 0.15, mx: 0.15, at: 'here', max: 1 })]]),
 
   // ---------- 土道 ----------
@@ -1058,23 +1058,23 @@ const NATS = {
     [E('round', 'shield', 'ally.row', { mx: 0.04, if: 'col=2' })],
     [[E('round', 'shield', 'ally.col', { mx: 0.04, if: 'col=2' })], [E('take', 'mul', null, { v: 0.75 })]],
     { hooks: { auraTake: (ctx, h, v, tg, amt) => amt } }),   // bestiary.js 的 dmgMod 写死调用 aegis 的 auraTake，这里给个原样返回，集成时删掉那行即可
-  stoneskin: N('石衣', '石', '开战', '开战得到最大血量 〔10〕% 的护体；受到的伤害 -10%',
+  stoneskin: N('石衣', '石', '开战', '开战得到最大血量 〔10〕% 的护体，嘲讽敌方（到下一轮）；受到的伤害 -10%',
     ['站在最前时再 -10%', '被打中时得到最大血量 〔2〕% 的护体（每场最多 8 次）'],
-    [E('start', 'shield', 'self', { mx: 0.1 }), E('take', 'mul', null, { v: 0.9 })],
+    [E('start', 'shield', 'self', { mx: 0.1 }), E('start', 'st', 'self', { k: 'taunt', n: 2 }), E('take', 'mul', null, { v: 0.9 })],
     [[E('take', 'mul', null, { v: 0.89, if: 'front' })], [E('hit', 'shield', 'self', { mx: 0.02, max: 8 })]]),
   earthdragon: N('翻土', '蚓', '免死', '断成两截还能活：第一次受到致命伤时留 15% 血',
     ['起身时攻 +〔15〕%', '起身时身后分出半截地龙（本蛊攻血 〔30〕%）'],
     [E('lethal', 'endure', null, { v: 0.15, max: 1 })],
     [[E('lethal', 'buff', 'self', { atk: 0.15, max: 1 })], [E('lethal', 'summon', null, { sp: 'wormhalf', atk: 0.3, mx: 0.3, at: 'behind', max: 1 })]]),
-  shiftmount: N('搬山', '搬', '每轮', '每 2 轮：最近的敌蛊受攻击 〔30〕%，并被击退两格（撞上就两只都受伤）',
+  shiftmount: N('搬山', '搬', '每轮', '每 2 轮：最近的敌蛊受攻击 〔30〕%，并被击退一格（撞上就两只都受伤）',
     ['被搬走的蛊攻 -〔6〕%（2 轮）', '单数轮也搬'],
-    [E('round', 'dmg', 'foe.front', { atk: 0.3, every: 2 }), E('round', 'knock', 'same', { v: 2, every: 2 })],
-    [[E('round', 'buff', 'same', { atk: -0.06, dur: 2, every: 2 })], [E('round', 'dmg', 'foe.front', { atk: 0.3, if: 'round%2' }), E('round', 'knock', 'same', { v: 2, if: 'round%2' })]]),
+    [E('round', 'dmg', 'foe.front', { atk: 0.3, every: 2 }), E('round', 'knock', 'same', { v: 1, every: 2 })],
+    [[E('round', 'buff', 'same', { atk: -0.06, dur: 2, every: 2 })], [E('round', 'dmg', 'foe.front', { atk: 0.3, if: 'round%2' }), E('round', 'knock', 'same', { v: 1, if: 'round%2' })]]),
 
   // ---------- 雷道 ----------
-  chain: N('连雷', '雷', '出手', '普攻后雷光沿斜线弹开：目标和它斜对角的敌蛊各受这一下的 〔40〕%',
+  chain: N('连雷', '雷', '出手', '普攻后雷光沿斜线弹开：目标和它斜对角的敌蛊各受这一下的 〔30〕%',
     ['20% 机会让被弹到的蛊全部眩晕一次', '本蛊打灼烧中的敌蛊，伤害 +25%（雷火相生）'],
-    [E('attack', 'dmg', 'tg', { n: 0.4, shape: 'diag' })],
+    [E('attack', 'dmg', 'tg', { n: 0.3, shape: 'diag' })],
     [[E('attack', 'st', 'same', { k: 'stun', n: 1, chance: 0.2 })], [E('deal', 'mul', null, { v: 1.25, if: 'tg.burn' })]]),
   storm: N('霆击', '霆', '每轮', '单数轮开始：敌方全体各受攻击 〔15〕%',
     ['先劈最近的那一整列，多吃 〔15〕%', '本蛊打有标记的敌蛊，伤害 +20%'],
@@ -1100,10 +1100,10 @@ const NATS = {
     ['磁力把目标拉近一格', '击杀时电到最近的敌蛊（攻击 〔50〕%）'],
     [E('attack', 'dmg', 'tg', { atk: 0.35, if: 'tg.stun' }), E('attack', 'st', 'tg', { k: 'stun', n: 1, chance: 0.15 })],
     [[E('attack', 'draw', 'tg', { v: 1 })], [E('kill', 'dmg', 'foe.front', { atk: 0.5 })]]),
-  ninebolt: N('九霄', '霄', '每轮', '每轮开始落 3 道雷，各劈敌方随机一只（攻击 〔12〕%）',
+  ninebolt: N('九霄', '霄', '每轮', '每轮开始落 3 道雷，各劈敌方随机一只（攻击 〔10〕%）',
     ['再多一道', '本蛊打有标记的敌蛊，伤害 +25%'],
-    [E('round', 'dmg', 'foe.rand', { atk: 0.12, times: 3 })],
-    [[E('round', 'dmg', 'foe.rand', { atk: 0.12 })], [E('deal', 'mul', null, { v: 1.25, if: 'tg.mark' })]]),
+    [E('round', 'dmg', 'foe.rand', { atk: 0.1, times: 3 })],
+    [[E('round', 'dmg', 'foe.rand', { atk: 0.1 })], [E('deal', 'mul', null, { v: 1.25, if: 'tg.mark' })]]),
 
   // ---------- 光道 ----------
   moon: N('月照', '月', '亡语', '倒下时月光照亮这一行：同一行身后的友蛊攻血 +〔25〕%，敌方最近的那一整行打上标记 2 轮',
@@ -1194,10 +1194,10 @@ const NATS = {
     ['普攻后回复这一下的 〔15〕%', '血量第一次掉到一半以下时攻 +〔20〕%'],
     [E('attack', 'dmg', 'tg', { n: 0.25, shape: 'row' }), E('attack', 'dmg', 'tg', { n: 0.25, shape: 'row', if: 'hp<50' })],
     [[E('attack', 'heal', 'self', { n: 0.15 })], [E('low', 'buff', 'self', { atk: 0.2 })]]),
-  drought: N('旱血', '魃', '每轮', '每轮开始：敌方全体各受攻击 〔5〕%，自己回复攻击 〔10〕%',
-    ['每 3 轮敌方全体灼烧 2 轮（攻击 〔10〕%）', '血量不过 15% 的敌蛊直接吸干'],
-    [E('round', 'dmg', 'foe.all', { atk: 0.05 }), E('round', 'heal', 'self', { atk: 0.1 })],
-    [[E('round', 'st', 'foe.all', { k: 'burn', n: 2, atk: 0.1, every: 3 })], [E('round', 'dmg', 'foe.lowp', { tmx: 1, up: 0, pierce: 1, if: 'tg.hp<15' })]]),
+  drought: N('旱血', '魃', '每轮', '每轮开始：敌方全体各受攻击 〔4〕%，自己回复攻击 〔6〕%',
+    ['每 3 轮敌方全体灼烧 2 轮（攻击 〔10〕%）', '击杀时回复最大血量 〔15〕%'],
+    [E('round', 'dmg', 'foe.all', { atk: 0.04 }), E('round', 'heal', 'self', { atk: 0.06 })],
+    [[E('round', 'st', 'foe.all', { k: 'burn', n: 2, atk: 0.1, every: 3 })], [E('kill', 'heal', 'self', { mx: 0.15 })]]),
 
   // ---------- 毒道 ----------
   sting: N('蝎尾', '尾', '开战', '开战：一针扎敌方最靠后的蛊，攻击 〔150〕%，中毒（攻击 〔20〕%）',
@@ -1284,15 +1284,15 @@ const NATS = {
     ['再扑一只', '自己倒下时扑三发'],
     [E('allyDeath', 'dmg', 'foe.rand', { atk: 0.4 }), E('allyDeath', 'st', 'same', { k: 'chill', n: 1 })],
     [[E('allyDeath', 'dmg', 'foe.rand', { atk: 0.4 })], [E('death', 'dmg', 'foe.rand', { atk: 0.4, times: 3 })]]),
-  dirge: N('骨笛', '笛', '友亡', '友蛊每倒下一只，全体友蛊攻 +〔5〕%',
+  dirge: N('骨笛', '笛', '友亡', '友蛊每倒下一只，全体友蛊攻 +〔3〕%',
     ['同时血 +〔5〕%', '敌蛊倒下也算（攻 +〔3〕%）'],
-    [E('allyDeath', 'buff', 'ally.all', { atk: 0.05 })],
+    [E('allyDeath', 'buff', 'ally.all', { atk: 0.03 })],
     [[E('allyDeath', 'buff', 'ally.all', { hp: 0.05 })], [E('foeDeath', 'buff', 'ally.all', { atk: 0.03 })]]),
 
   // ---------- 奴道 ----------
-  royal: N('王令', '王', '开战', '开战：上下左右相邻的友蛊攻血 +〔10〕%；每有友蛊被召唤，自己攻血 +〔5〕%（每场最多 8 次）',
+  royal: N('王令', '王', '开战', '开战：上下左右相邻的友蛊攻血 +〔8〕%；每有友蛊被召唤，自己攻血 +〔3〕%（每场最多 8 次）',
     ['开战先在身后召一只工蜂（本蛊攻血 〔40〕%）', '每有友蛊被召唤，全体友蛊攻 +〔2〕%（每场最多 6 次）'],
-    [E('start', 'buff', 'ally.adj', { atk: 0.1, hp: 0.1 }), E('summon', 'buff', 'self', { atk: 0.05, hp: 0.05, max: 8 })],
+    [E('start', 'buff', 'ally.adj', { atk: 0.08, hp: 0.08 }), E('summon', 'buff', 'self', { atk: 0.03, hp: 0.03, max: 8 })],
     [[E('start', 'summon', null, { sp: 'bee', atk: 0.4, mx: 0.4, at: 'behind' })], [E('summon', 'buff', 'ally.all', { atk: 0.02, max: 6 })]]),
   muster: N('点兵', '兵', '开战', '开战：身后召 2 只兵蚁（各本蛊攻血 〔35〕%）',
     ['有友蛊倒下时，自己攻 +〔6〕%', '每 3 轮补一只兵蚁'],
@@ -1302,13 +1302,13 @@ const NATS = {
     ['召 3 只', '倒下时蚜汁溅到敌方最近的那只：中毒（攻击 〔15〕%）'],
     [E('death', 'summon', null, { sp: 'aphidling', atk: 0.35, mx: 0.35, at: 'here', count: 2 })],
     [[E('death', 'summon', null, { sp: 'aphidling', atk: 0.35, mx: 0.35, at: 'here' })], [E('death', 'st', 'foe.front', { k: 'psn', atk: 0.15 })]]),
-  brood: N('抱卵', '卵', '受击', '被打中还活着：身后召一只小蛛（本蛊攻血 〔30〕%，每场 2 只）',
+  brood: N('抱卵', '卵', '受击', '被打中还活着：身后召一只小蛛（本蛊攻血 〔20〕%，每场 2 只）',
     ['每场 4 只', '有友蛊被召唤时，自己回复最大血量 〔4〕%'],
-    [E('hit', 'summon', null, { sp: 'spiderling', atk: 0.3, mx: 0.3, at: 'behind', max: 2 })],
-    [[E('hit', 'summon', null, { sp: 'spiderling', atk: 0.3, mx: 0.3, at: 'behind', max: 2 })], [E('summon', 'heal', 'self', { mx: 0.04 })]]),
-  nurture: N('哺育', '哺', '召唤', '每有友蛊被召唤：全体友蛊攻 +〔3〕%（每场最多 6 次）',
+    [E('hit', 'summon', null, { sp: 'spiderling', atk: 0.2, mx: 0.2, at: 'behind', max: 2 })],
+    [[E('hit', 'summon', null, { sp: 'spiderling', atk: 0.2, mx: 0.2, at: 'behind', max: 2 })], [E('summon', 'heal', 'self', { mx: 0.04 })]]),
+  nurture: N('哺育', '哺', '召唤', '每有友蛊被召唤：全体友蛊攻 +〔2〕%（每场最多 6 次）',
     ['开战先召一只兵蚁（本蛊攻血 〔40〕%）', '每有友蛊被召唤，自己回复最大血量 〔5〕%'],
-    [E('summon', 'buff', 'ally.all', { atk: 0.03, max: 6 })],
+    [E('summon', 'buff', 'ally.all', { atk: 0.02, max: 6 })],
     [[E('start', 'summon', null, { sp: 'antling', atk: 0.4, mx: 0.4, at: 'behind' })], [E('summon', 'heal', 'self', { mx: 0.05 })]]),
   hive: N('蜂巢', '巢', '每轮', '每轮开始：身后召一只工蜂（本蛊攻血 〔25〕%，每场 3 只）',
     ['每场 5 只', '工蜂出巢时叮敌方最近的那只（攻击 〔30〕%，每场 5 次）'],
@@ -1365,9 +1365,9 @@ const NATS = {
     ['被缠住的蛊中毒（攻击 〔25〕%）', '再缠一只（速最快的那只）'],
     [E('prep', 'draw', 'foe.last', { v: 2 }), E('prep', 'st', 'same', { k: 'web', n: 2 })],
     [[E('prep', 'st', 'same', { k: 'psn', atk: 0.25 })], [E('prep', 'st', 'foe.fast', { k: 'web', n: 2 })]]),
-  dawn: N('朝生', '朝', '开战', '开战攻 +〔40〕%，持续 2 轮（朝生暮死）',
+  dawn: N('朝生', '朝', '开战', '开战攻 +〔40〕%，持续 2 轮（朝生暮死）；开战全体友蛊行动条提前 10%',
     ['开战行动条提前 20%', '第一次普攻回复造成伤害的 〔30〕%'],
-    [E('start', 'buff', 'self', { atk: 0.4, dur: 2 })],
+    [E('start', 'buff', 'self', { atk: 0.4, dur: 2 }), E('start', 'adv', 'ally.all', { v: 0.1 })],
     [[E('start', 'adv', 'self', { v: 0.2 })], [E('attack', 'heal', 'self', { n: 0.3, if: 'first' })]]),
   backflow: N('倒流', '漏', '每轮', '每 3 轮：血量比例最低的友蛊回复最大血量 〔15〕%（时光倒流）',
     ['同时清掉它身上的减益', '每 2 轮：敌方速最快的那只寒 1 层'],
@@ -1396,7 +1396,7 @@ const ACTS = {
     '吞的门槛提高到四成', [X('eat', 'same', { v: 0.4, gain: 0.5 })], '回复最大血量 20%', [X('heal', 'self', { mx: 0.2 })]),
   xiongli: A('熊力撼山', 120, 'pounce', '贯穿最近的那一整行，各攻击 110%，各击退一格', [X('dmg', 'foe.front', { atk: 1.1, shape: 'row' }), X('knock', 'same', { v: 1 })],
     '被撞的 50% 机会全部眩晕一次', [X('st', 'same', { k: 'stun', n: 1, chance: 0.5 })], '自己得到最大血量 20% 的护体', [X('shield', 'self', { mx: 0.2 })]),
-  qingtian: A('擎天一击', 130, 'slash', '最近的敌蛊和它十字范围各受攻击 140%，自己攻 +15%', [X('dmg', 'foe.front', { atk: 1.4, shape: 'cross' }), X('buff', 'self', { atk: 0.15 })],
+  qingtian: A('擎天一击', 130, 'slash', '最近的敌蛊和它十字范围各受攻击 90%，自己攻 +10%', [X('dmg', 'foe.front', { atk: 0.9, shape: 'cross' }), X('buff', 'self', { atk: 0.1 })],
     '同一列的友蛊各得本蛊最大血量 15% 的护体', [X('shield', 'ally.col', { mx: 0.15 })], '最近的敌蛊眩晕一次', [X('st', 'foe.front', { k: 'stun', n: 1 })]),
   // 炎道
   fire: A('流火喷吐', 100, 'fire', '贯穿最近的那一整行，各攻击 80%，灼烧 2 轮（攻击 20%）', [X('dmg', 'foe.front', { atk: 0.8, shape: 'row' }), X('st', 'same', { k: 'burn', n: 2, atk: 0.2 })],
@@ -1426,7 +1426,7 @@ const ACTS = {
   // 木道
   vine: A('缠藤', 100, 'slash', '把敌方最靠后的蛊拉近两格，缠住它（眩晕一次）', [X('draw', 'foe.last', { v: 2 }), X('st', 'same', { k: 'stun', n: 1 })],
     '被缠的中毒（攻击 30%）', [X('st', 'same', { k: 'psn', atk: 0.3 })], '再拉近攻最高的那只', [X('draw', 'foe.top', { v: 1 })]),
-  fusang: A('扶桑朝晖', 120, 'heal', '全体友蛊回复最大血量 15%，清掉减益', [X('heal', 'ally.all', { tmx: 0.15 }), X('cleanse', 'ally.all')],
+  fusang: A('扶桑朝晖', 120, 'heal', '全体友蛊回复最大血量 10%，清掉减益', [X('heal', 'ally.all', { tmx: 0.1 }), X('cleanse', 'ally.all')],
     '同一列的友蛊再得本蛊最大血量 10% 的护体', [X('shield', 'ally.col', { mx: 0.1 })], '全体友蛊攻 +8%', [X('buff', 'ally.all', { atk: 0.08 })]),
   // 土道
   tortoise: A('玄武镇', 120, 'shield', '全体友蛊得到本蛊最大血量 12% 的护体，自己嘲讽 2 轮', [X('shield', 'ally.all', { mx: 0.12 }), X('st', 'self', { k: 'taunt', n: 2 })],
@@ -1438,7 +1438,7 @@ const ACTS = {
     '被劈的打上标记 2 轮', [X('st', 'same', { k: 'mark', n: 2 })], '再劈一下（各 30%）', [X('dmg', 'same', { atk: 0.3 })]),
   dfly: A('九天引雷', 120, 'bolt', '敌方全体各受攻击 70%，行动条推后 20%', [X('dmg', 'foe.all', { atk: 0.7 }), X('delay', 'same', { v: 0.2 })],
     '20% 机会全部眩晕一次', [X('st', 'same', { k: 'stun', n: 1, chance: 0.2 })], '敌方后排再各受 30%', [X('dmg', 'foe.last', { atk: 0.3, shape: 'back' })]),
-  jiuxiao: A('九霄雷狱', 140, 'bolt', '敌方全体各受攻击 100%；35% 机会全部眩晕一次', [X('dmg', 'foe.all', { atk: 1.0 }), X('st', 'same', { k: 'stun', n: 1, chance: 0.35 })],
+  jiuxiao: A('九霄雷狱', 140, 'bolt', '敌方全体各受攻击 70%；25% 机会全部眩晕一次', [X('dmg', 'foe.all', { atk: 0.7 }), X('st', 'same', { k: 'stun', n: 1, chance: 0.25 })],
     '被劈的打上标记 2 轮', [X('st', 'same', { k: 'mark', n: 2 })], '自己行动条提前 40%', [X('adv', 'self', { v: 0.4 })]),
   // 光道
   yueguang: A('月华斜斩', 100, 'needle', '月刃斜斩：最近的敌蛊和它斜对角的敌蛊各受攻击 100%', [X('dmg', 'foe.front', { atk: 1.0, shape: 'diag' })],
@@ -1457,7 +1457,7 @@ const ACTS = {
     '它打上标记 2 轮', [X('st', 'foe.top', { k: 'mark', n: 2 })], '自己行动条提前 30%', [X('adv', 'self', { v: 0.3 })]),
   xueyue: A('血月当空', 110, 'slash', '失去最大血量 12%，贯穿最近的那一整行，各攻击 160%', [X('dmg', 'self', { mx: 0.12, up: 0, pierce: 1 }), X('dmg', 'foe.front', { atk: 1.6, shape: 'row' })],
     '回复最大血量 15%', [X('heal', 'self', { mx: 0.15 })], '那一整行打上标记 2 轮', [X('st', 'foe.front', { k: 'mark', n: 2, shape: 'row' })]),
-  chiba: A('赤地千里', 140, 'drain', '敌方全体各受攻击 70%、灼烧 2 轮（攻击 20%），自己回复最大血量 25%', [X('dmg', 'foe.all', { atk: 0.7 }), X('st', 'same', { k: 'burn', n: 2, atk: 0.2 }), X('heal', 'self', { mx: 0.25 })],
+  chiba: A('赤地千里', 140, 'drain', '敌方全体各受攻击 50%、灼烧 2 轮（攻击 10%），自己回复最大血量 15%', [X('dmg', 'foe.all', { atk: 0.5 }), X('st', 'same', { k: 'burn', n: 2, atk: 0.1 }), X('heal', 'self', { mx: 0.15 })],
     '全体友蛊回复 8%', [X('heal', 'ally.all', { tmx: 0.08 })], '全体友蛊攻 +10%', [X('buff', 'ally.all', { atk: 0.1 })]),
   // 毒道
   scorp: A('三连毒针', 90, 'needle', '对敌方最靠后的蛊连射三针，各攻击 60%，中毒（攻击 30%）', [X('dmg', 'foe.last', { atk: 0.6, times: 3 }), X('st', 'same', { k: 'psn', atk: 0.3 })],
@@ -1476,14 +1476,14 @@ const ACTS = {
   zhihui: A('一念', 130, 'roar', '敌方全体被封住 1 轮（蛊力不涨），全体友蛊蛊力 +25', [X('st', 'foe.all', { k: 'seal', n: 2 }), X('gp', 'ally.all', { v: 25 })],
     '攻最高的敌蛊打上标记 2 轮', [X('st', 'foe.top', { k: 'mark', n: 2 })], '清掉全体友蛊身上的减益', [X('cleanse', 'ally.all')]),
   // 魂道
-  boneflute: A('安魂曲', 120, 'summon', '在后排召回一只骨灵（本蛊攻血 40%），全体友蛊攻 +8%', [X('summon', null, { sp: 'bonesoul', atk: 0.4, mx: 0.4, at: 'back' }), X('buff', 'ally.all', { atk: 0.08 })],
+  boneflute: A('安魂曲', 120, 'summon', '在后排召回一只骨灵（本蛊攻血 25%），全体友蛊攻 +5%', [X('summon', null, { sp: 'bonesoul', atk: 0.25, mx: 0.25, at: 'back' }), X('buff', 'ally.all', { atk: 0.05 })],
     '全体友蛊回复 8%', [X('heal', 'ally.all', { tmx: 0.08 })], '敌方全体寒 1 层', [X('st', 'foe.all', { k: 'chill', n: 1 })]),
   // 奴道
-  queen: A('万蜂朝王', 120, 'summon', '后排召两只工蜂（各本蛊攻血 35%），全体友蛊攻 +8%', [X('summon', null, { sp: 'bee', atk: 0.35, mx: 0.35, at: 'back', count: 2 }), X('buff', 'ally.all', { atk: 0.08 })],
-    '全体友蛊得到本蛊最大血量 5% 的护体', [X('shield', 'ally.all', { mx: 0.05 })], '再召一只', [X('summon', null, { sp: 'bee', atk: 0.35, mx: 0.35, at: 'back' })]),
-  spider: A('万蛛归巢', 110, 'summon', '身后召两只小蛛（各本蛊攻血 30%），自己回复最大血量 20%', [X('summon', null, { sp: 'spiderling', atk: 0.3, mx: 0.3, at: 'behind', count: 2 }), X('heal', 'self', { mx: 0.2 })],
-    '敌方最近的那只落网 1 次', [X('st', 'foe.front', { k: 'web', n: 1 })], '再召一只', [X('summon', null, { sp: 'spiderling', atk: 0.3, mx: 0.3, at: 'behind' })]),
-  qant: A('蚁潮', 120, 'summon', '后排召三只兵蚁（各本蛊攻血 25%）', [X('summon', null, { sp: 'antling', atk: 0.25, mx: 0.25, at: 'back', count: 3 })],
+  queen: A('万蜂朝王', 120, 'summon', '后排召两只工蜂（各本蛊攻血 25%），全体友蛊攻 +5%', [X('summon', null, { sp: 'bee', atk: 0.25, mx: 0.25, at: 'back', count: 2 }), X('buff', 'ally.all', { atk: 0.05 })],
+    '全体友蛊得到本蛊最大血量 5% 的护体', [X('shield', 'ally.all', { mx: 0.05 })], '再召一只', [X('summon', null, { sp: 'bee', atk: 0.25, mx: 0.25, at: 'back' })]),
+  spider: A('万蛛归巢', 110, 'summon', '身后召两只小蛛（各本蛊攻血 20%），自己回复最大血量 20%', [X('summon', null, { sp: 'spiderling', atk: 0.2, mx: 0.2, at: 'behind', count: 2 }), X('heal', 'self', { mx: 0.2 })],
+    '敌方最近的那只落网 1 次', [X('st', 'foe.front', { k: 'web', n: 1 })], '再召一只', [X('summon', null, { sp: 'spiderling', atk: 0.2, mx: 0.2, at: 'behind' })]),
+  qant: A('蚁潮', 120, 'summon', '后排召三只兵蚁（各本蛊攻血 18%）', [X('summon', null, { sp: 'antling', atk: 0.18, mx: 0.18, at: 'back', count: 3 })],
     '全体友蛊攻 +6%', [X('buff', 'ally.all', { atk: 0.06 })], '全体友蛊得到本蛊最大血量 6% 的护体', [X('shield', 'ally.all', { mx: 0.06 })]),
   // 宇道
   gecko: A('断尾护主', 80, 'shield', '最前的友蛊得到本蛊最大血量 30% 的护体，清掉减益', [X('shield', 'ally.front', { mx: 0.3 }), X('cleanse', 'same')],
@@ -1599,17 +1599,33 @@ const RENAME64 = {
   guangyin: { n: '春秋蝉', ab: '春', canon: true, lore: '春去秋来只叫一声。它叫一声，日影就往回走一寸——覆灭的阵前，所有人回到开战那一刻，只是都老了一半；叫完这一声，它自己只剩一口气。' },
 };
 
+// ======================= 仙蛊上阵规则 =======================
+// 一队最多 1 只仙蛊；仙蛊占额度 8（比它的转数 6 多扣 2）。平衡倍率按「8 点额度换一只仙蛊」调（对照：同一底队 + 五转 + 三转）。
+// 接法：core.quotaOf 里仙蛊记 IMMORTAL.cost 点；上阵、换阵、开茧放进空窍时，队里已有 IMMORTAL.max 只仙蛊就拦下并提示「一队只能有一只仙蛊」。
+const IMMORTAL = { max: 1, cost: 8 };
+
 // ======================= 每转攻血表 =======================
-// 与 core.js 的 RANK_GROW 同一条曲线：一转 ×1、二转 ×1.8、三转 ×3、四转 ×4.6、五转 ×6.8、仙蛊 ×9.6；基础转数每高一转多 6%（买得更贵）
-const ST_GROW = [0, 1, 1.8, 3, 4.6, 6.8, 9.6];
-const table = (a, h, r0) => {
-  const t = a + h, k = t < 5 ? 5 / t : 1, prem = 1 + 0.06 * (Math.min(6, r0) - 1), st = Array(7).fill(null);
-  for (let r = r0; r <= (r0 >= 6 ? 6 : 5); r++) st[r] = [Math.max(1, Math.round(a * k * ST_GROW[r] * prem)), Math.max(1, Math.round(h * k * ST_GROW[r] * prem))];
+// 每转倍率：一转 ×1.15、二转 ×2.1、三转 ×2.7、四转 ×3.4、五转 ×3.7、仙蛊 ×6.4；基础转数每高一转多 6%（买得更贵）。
+// 每点额度给的攻血随转数递减：高转另有三转、五转觉醒，主动技、被动技随转数涨（引擎 TUNE.actUp 0.06 / upMul 0.5），杀招威力看核心转数；攻血再按额度给足，就只剩「养几只高转」一种打法。
+// 这条曲线按「同额度不同分法循环赛」拟合（7 点 3 种、10 点 4 种、15 点 5 种、22 点 5 种分法两两对打，各 150 局×2）：每种分法都在 45%–56%。
+// 五转比四转攻血多 9%，升五转的提升主要在五转觉醒。仙蛊 ×6.4 = 五转 + 三转（仙蛊占 8 点额度）。引擎改了技能随转数的涨幅就要重拟（tune/hm2.mjs）。
+// core.js 的 RANK_GROW 只在物种没有攻血表时兜底，120 种都有表；要同步就照抄这一行。
+const ST_GROW = [0, 1.15, 2.1, 2.7, 3.4, 3.7, 6.4];
+// 平衡倍率（按「同额度下每种蛊每点额度的胜率 42%–58%」迭代出来，design 2.7）：攻血表整体乘它。
+// 测法和 tools/sim.mjs 一样：同一支底队（秘境 foeByBudget，4/9/15/22 点），只换第一只转数够的：A 放这种蛊、B 放同转数、同基础转数的另一种，两边各站一次；仙蛊按 8 点额度，对照是同一底队 + 五转 + 三转。
+// 在主线 17e0b21 的引擎上（主动技每转 +6%、被动技涨幅减半、速 SPD_K 0.10）每种 400 局×两边各站一次：120 种都在 43%–58%。
+// 技能强的蛊攻血低一些（赤魃 0.26、九霄 0.31），技能弱的辅助蛊攻血高一些（玉皮 2.2、石蚕 1.71）；改技能数值后要重跑。表里的数是放大前的，core.statFor 再乘 STAT_SCALE（血再乘 HP_SCALE）。
+const BAL = { amber: 1.26, ant: 1.01, antlion: 1.1, aphid: 1.31, asahi: 1.59, baiyu: 0.98, bat: 0.83, bfly: 0.6, blink: 0.98, bloodant: 1.54, boar: 0.97, bomb: 1.19, bone: 1.19, boneflute: 0.47, bury: 1.13, cent: 1.19, char: 0.9, chiba: 0.26, cicada: 1.25, click: 0.97, cloud: 0.91, coldcicada: 1.17, cordy: 0.9, cricket: 0.97, dfly: 0.87, dingxian: 0.5, diting: 1.58, drum: 1.87, dung: 1.71, earthworm: 1.42, eclipse: 0.95, fate: 0.61, fire: 1.16, fireant: 1.57, firefly: 1.21, flea: 1.02, flint: 0.78, fly: 1.14, frost: 1.01, fusang: 0.38, gecko: 1.27, glacier: 0.66, glut: 0.83, gold: 1.53, guangyin: 0.53, hail: 0.61, hairworm: 0.85, hairy: 1.4, hex: 1.37, hive: 0.75, hourglass: 1.19, icesnail: 1.84, inch: 1.38, ink: 0.95, instant: 0.9, iron: 0.86, jinchan: 0.74, jingzhe: 1.31, jiuchong: 1.84, jiuxiao: 0.34, leech: 1.45, lockarm: 1.21, locust: 1.1, lure: 1.29, magma: 0.64, magstorm: 1.03, mantis: 1.11, mayfly: 0.57, mirror: 1.25, mole: 1.12, mosq: 0.95, moth: 1.29, moveshan: 0.6, nirvana: 0.36, orchid: 1.25, puppet: 0.82, pyre: 0.93, qant: 0.56, qingfu: 1.3, qingtian: 0.4, queen: 0.62, rhino: 1.07, ring: 0.91, saw: 0.72, scorp: 0.98, sheli: 1.38, shengji: 1.33, shine: 1.04, silk: 1.67, sleep: 1.78, snowflea: 1.7, snowsilk: 1.73, solar: 0.52, spider: 0.65, stag: 0.89, static: 1.56, stick: 1.94, stonecase: 1.53, strider: 1.4, styx: 0.6, taisui: 1.1, thorn: 1.28, thunder: 0.62, tick: 1.56, tiger: 1.24, toad: 0.91, tortoise: 0.61, twin: 1.23, urn: 1.25, vine: 1.07, wasp: 0.93, webspider: 0.99, widow: 0.77, will: 1.29, xiongli: 0.61, xueyue: 0.56, yue: 1.05, yueguang: 1.33, yupi: 2.09, zhihui: 0.63 };
+// 保留一位小数：core.statFor 乘 STAT_SCALE（10）后再取整，倍率的细微差别不会在小数值上被抹掉
+const r1 = x => Math.max(0.1, Math.round(x * 10) / 10);
+const table = (a, h, r0, id) => {
+  const t = a + h, k = (t < 5 ? 5 / t : 1) * (BAL[id] || 1), prem = 1 + 0.06 * (Math.min(6, r0) - 1), st = Array(7).fill(null);
+  for (let r = r0; r <= (r0 >= 6 ? 6 : 5); r++) st[r] = [r1(a * k * ST_GROW[r] * prem), r1(h * k * ST_GROW[r] * prem)];
   return st;
 };
 const ST120 = {};
-P64.split(/[|\n]/).forEach(x => { const [id, a, h] = x.trim().split(' '); ST120[id] = table(+a, +h, RANK64[id]); });
-SPECIES2.forEach(s => { ST120[s.id] = table(s.atk, s.hp, s.rank); s.st = ST120[s.id]; s.act = ACTS[s.id] || null; });
+P64.split(/[|\n]/).forEach(x => { const [id, a, h] = x.trim().split(' '); ST120[id] = table(+a, +h, RANK64[id], id); });
+SPECIES2.forEach(s => { ST120[s.id] = table(s.atk, s.hp, s.rank, s.id); s.st = ST120[s.id]; s.act = ACTS[s.id] || null; });
 
 const PATCH64 = {};
 DAO64.split(/[|\n]/).forEach(x => { const [d, ...ids] = x.trim().split(' '); ids.forEach(id => { PATCH64[id] = { dao: d }; }); });
@@ -1653,10 +1669,10 @@ const KW120 = Object.fromEntries(Object.keys(DAO120).map(id => {
   return [id, kwOf([...(t.eff || []), ...(t.awEff || []).flat(), ...(a ? [...a.eff, ...a.aw.flat()] : [])])];
 }));
 
-return { NAT_UP, natK, natText, NATS, ACTS, ACT_COUNT, SPECIES2, SUMMONS2, ST_GROW, ST120, PATCH64, BATTLE120, DAO120, CANON, NAT_OF, KW, KW120 };
+return { NAT_UP, natK, natText, NATS, ACTS, ACT_COUNT, SPECIES2, SUMMONS2, IMMORTAL, ST_GROW, BAL, ST120, PATCH64, BATTLE120, DAO120, CANON, NAT_OF, KW, KW120 };
 })();
 // ---- src/combos2.js（包一层，只放出 export）
-const { COMBOS2, COMBO2, COMBO_POWER, COMBO_UP, COMBO_SUMMONS } = (() => {
+const { COMBOS2, COMBO2, COMBO_POWER, COMBO_UP, COMBO_SUMMONS, STRATS, STRAT, COMBO_COUNTERS } = (() => {
 // 蛊码 GuCode · 杀招 v2 第三版（docs/design.md 第 1 节「羁绊分三层」第二、三层 + 2.6 节；格式按 docs/battle-spec.md 7.3）。纯数据，不 import 任何文件。
 // 成形：need 里的物种同时在空窍。core = 核心蛊，一律写在 need 第一位：品级看它的转数，所属的道跟它走，杀招挂在站得最靠前的那只核心蛊身上由它释放。
 // 一大半杀招由不同道的蛊组成，靠通用效果互相接力：毒、灼、寒、护、召、吞、击退、标记谁都能挂、谁都能读（battle-spec 4.2 / 5.1）。
@@ -1665,191 +1681,212 @@ const { COMBOS2, COMBO2, COMBO_POWER, COMBO_UP, COMBO_SUMMONS } = (() => {
 // 进阶杀招：from = 原杀招 id，need 写全（原配方 + 一两只），成形后取代原杀招，仍属原来那一道。
 // 单个效果可以自带 when，覆盖杀招的 when（一招里分两个时机）。fx = 给战斗专家的动画构思：c 主色，d 画面、节奏和镜头，每招各不相同。
 // canon: true = 原著里的杀招名（描述是蛊码自己写的）；其余名字是蛊码自起。导出名用 COMBOS2，避免和 core.js 里旧的 COMBOS 重名。
+// low: { 物种id: 最高转数 } = 低转杀招：这些蛊的当前转数不超过所写转数才成形（升上去就散）。给一转、二转蛊留独有的用处，成形判定里要查（core.teamCombos / battle.synergyOf）。
+// style / counters / counteredBy：见文件末尾 STRATS 与 COMBO_COUNTERS（打法标签，克制谁、被谁克）。
 const K = (id, n, need, when, d, eff, fx, extra = {}) => ({ id, n, need, core: need[0], when, d, eff, fx, ...extra });
 const E = (op, tg, o = {}) => ({ op, tg, ...o });
 const COMBOS2 = [
   // ====== 力道 ======
-  K('sanzhu', '烈火三豕冲', ['boar', 'fire', 'twin'], 'start', '开战：白豕带着火影冲阵，敌方最前那一列各受攻击 50%，灼烧 2 轮（攻击 15%）',
-    [E('dmg', 'foe.front', { shape: 'col', atk: 0.5 }), E('st', 'same', { k: 'burn', n: 2, atk: 0.15 })],
+  K('sanzhu', '烈火三豕冲', ['boar', 'fire', 'twin'], 'start', '开战：白豕带着火影冲阵，敌方最前那一列各受攻击 31%，灼烧 2 轮（攻击 9%）',
+    [E('dmg', 'foe.front', { shape: 'col', atk: 0.31 }), E('st', 'same', { k: 'burn', n: 2, atk: 0.09 })],
     { c: ['#b5301f', '#e08a3a'], d: '镜头贴地，三道火影一行一道同时冲向敌方前列，撞上时横向震屏，地面留下三道焦痕；最后定格半拍再出招式名' }),
-  K('huangzai', '蝗过千里', ['locust', 'boar'], 'attack', '普攻后蝗群越过前排：敌方后排各受这一下的 35%',
-    [E('dmg', 'foe.last', { shape: 'back', n: 0.35 })],
+  K('huangzai', '蝗过千里', ['locust', 'boar'], 'attack', '普攻后蝗群越过前排：敌方后排各受这一下的 33%',
+    [E('dmg', 'foe.last', { shape: 'back', n: 0.33 })],
     { c: ['#7a6a2a', '#3a3a1a'], d: '黑压压的蝗群从我方头顶掠过敌方前排，像泼墨一样落进后排，沙沙声密集，落过的地面草色褪黄；镜头跟着蝗群横摇' }),
-  K('wanwo', '万我', ['xiongli', 'twin'], 'start', '开战：熊力分出两道力影站到身后（各本蛊攻血 30%）；之后每有友蛊被召唤，本蛊攻 +4%（最多 6 次）',
-    [E('summon', 'self', { sp: 'shade', atk: 0.3, mx: 0.3, at: 'behind', count: 2 }), { when: 'summon', ...E('buff', 'self', { atk: 0.04, max: 6 }) }],
+  K('wanwo', '万我', ['xiongli', 'twin'], 'start', '开战：熊力分出一道力影站到身后（本蛊攻血 15%）；之后每有友蛊被召唤，本蛊攻 +2%（最多 6 次）',
+    [E('summon', 'self', { sp: 'shade', atk: 0.15, mx: 0.15, at: 'behind' }), { when: 'summon', ...E('buff', 'self', { atk: 0.02, max: 6 }) }],
     { c: ['#8a3a1f', '#e8c08a'], d: '熊力蛊一跺脚，身后叠出两道半透明的同形力影，三个身影同时握拳，镜头从侧面拉远显出一排一模一样的背影' }, { canon: true }),
-  K('tunshi', '饕餮吞毒', ['glut', 'toad'], 'attack', '普攻打中毒的敌蛊：它血量不过 45% 就整只吞下，得到它四成攻血',
-    [E('eat', 'tg', { v: 0.45, gain: 0.4, if: 'tg.psn' })],
+  K('tunshi', '饕餮吞毒', ['glut', 'toad'], 'attack', '普攻打中毒的敌蛊：再咬一口（攻击 36%）；咬完它血量不过 50% 就整只吞下，得到它四成攻血',
+    [E('dmg', 'tg', { atk: 0.36, if: 'tg.psn' }), E('eat', 'tg', { v: 0.5, gain: 0.4, if: 'tg.psn' })],
     { c: ['#6a4a2a', '#4f7a3a'], d: '饕虫张开大得不成比例的嘴，连目标带一团绿色毒雾整个吸进去，腮帮鼓两下，打一个冒绿泡的嗝' }),
   // ====== 炎道 ======
-  K('fenshen', '焚身诀', ['fire', 'mantis'], 'kill', '击杀时火势炸开：最近的敌蛊和它周围一圈各受攻击 40%，灼烧 2 轮（攻击 15%）',
-    [E('dmg', 'foe.front', { shape: 'ring', atk: 0.4 }), E('st', 'same', { k: 'burn', n: 2, atk: 0.15 })],
+  K('fenshen', '焚身诀', ['fire', 'mantis'], 'kill', '击杀时火势炸开：最近的敌蛊和它周围一圈各受攻击 54%，灼烧 2 轮（攻击 20%）',
+    [E('dmg', 'foe.front', { shape: 'ring', atk: 0.54 }), E('st', 'same', { k: 'burn', n: 2, atk: 0.2 })],
     { c: ['#d0632a', '#7a1a10'], d: '被击杀的敌蛊原地燃成火球，停 0.3 秒后爆成放射状火舌扑向下一只敌蛊和它四周，镜头先拉远再快速回正' }),
-  K('liaoyuan', '天火燎原', ['scorp', 'fire'], 'start', '开战：火毒齐下，敌方全体灼烧 2 轮（攻击 12%），并中毒（攻击 8%）',
-    [E('st', 'foe.all', { k: 'burn', n: 2, atk: 0.12 }), E('st', 'foe.all', { k: 'psn', atk: 0.08 })],
+  K('liaoyuan', '天火燎原', ['scorp', 'fire'], 'start', '开战：火毒齐下，敌方全体灼烧 3 轮（攻击 8%），并中毒（攻击 5%）',
+    [E('st', 'foe.all', { k: 'burn', n: 3, atk: 0.08 }), E('st', 'foe.all', { k: 'psn', atk: 0.05 })],
     { c: ['#d0632a', '#4f7a3a'], d: '蝎尾向天一甩，毒针在半空被流火点着，化作一场绿芯红焰的火雨落满敌阵，火苗烧成绿色才熄' }),
-  K('lieyang', '烈阳焚野', ['flint', 'solar', 'fireant'], 'round', '单数轮开始：燧石借烈日引火，敌方全体灼烧 2 轮（攻击 15%）；燧火会跟着每一处起火补一下',
-    [E('st', 'foe.all', { k: 'burn', n: 2, atk: 0.15, if: 'round%2' })],
+  K('lieyang', '烈阳焚野', ['flint', 'solar', 'fireant'], 'round', '单数轮开始：燧石借烈日引火，敌方全体灼烧 2 轮（攻击 20%）；燧火会跟着每一处起火补一下',
+    [E('st', 'foe.all', { k: 'burn', n: 2, atk: 0.2, if: 'round%2' })],
     { c: ['#f0b03a', '#d0632a'], d: '画面上方缓缓升起一轮金白日轮，光线像针一样一根根落下，敌阵地面从边缘泛起热浪，最后整片燃起矮矮的火苗；日轮升起用 1 秒，火苗一瞬铺满' }),
   K('dihuo', '地火焚城', ['magma', 'mole'], 'round', '每 2 轮：蝼蛄打通地脉，地火从敌方后排喷出：后排各受本蛊最大血量 6%，灼烧 2 轮（攻击 15%）',
     [E('dmg', 'foe.last', { shape: 'back', mx: 0.06, every: 2 }), E('st', 'same', { k: 'burn', n: 2, atk: 0.15, every: 2 })],
     { c: ['#c0401a', '#5a3a20'], d: '敌方后排脚下先鼓起几道裂纹，停一拍后岩浆柱一根接一根喷上天；镜头从地底往上仰拍，岩浆落回时溅起黑烟' }),
   // ====== 冰雪道 ======
-  K('bingfeng', '冰火两重', ['frost', 'fire'], 'attack', '普攻命中：目标身上带着寒时冰火相激，再受攻击 40%；然后目标灼烧 2 轮（攻击 20%）',
-    [E('dmg', 'tg', { atk: 0.4, if: 'tg.chill' }), E('st', 'tg', { k: 'burn', n: 2, atk: 0.2 })],
+  K('bingfeng', '冰火两重', ['frost', 'fire'], 'attack', '普攻命中：目标身上带着寒时冰火相激，再受攻击 37%；然后目标灼烧 2 轮（攻击 16%）',
+    [E('dmg', 'tg', { atk: 0.37, if: 'tg.chill' }), E('st', 'tg', { k: 'burn', n: 2, atk: 0.16 })],
     { c: ['#6a9cc0', '#d0632a'], d: '画面从中间一分为二，左半边结霜变蓝、右半边起火变红，两股气流在目标身上拧成一根冰火螺旋柱，碎开时冰渣和火星一起溅出；分屏对称构图' }),
-  K('hanchuan', '寒川锁江', ['glacier', 'icesnail', 'strider'], 'start', '开战：寒流封江，敌方最前那一列各寒 2 层，敌方全体速 -10%',
-    [E('st', 'foe.front', { shape: 'col', k: 'chill', n: 2 }), E('buff', 'foe.all', { spd: -0.1 })],
+  K('hanchuan', '寒川锁江', ['glacier', 'icesnail', 'strider'], 'start', '开战：寒流封江，敌方最前那一列各寒 3 层，敌方全体速 -15%',
+    [E('st', 'foe.front', { shape: 'col', k: 'chill', n: 3 }), E('buff', 'foe.all', { spd: -0.15 })],
     { c: ['#a8c8e0', '#ffffff'], d: '镜头俯拍，冰线从我方脚下向敌阵蔓延，所到之处裂出六角冰纹，水黾在冰面上划出两道白痕，敌方前列被冰柱从下往上包住；全程只有冰裂的脆响' }),
-  K('xuebeng', '雪崩', ['hail', 'moveshan'], 'round', '每 2 轮：雪崩压向敌方最前那一列：各受攻击 35%，寒 1 层，并被推后一格（撞上后面的蛊，两只都受伤）',
-    [E('dmg', 'foe.front', { shape: 'col', atk: 0.35, every: 2 }), E('st', 'same', { k: 'chill', n: 1, every: 2 }), E('knock', 'same', { v: 1, every: 2 })],
+  K('xuebeng', '雪崩', ['hail', 'moveshan'], 'round', '每 3 轮：雪崩压向敌方最前那一列：各受攻击 15%，寒 1 层，并被推后一格（撞上后面的蛊，两只都受伤）',
+    [E('dmg', 'foe.front', { shape: 'col', atk: 0.15, every: 3 }), E('st', 'same', { k: 'chill', n: 1, every: 3 }), E('knock', 'same', { v: 1, every: 3 })],
     { c: ['#e8f0f8', '#6a5a4a'], d: '画面上方的雪坡整块崩落，夹着山石的雪浪横着推过敌方前列，被推后的蛊撞成一团，雪雾久久不散' }),
   // ====== 金道 ======
-  K('jinjia', '金甲不坏身', ['iron', 'thorn'], 'start', '开战：铜皮蛊得到最大血量 30% 的护体，接下来 3 次受伤减半；同一列的友蛊各得本蛊最大血量 10% 的护体',
-    [E('shield', 'self', { mx: 0.3 }), E('st', 'self', { k: 'guard', n: 3 }), E('shield', 'ally.col', { mx: 0.1 })],
+  K('jinjia', '金甲不坏身', ['iron', 'thorn'], 'start', '开战：铜皮蛊得到最大血量 21% 的护体，接下来 3 次受伤减半；同一列的友蛊各得本蛊最大血量 7% 的护体',
+    [E('shield', 'self', { mx: 0.21 }), E('st', 'self', { k: 'guard', n: 3 }), E('shield', 'ally.col', { mx: 0.07 })],
     { c: ['#a8803e', '#e8c76a'], d: '一片片金色甲叶从四周飞来，咔咔咔逐片扣到铜皮蛊身上（每片 0.08 秒），扣满后金光沿着这一列扫过去，镜头绕它转半圈' }),
-  K('tuibao', '金蟾吐宝', ['jinchan', 'qingfu'], 'kill', '击杀：金蟾吐出一串青蚨钱，全体友蛊攻血 +6%（每场最多 4 次）',
-    [E('buff', 'ally.all', { atk: 0.06, hp: 0.06, max: 4 })],
+  K('tuibao', '金蟾吐宝', ['jinchan', 'qingfu'], 'kill', '击杀：金蟾吐出一串青蚨钱，全体友蛊攻血 +7%（每场最多 4 次）',
+    [E('buff', 'ally.all', { atk: 0.07, hp: 0.07, max: 4 })],
     { c: ['#d9a441', '#4a8a6a'], d: '金蟾鼓起腮帮吐出一串铜钱，铜钱在空中化作一只只青蚨飞向友蛊，落到身上叮一声变成金光' }),
   K('tiesuo', '铁索横江', ['lockarm', 'vine'], 'start', '开战：铁索连起上下左右的友蛊，它们各挂「护」2 次；另一头把敌方后排拽近一格（被挡住就撞上，两只都受伤）',
     [E('st', 'ally.adj', { k: 'guard', n: 2 }), E('draw', 'foe.last', { shape: 'back', v: 1, bump: 0.5 })],
     { c: ['#7a7a80', '#5e8a4a'], d: '锁甲蛊身上甩出几条铁链，一头扣住身边友蛊连成一片，另一头缠着青藤飞向敌方后排猛地一拽，铁链绷直时声音很脆' }),
   // ====== 木道 ======
-  K('pojian', '破茧成蝶', ['silk', 'bfly'], 'round', '第 3 轮开始破茧时双蝶齐飞：同一列的友蛊攻血 +15%，本蛊速 +20%（只一次）',
-    [E('buff', 'ally.col', { atk: 0.15, hp: 0.15, if: 'round>=3', max: 1 }), E('buff', 'self', { spd: 0.2, if: 'round>=3', max: 1 })],
+  K('pojian', '破茧成蝶', ['silk', 'bfly'], 'round', '第 3 轮开始破茧时双蝶齐飞：同一列的友蛊攻血 +7%，本蛊速 +20%（只一次）',
+    [E('buff', 'ally.col', { atk: 0.07, hp: 0.07, if: 'round>=3', max: 1 }), E('buff', 'self', { spd: 0.2, if: 'round>=3', max: 1 })],
     { c: ['#5e8a4a', '#e8d8f0'], d: '茧壳先裂开一道细缝透出淡紫光，茧片一片片剥落飘走，两只蝶一前一后飞出，沿着这一列洒下一道光粉；整段慢镜头，配极轻的丝帛撕裂声' }),
-  K('burou', '肉身不朽', ['taisui', 'cicada'], 'lethal', '太岁再受致命伤也不倒：留六成血重新长出来（每场一次，和本命的再生分开算）',
-    [E('endure', null, { v: 0.6, max: 1 })],
+  K('burou', '肉身不朽', ['taisui', 'cicada'], 'lethal', '太岁再受致命伤也不倒：留九成血重新长出来，之后 2 轮攻 +20%（每场一次，和本命的再生分开算）',
+    [E('endure', null, { v: 0.9, max: 1 }), E('buff', 'self', { atk: 0.2, dur: 2, max: 1 })],
     { c: ['#7a9a5a', '#c0a080'], d: '太岁被打碎成几块肉团摊在地上，镜头特写，肉团像倒放一样蠕动着彼此吸回去重新拼成原形，表面冒出一层新芽般的绿纹；先停 0.5 秒制造悬念再快速倒放' }),
   // ====== 土道 ======
-  K('xuanwu', '玄武镇关', ['tortoise', 'gecko'], 'round', '每轮开始：玄龟站在最前时，自己得到最大血量 8% 的护体，身后的友蛊各得 4%',
-    [E('shield', 'self', { mx: 0.08, if: 'front' }), E('shield', 'ally.behind', { mx: 0.04, if: 'front' })],
+  K('xuanwu', '玄武镇关', ['tortoise', 'gecko'], 'round', '每轮开始：玄龟站在最前时，自己得到最大血量 17% 的护体，身后的友蛊各得 7%',
+    [E('shield', 'self', { mx: 0.15, if: 'front' }), E('shield', 'ally.behind', { mx: 0.07, if: 'front' })],
     { c: ['#4a5a4a', '#8a6a3a'], d: '玄龟背后浮现一座墨色山影，山影向下一沉压进龟壳，龟壳纹路亮起土黄色的光，再顺着这一行往后铺开；镜头仰拍，龟像一座关隘' }),
-  K('banshan', '搬山移海', ['moveshan', 'rhino'], 'start', '开战：把敌方最前那只搬到它那一行的最后一格（和那里的蛊对调），被搬走的先受攻击 60%',
-    [E('dmg', 'foe.front', { atk: 0.6 }), E('swap', 'same', { with: 'back' })],
+  K('banshan', '搬山移海', ['moveshan', 'rhino'], 'start', '开战：把敌方最前那只搬到它那一行的最后一格（和那里的蛊对调），被搬走的先受攻击 85%',
+    [E('dmg', 'foe.front', { atk: 0.85 }), E('swap', 'same', { with: 'back' })],
     { c: ['#8a6a3a', '#4a3a2a'], d: '地面隆起一块巨石，把敌方最前那只整只托起，沿抛物线扔到它那一行的末尾，落地砸出一圈土浪；镜头跟着巨石大幅横摇，落地时轻微震屏' }),
   // ====== 雷道 ======
-  K('leigu', '雷鼓破天', ['thunder', 'drum'], 'attack', '普攻后鼓声引雷：目标和它十字范围各受这一下的 30%',
-    [E('dmg', 'tg', { shape: 'cross', n: 0.3 })],
+  K('leigu', '雷鼓破天', ['thunder', 'drum'], 'attack', '普攻后鼓声引雷：目标和它十字范围各受这一下的 32%',
+    [E('dmg', 'tg', { shape: 'cross', n: 0.32 })],
     { c: ['#3a6aa8', '#ffffff'], d: '雷甲蛊背上浮出一面雷鼓，敲一下，白蓝电弧从目标身上向上下左右四个方向同时炸开，画面闪白一帧；干脆利落，没有余韵' }),
-  K('jiutian', '九天引雷', ['dfly', 'firefly'], 'round', '单数轮开始：萤火先给敌方攻最高的蛊打上标记（2 轮），雷随即从天而降，敌方全体受攻击 25%',
-    [E('st', 'foe.top', { k: 'mark', n: 2, if: 'round%2' }), E('dmg', 'foe.all', { atk: 0.25, if: 'round%2' })],
+  K('jiutian', '九天引雷', ['dfly', 'firefly'], 'round', '单数轮开始：萤火先给敌方攻最高的蛊打上标记（2 轮），雷随即从天而降，敌方全体受攻击 15%',
+    [E('st', 'foe.top', { k: 'mark', n: 2, if: 'round%2' }), E('dmg', 'foe.all', { atk: 0.15, if: 'round%2' })],
     { c: ['#5a8ad0', '#e8e070'], d: '画面先暗下来，一点萤火飞到敌方主力头顶停住当作标记，随即数道竖直落雷同时劈下，整屏闪白两帧；镜头从仰拍天空切到俯拍敌阵' }),
-  K('chunlei', '春雷乍惊', ['jingzhe', 'shengji'], 'start', '开战：一声春雷，敌方随机两只眩晕一次；万物惊醒，全体友蛊蛊力 +20',
-    [E('st', 'foe.rand:2', { k: 'stun', n: 1 }), E('gp', 'ally.all', { v: 20 })],
+  K('chunlei', '春雷乍惊', ['jingzhe', 'shengji'], 'start', '开战：一声春雷，敌方随机三只眩晕一次；万物惊醒，全体友蛊蛊力 +50',
+    [E('st', 'foe.rand:3', { k: 'stun', n: 1 }), E('gp', 'ally.all', { v: 50 })],
     { c: ['#6a8ac0', '#9ac070'], d: '天边滚过一道横向的闷雷光带，我方脚下冒出一片嫩绿草芽，被震到的两只敌蛊头顶出现转圈的小星；声音先低后炸，用一次远景交代天地' }),
-  K('cishi', '磁石引铁', ['magstorm', 'lockarm'], 'round', '每 2 轮：磁暴把敌方最靠后的蛊吸近两格（被挡住就撞上，两只都受伤），再让它眩晕一次',
-    [E('draw', 'foe.last', { v: 2, bump: 0.5, every: 2 }), E('st', 'same', { k: 'stun', n: 1, every: 2 })],
+  K('cishi', '磁石引铁', ['magstorm', 'lockarm'], 'round', '每 4 轮：磁暴把敌方最靠后的蛊吸近两格（被挡住就撞上，两只都受伤），再让它眩晕一次',
+    [E('draw', 'foe.last', { v: 2, bump: 0.3, every: 4 }), E('st', 'same', { k: 'stun', n: 1, every: 4 })],
     { c: ['#5a4ab0', '#a0a0a8'], d: '磁暴蛊身上浮起一圈紫色磁力线，敌方后排那只被吸得一路滑过来，撞上东西时迸出一串蓝白火花，最后贴在半空抽搐一下' }),
   // ====== 光道 ======
-  K('liuying', '流萤焚夜', ['firefly', 'fire'], 'death', '小光蛊倒下时化作满天流萤：敌方全体受攻击 50%，灼烧 2 轮（攻击 10%）',
-    [E('dmg', 'foe.all', { atk: 0.5 }), E('st', 'same', { k: 'burn', n: 2, atk: 0.1 })],
+  K('liuying', '流萤焚夜', ['firefly', 'fire'], 'death', '小光蛊倒下时化作满天流萤：敌方全体受攻击 45%，灼烧 2 轮（攻击 9%）',
+    [E('dmg', 'foe.all', { atk: 0.45 }), E('st', 'same', { k: 'burn', n: 2, atk: 0.09 })],
     { c: ['#e7d77a', '#1c1915'], d: '画面转入夜色，小光蛊散成上百个光点慢慢升空，悬停一拍后像流星雨一样斜着落进敌阵，每个光点落地开出一朵小火花；慢开快收' }),
-  K('jinghua', '镜花水月', ['mirror', 'lure'], 'hit', '镜甲被打中：照回这一下的 40% 给打它的那只（普攻也算，每场最多 8 次）',
-    [E('dmg', 'src', { n: 0.4, max: 8 })],
+  K('jinghua', '镜花水月', ['mirror', 'lure'], 'hit', '镜甲被打中：照回这一下的 34% 给打它的那只（普攻也算，每场最多 8 次）',
+    [E('dmg', 'src', { n: 0.34, max: 8 })],
     { c: ['#c0d8e8', '#e8a0c0'], d: '镜甲身前竖起一面水波纹镜面，来袭的攻击在镜面上荡开涟漪后原路折返，镜中倒映出一朵虚花又碎掉；镜头与镜面平行，左右对称' }),
-  K('shishan', '尸山月影', ['moth', 'bone'], 'death', '月蛾倒下时，原地召出一只月影（本蛊攻 50%、血 40%）',
-    [E('summon', 'self', { sp: 'lunar', atk: 0.5, mx: 0.4, at: 'here' })],
+  K('shishan', '尸山月影', ['moth', 'bone'], 'death', '月蛾倒下时，原地召出一只月影（本蛊攻 54%、血 43%）',
+    [E('summon', 'self', { sp: 'lunar', atk: 0.54, mx: 0.43, at: 'here' })],
     { c: ['#c8c0e8', '#3a3346'], d: '月蛾倒下处的白骨堆上升起一轮小小的白月，月光里慢慢凝出一只半透明的蛾影，落地时地面结一圈白霜' }),
-  K('richu', '日出扶桑', ['solar', 'fusang'], 'round', '每轮开始：全体友蛊回复最大血量 4%；单数轮金乌出扶桑，敌方全体再灼烧 2 轮（攻击 12%）',
-    [E('heal', 'ally.all', { tmx: 0.04 }), E('st', 'foe.all', { k: 'burn', n: 2, atk: 0.12, if: 'round%2' })],
+  K('richu', '日出扶桑', ['solar', 'fusang'], 'round', '每轮开始：全体友蛊回复最大血量 2%；单数轮金乌出扶桑，敌方全体再灼烧 2 轮（攻击 7%）',
+    [E('heal', 'ally.all', { tmx: 0.02 }), E('st', 'foe.all', { k: 'burn', n: 2, atk: 0.07, if: 'round%2' })],
     { c: ['#f0b03a', '#5e8a4a'], d: '画面左侧立起一棵金色扶桑树影，一轮红日从枝头升起，阳光扫过友蛊是暖金色，落到敌阵就变成火苗' }),
   // ====== 暗道 ======
   K('duopo', '噬心夺魄', ['mantis', 'scorp'], 'kill', '击杀后立刻扑向敌方血量比例最低的蛊，造成攻击 90% 的伤害（每场最多 3 次）',
     [E('dmg', 'foe.lowp', { atk: 0.9, max: 3 })],
     { c: ['#3a3346', '#8a1f2b'], d: '螳螂击杀后身形化作一道暗红残影，一帧闪到下一只敌蛊身前出刀，残影在原地慢慢散去；只用两种颜色，节奏是「顿—闪」' }),
-  K('yeshi', '天狗食月', ['eclipse', 'moth'], 'start', '开战：月被吞尽、天色骤暗，敌方全体打上标记 2 轮，最靠后的那只先受攻击 70%',
-    [E('st', 'foe.all', { k: 'mark', n: 2 }), E('dmg', 'foe.last', { atk: 0.7 })],
+  K('yeshi', '天狗食月', ['eclipse', 'moth'], 'start', '开战：月被吞尽、天色骤暗，敌方全体打上标记 1 轮，最靠后的那只先受攻击 50%',
+    [E('st', 'foe.all', { k: 'mark', n: 1 }), E('dmg', 'foe.last', { atk: 0.5 })],
     { c: ['#1c1915', '#c0c0d0'], d: '一个黑影从右上角滑入一口口啃掉月亮，整屏只剩一圈银白月晕，敌蛊身上一个个亮起印记，最后一只被从阴影里伸出的爪子拍中；全段压暗，只有高光' }),
-  K('zuisheng', '醉生梦死', ['sleep', 'jiuchong'], 'start', '开战：酒香混着催眠粉飘过去，敌方最前那一列各眩晕一次',
-    [E('st', 'foe.front', { shape: 'col', k: 'stun', n: 1 })],
+  K('zuisheng', '醉生梦死', ['sleep', 'jiuchong'], 'start', '开战：酒香混着催眠粉飘过去，敌方离得最近的两只各眩晕一次',
+    [E('st', 'foe.front:2', { k: 'stun', n: 1 })],
     { c: ['#c09060', '#6a5a8a'], d: '酒虫打个酒嗝，一团带甜味的粉紫色雾气慢悠悠飘向敌方前列，被熏到的蛊一个个东倒西歪，头顶冒出小酒泡' }),
   // ====== 血道 ======
-  K('xuehe', '血河蟒', ['xueyue', 'leech', 'hairy'], 'round', '每 2 轮：血河化作巨蟒，贯穿敌方最近的那一整行：各受攻击 60%，并中毒（攻击 10%）；本蛊吸回造成伤害的一半',
-    [E('dmg', 'foe.front', { shape: 'row', atk: 0.6, steal: 0.5, every: 2 }), E('st', 'same', { k: 'psn', atk: 0.1, every: 2 })],
+  K('xuehe', '血河蟒', ['xueyue', 'leech', 'hairy'], 'round', '每 2 轮：血河化作巨蟒，贯穿敌方最近的那一整行：各受攻击 16%，并中毒（攻击 2.5%）；本蛊吸回造成伤害的三成',
+    [E('dmg', 'foe.front', { shape: 'row', atk: 0.16, steal: 0.3, every: 2 }), E('st', 'same', { k: 'psn', atk: 0.025, every: 2 })],
     { c: ['#8a1f2b', '#4f7a3a'], d: '地面裂开一道暗红血河，一条血色巨蟒从河里昂首冲出，贴着敌方那一行横穿过去，蟒身带起的血浪泛着绿光' }, { canon: true }),
-  K('baichong', '百虫入瓮', ['urn', 'bone'], 'start', '开战：瓮王得到最大血量 25% 的护体；倒下时瓮里的百虫破瓮而出，原地召出两只蛊蛹（各本蛊攻血 35%）',
-    [E('shield', 'self', { mx: 0.25 }), { when: 'death', ...E('summon', 'self', { sp: 'pupa', atk: 0.35, mx: 0.35, at: 'here', count: 2 }) }],
+  K('baichong', '百虫入瓮', ['urn', 'bone'], 'start', '开战：瓮王得到最大血量 7% 的护体；倒下时瓮里的百虫破瓮而出，原地召出两只蛊蛹（各本蛊攻血 13%）',
+    [E('shield', 'self', { mx: 0.07 }), { when: 'death', ...E('summon', 'self', { sp: 'pupa', atk: 0.13, mx: 0.13, at: 'here', count: 2 }) }],
     { c: ['#6a3a2a', '#c0a080'], d: '瓮王身上的釉面泛起一层暗光；倒下时瓮身裂成几瓣，里面的虫影哗地涌出又缩成两只蛊蛹，瓮片在地上转几圈才停' }),
   K('xueshen', '血神子', ['chiba', 'twin'], 'start', '开战：赤魃滴血化出两只血神子站到后排（各本蛊攻血 30%）；之后每有友蛊倒下，敌方全体受攻击 12%（每场最多 4 次）',
     [E('summon', 'self', { sp: 'xueshen', atk: 0.3, mx: 0.3, at: 'back', count: 2 }), { when: 'allyDeath', ...E('dmg', 'foe.all', { atk: 0.12, max: 4 }) }],
     { c: ['#a01828', '#1c1915'], d: '赤魃指尖滴下两滴血，落地即长成两个小小的血色人形，眼睛亮起红光，向后一跃站进后排；有友蛊倒下时血色从地面漫向敌阵' }, { canon: true }),
   // ====== 毒道 ======
-  K('wudu', '五毒噬心', ['cent', 'scorp'], 'round', '每轮开始：敌方全体中毒（攻击 7%，可叠）',
-    [E('st', 'foe.all', { k: 'psn', atk: 0.07 })],
-    { c: ['#4f7a3a', '#6a3a7a'], d: '蜈蚣、蝎子的墨影绕着敌阵爬一圈，爬过的地方冒起紫绿色毒泡，泡泡一个个破开散成毒雾；俯视构图，绕圈由慢到快' }),
-  K('shidu', '尸毒瘴', ['toad', 'fly'], 'allyDeath', '有蛊倒下（敌我都算）：尸气化成瘴，敌方全体中毒（攻击 6%）（敌我各最多 6 次）',
-    [E('st', 'foe.all', { k: 'psn', atk: 0.06, max: 6 }), { when: 'foeDeath', ...E('st', 'foe.all', { k: 'psn', atk: 0.06, max: 6 }) }],
+  K('wudu', '五毒噬心', ['cent', 'gecko'], 'round', '每 2 轮：敌方全体中毒（攻击 4.5%，可叠）',
+    [E('st', 'foe.all', { k: 'psn', atk: 0.045, every: 2 })],
+    { c: ['#4f7a3a', '#6a3a7a'], d: '蜈蚣、壁虎的墨影绕着敌阵爬一圈，爬过的地方冒起紫绿色毒泡，泡泡一个个破开散成毒雾；俯视构图，绕圈由慢到快' }),
+  K('shidu', '尸毒瘴', ['toad', 'fly'], 'allyDeath', '有蛊倒下（敌我都算）：尸气化成瘴，敌方全体中毒（攻击 9%）（敌我各最多 6 次）',
+    [E('st', 'foe.all', { k: 'psn', atk: 0.09, max: 6 }), { when: 'foeDeath', ...E('st', 'foe.all', { k: 'psn', atk: 0.09, max: 6 }) }],
     { c: ['#5a6a3a', '#3a2a3a'], d: '倒下的蛊身上升起灰绿色尸气，尸蝇嗡嗡绕着飞一圈，毒蟾鼓腹一吹，瘴气贴着地面漫进敌阵' }),
-  K('tixian', '提线百傀', ['puppet', 'hairworm'], 'foeDeath', '敌蛊倒下（谁打死的都算）：铁线钻进它的身子，牵丝做成我方傀儡站到后排（本蛊攻血 40%，每场最多 2 只）',
-    [E('summon', 'self', { sp: 'kuilei', atk: 0.4, mx: 0.4, at: 'back', max: 2 })],
+  K('tixian', '提线百傀', ['puppet', 'hairworm'], 'foeDeath', '敌蛊倒下（谁打死的都算）：铁线钻进它的身子，牵丝做成我方傀儡站到后排（本蛊攻血 40%，每场最多 3 只）',
+    [E('summon', 'self', { sp: 'kuilei', atk: 0.4, mx: 0.4, at: 'back', max: 3 })],
     { c: ['#8a3030', '#d8d0c0'], d: '一根细铁线从倒下的敌蛊身上钻进去，画面顶端随即垂下几根红丝把它吊起，像木偶一样晃两下后转身，眼睛换成我方的颜色；镜头仰拍丝线来处' }),
   // ====== 智道 ======
-  K('tianluo', '天罗地网', ['webspider', 'spider'], 'start', '开战：敌方最前那一列落网 1 次；之后每有友蛊被召唤，敌方最近的那只再落网 1 次（最多 3 次）',
-    [E('st', 'foe.front', { shape: 'col', k: 'web', n: 1 }), { when: 'summon', ...E('st', 'foe.front', { k: 'web', n: 1, max: 3 }) }],
+  K('tianluo', '天罗地网', ['webspider', 'spider'], 'start', '开战：敌方最前那一列落网 1 次；之后每有友蛊被召唤，敌方最近的那只再落网 1 次（最多 5 次）',
+    [E('st', 'foe.front', { shape: 'col', k: 'web', n: 1 }), { when: 'summon', ...E('st', 'foe.front', { k: 'web', n: 1, max: 5 }) }],
     { c: ['#d8d0c0', '#1c1915'], d: '一张巨大的蛛网从画面上方垂落，四角钉进地面罩住敌方前列；之后每落地一只小蛛，网上就多拉一根亮丝' }),
-  K('suanwu', '算无遗策', ['diting', 'hex'], 'start', '开战：听出敌方攻最高的那只，它攻 -20%（3 轮），3 轮内蛊力不涨',
-    [E('buff', 'foe.top', { atk: -0.2, dur: 3 }), E('st', 'same', { k: 'seal', n: 3 })],
+  K('suanwu', '算无遗策', ['diting', 'hex'], 'start', '开战：听出敌方攻最高的两只，各攻 -30%（3 轮）、3 轮内蛊力不涨，并打上标记 3 轮',
+    [E('buff', 'foe.top:2', { atk: -0.3, dur: 3 }), E('st', 'same', { k: 'seal', n: 3 }), E('st', 'same', { k: 'mark', n: 3 })],
     { c: ['#3d5a8a', '#e8e0c0'], d: '地听草的肉耳贴地一颤，画面浮出一块半透明棋盘，棋子啪啪落下几步，最后一子落在敌方主力头顶，一圈算筹缠上它；节奏像落子，配算珠声' }),
   // ====== 魂道 ======
-  K('tuoke', '金蝉脱壳', ['cicada', 'twin'], 'lethal', '金蝉受到致命伤时留下空壳，本体以五成血脱身（每场一次）',
-    [E('endure', null, { v: 0.5, max: 1 })],
+  K('tuoke', '金蝉脱壳', ['cicada', 'twin'], 'lethal', '金蝉受到致命伤时留下空壳，本体满血脱身，再挂「护」2 次（每场一次）',
+    [E('endure', null, { v: 1, max: 1 }), E('st', 'self', { k: 'guard', n: 2, max: 1 })],
     { c: ['#c8a040', '#efe7d4'], d: '致命一击打中后画面定格，金蝉背部裂开，一只半透明的本体钻出飞到一旁，原地只剩一个金色空壳被打碎；用一次快速的镜头位移交代人已不在原地' }),
   // ====== 奴道 ======
-  K('wangu', '万蛊朝宗', ['queen', 'bone'], 'start', '开战：后排召出一只蛊蛹（本蛊攻血 25%）；之后每有友蛊被召唤，全体友蛊攻血 +3%（最多 6 次）',
-    [E('summon', 'self', { sp: 'pupa', atk: 0.25, mx: 0.25, at: 'back' }), { when: 'summon', ...E('buff', 'ally.all', { atk: 0.03, hp: 0.03, max: 6 }) }],
+  K('wangu', '万蛊朝宗', ['queen', 'bone'], 'start', '开战：后排召出一只蛊蛹（本蛊攻血 12%）；之后每有友蛊被召唤，全体友蛊攻血 +1%（最多 4 次）',
+    [E('summon', 'self', { sp: 'pupa', atk: 0.12, mx: 0.12, at: 'back' }), { when: 'summon', ...E('buff', 'ally.all', { atk: 0.01, hp: 0.01, max: 4 }) }],
     { c: ['#d9a441', '#3a3346'], d: '蜂王振翅，画面四角的虫影一齐朝它俯首，后排地面裂开钻出一只蛊蛹；之后每多一只召唤物，王冠就亮一层' }),
-  K('baiyi', '百蚁噬象', ['qant', 'ant'], 'start', '开战：蚁后再召两只兵蚁站到后排（各本蛊攻血 25%）',
-    [E('summon', 'self', { sp: 'antling', atk: 0.25, mx: 0.25, at: 'back', count: 2 })],
+  K('baiyi', '百蚁噬象', ['qant', 'ant'], 'start', '开战：蚁后再召两只兵蚁站到后排（各本蛊攻血 35%）',
+    [E('summon', 'self', { sp: 'antling', atk: 0.35, mx: 0.35, at: 'back', count: 2 })],
     { c: ['#9a4a2c', '#1c1915'], d: '地面裂开一个蚁穴口，兵蚁排成一列从洞里钻出，沿弧线跑进我方后排站好；镜头低角度，兵蚁由小变大，最后一只落位时轻轻一顿' }),
-  K('qunfeng', '群蜂蛰毒', ['hive', 'wasp'], 'summon', '每有友蛊被召唤：随机一只敌蛊被蜂群蛰中，中毒（攻击 10%）（每场最多 8 次）',
-    [E('st', 'foe.rand', { k: 'psn', atk: 0.1, max: 8 })],
+  K('qunfeng', '群蜂蛰毒', ['hive', 'wasp'], 'summon', '每有友蛊被召唤：随机一只敌蛊被蜂群蛰中，中毒（攻击 26%）（每场最多 10 次）',
+    [E('st', 'foe.rand', { k: 'psn', atk: 0.26, max: 10 })],
     { c: ['#e0a020', '#4f7a3a'], d: '蜂巢口涌出一股金黄色蜂群，像一条丝带绕过前排扎进某只敌蛊，被蛰的地方鼓起一个绿色的包' }),
   // ====== 宇道 ======
-  K('yixing', '移形换影', ['flea', 'mole'], 'round', '每 2 轮：跳蚤和最前的友蛊换位，被换下的友蛊挂「护」1 次；跳到最前时钻地突袭敌方后排，各受攻击 40%（最多 2 次）',
-    [E('swap', 'ally.front', { with: 'self', every: 2 }), E('st', 'same', { k: 'guard', n: 1, every: 2 }), { when: 'front', ...E('dmg', 'foe.last', { shape: 'back', atk: 0.4, max: 2 }) }],
+  K('yixing', '移形换影', ['flea', 'mole'], 'round', '每 2 轮：跳蚤和最前的友蛊换位，被换下的友蛊挂「护」1 次；跳到最前时钻地突袭敌方后排，各受攻击 60%（最多 2 次）',
+    [E('swap', 'ally.front', { with: 'self', every: 2 }), E('st', 'same', { k: 'guard', n: 1, every: 2 }), { when: 'front', ...E('dmg', 'foe.last', { shape: 'back', atk: 0.6, max: 2 }) }],
     { c: ['#4a8a86', '#8a6a3a'], d: '跳蚤一弹就和前面的友蛊对调位置，留下一圈残影；落到最前时一头扎进土里，敌方后排脚下同时拱起土包' }),
-  K('zhichi', '咫尺天涯', ['blink', 'instant'], 'start', '开战：瞬移蛊一步跨过战场，敌方后排各受攻击 50%，行动条推后 20%',
-    [E('dmg', 'foe.last', { shape: 'back', atk: 0.5 }), E('delay', 'same', { v: 0.2 })],
+  K('zhichi', '咫尺天涯', ['blink', 'instant'], 'start', '开战：瞬移蛊一步跨过战场，敌方后排各受攻击 54%，行动条推后 30%',
+    [E('dmg', 'foe.last', { shape: 'back', atk: 0.54 }), E('delay', 'same', { v: 0.3 })],
     { c: ['#4a8a86', '#ffffff'], d: '画面像纸一样被折了一下，瞬移蛊从原地消失、同一帧出现在敌方后排身后，刀光一闪再折回原位，前后不到半秒' }),
   // ====== 宙道 ======
-  K('yiri', '一日千秋', ['mayfly', 'bfly'], 'death', '蜉蝣倒下时，全体友蛊攻血 +15%',
-    [E('buff', 'ally.all', { atk: 0.15, hp: 0.15 })],
+  K('yiri', '一日千秋', ['mayfly', 'bfly'], 'death', '蜉蝣倒下时，全体友蛊攻血 +10%',
+    [E('buff', 'ally.all', { atk: 0.1, hp: 0.1 })],
     { c: ['#d8c890', '#8a7a3a'], d: '蜉蝣倒下的瞬间背景的日影飞快地从东走到西，光影在全队身上扫过一遍，友蛊身上留下淡金色年轮纹；延时摄影般的快进节奏' }),
-  K('chana', '刹那芳华', ['instant', 'flea'], 'start', '开战：时间一停，刹那蛊对最近的敌蛊连斩两刀（各攻击 60%）',
-    [E('dmg', 'foe.front', { atk: 0.6, times: 2 })],
+  K('chana', '刹那芳华', ['instant', 'flea'], 'start', '开战：时间一停，刹那蛊对最近的敌蛊连斩两刀（各攻击 43%）',
+    [E('dmg', 'foe.front', { atk: 0.43, times: 2 })],
     { c: ['#8a7a3a', '#ffffff'], d: '全屏瞬间褪成黑白、所有动作停住，只有刹那蛊保持彩色连出两刀，颜色恢复时两道伤害数字同时跳出' }),
-  K('niliu', '逆流护身印', ['hourglass', 'mirror'], 'start', '开战：全体友蛊挂「护」1 次；每 3 轮：血量比例最低的友蛊清掉减益、挂「护」2 次',
-    [E('st', 'ally.all', { k: 'guard', n: 1 }), { when: 'round', ...E('cleanse', 'ally.lowp', { every: 3 }) }, { when: 'round', ...E('st', 'same', { k: 'guard', n: 2, every: 3 }) }],
+  K('niliu', '逆流护身印', ['hourglass', 'mirror'], 'start', '开战：全体友蛊挂「护」1 次；每 3 轮：血量比例最低的友蛊清掉减益、挂「护」1 次',
+    [E('st', 'ally.all', { k: 'guard', n: 1 }), { when: 'round', ...E('cleanse', 'ally.lowp', { every: 3 }) }, { when: 'round', ...E('st', 'same', { k: 'guard', n: 1, every: 3 }) }],
     { c: ['#8a7a3a', '#c0d8e8'], d: '一道倒着流的光河绕全队一圈，水纹往上涌，凝成一枚半透明的印落在每只友蛊额头；之后每 3 轮那枚印逆转一次，伤得最重的那只身上的污迹倒流回地面' }, { canon: true }),
 
+  // ====== 低转杀招（low 里的蛊要停在一转、二转；升转就散，留着低转蛊才有） ======
+  K('yingxue', '萤雪映书', ['firefly', 'snowsilk'], 'start', '开战：萤光照亮敌方全体（标记 3 轮），雪光冻住敌方最前那一列（各寒 2 层）。小光蛊、冰蚕蛊都在二转及以下才成形',
+    [E('st', 'foe.all', { k: 'mark', n: 3 }), E('st', 'foe.front', { shape: 'col', k: 'chill', n: 2 })],
+    { c: ['#e8e0a0', '#a8c8e0'], d: '夜色里几点萤火慢慢升起、在敌阵上空连成一盏灯，接着细雪从灯下飘落，只落在敌方最前那一列；整段很静，只有一声翻书响' }, { low: { firefly: 2, snowsilk: 2 } }),
+  K('zhuma', '竹马之交', ['stick', 'boar'], 'round', '每轮开始：全体友蛊回复最大血量 1%，竹节蛊攻 +1%（最多 5 次）。竹节蛊、白豕蛊都在二转及以下才成形',
+    [E('heal', 'ally.all', { tmx: 0.01 }), E('buff', 'self', { atk: 0.01, max: 5 })],
+    { c: ['#7a9a4a', '#e8d8c0'], d: '一根竹节骑着白豕在我方阵里绕一圈，跑过的地方冒出嫩芽，蛊们身上亮起一点绿光；轻快的小跑节奏' }, { low: { stick: 2, boar: 2 } }),
+  K('maodu', '毛蜱吮毒', ['tick', 'hairy'], 'attack', '普攻：目标已经中毒时本蛊吸回这一下的 10%；然后目标中毒（攻击 3%）。蜱蛊、毛虫蛊都是一转才成形',
+    [E('heal', 'self', { n: 0.1, if: 'tg.psn' }), E('st', 'tg', { k: 'psn', atk: 0.03 })],
+    { c: ['#8a1f2b', '#6a8a3a'], d: '蜱蛊一口叮上，毛虫的绿毛顺着口器扎进去，一缕暗红从目标流回蜱蛊肚子，肚子肉眼可见地鼓了一圈' }, { low: { tick: 1, hairy: 1 } }),
+  K('jingyu', '惊雷细雨', ['static', 'strider'], 'start', '开战：细雨里噼啪一闪，敌方速最快的两只行动条推后 60%，最快的那只再眩晕一次。静电蛊、水黾蛊都在二转及以下才成形',
+    [E('delay', 'foe.fast:2', { v: 0.6 }), E('st', 'foe.fast', { k: 'stun', n: 1 })],
+    { c: ['#5a7ab0', '#a0c0d0'], d: '水黾在水面一点，涟漪里窜出细细的电弧，贴着雨丝爬到敌方最快的两只身上，它们一哆嗦停在原地；雨声里夹两声脆响' }, { low: { static: 2, strider: 2 } }),
+  K('guihuo', '鬼火引路', ['will', 'webspider'], 'allyDeath', '有友蛊倒下：鬼火顺着蛛丝烧过去，敌方最近那一列落网 1 次、灼烧 2 轮（攻击 25%）（每场最多 4 次）。鬼火蛊、网蛛蛊都是一转才成形',
+    [E('st', 'foe.front', { shape: 'col', k: 'web', n: 1, max: 4 }), E('st', 'same', { k: 'burn', n: 2, atk: 0.25, max: 4 })],
+    { c: ['#6ac0a0', '#3a3a4a'], d: '倒下的蛊身上飘起一团绿火，沿着一根看不见的蛛丝滑向敌方最前那只，丝一亮就成了网，网上燃着冷绿色的火' }, { low: { will: 1, webspider: 1 } }),
+  K('xiaobing', '小卒推山', ['ant', 'dung'], 'start', '开战：兵蚁挂「护」2 次；推丸蛊推着泥丸撞向敌方最前那只：受攻击 56% 并击退一格。兵蚁蛊、推丸蛊都是一转才成形',
+    [E('st', 'self', { k: 'guard', n: 2 }), E('dmg', 'foe.front', { atk: 0.56 }), E('knock', 'same', { v: 1 })],
+    { c: ['#8a6a3a', '#5a4a3a'], d: '一只小兵蚁扛起比自己大十倍的泥丸，推丸蛊在后面用后腿一蹬，泥丸滚过战场撞翻敌方最前那只；镜头跟着泥丸低机位推进' }, { low: { ant: 1, dung: 1 } }),
   // ====== 进阶杀招（原杀招 + 一两只，成形后取代原杀招） ======
-  K('sanzhu2', '焚原三豕', ['boar', 'fire', 'twin', 'locust'], 'start', '开战：火影与蝗群一起冲阵：敌方最前那一列各受攻击 70%、灼烧 2 轮（攻击 20%），后排各受攻击 30%',
-    [E('dmg', 'foe.front', { shape: 'col', atk: 0.7 }), E('st', 'same', { k: 'burn', n: 2, atk: 0.2 }), E('dmg', 'foe.last', { shape: 'back', atk: 0.3 })],
+  K('sanzhu2', '焚原三豕', ['boar', 'fire', 'twin', 'locust'], 'start', '开战：火影与蝗群一起冲阵：敌方最前那一列各受攻击 30%、灼烧 2 轮（攻击 8%），后排各受攻击 11%',
+    [E('dmg', 'foe.front', { shape: 'col', atk: 0.3 }), E('st', 'same', { k: 'burn', n: 2, atk: 0.08 }), E('dmg', 'foe.last', { shape: 'back', atk: 0.11 })],
     { c: ['#b5301f', '#e08a3a', '#3a3a1a'], d: '三道火影后面跟着一大片蝗群，火借风势把蝗群点成一道火墙横扫敌阵，镜头被火墙推着后退，收尾一整排焦土' }, { from: 'sanzhu' }),
-  K('jinjia2', '万钧金身', ['iron', 'thorn', 'yupi'], 'start', '开战：铜皮蛊得到最大血量 45% 的护体，接下来 5 次受伤减半，同一列的友蛊各得 15%；之后被近战打中，扎回这一下的 25%',
-    [E('shield', 'self', { mx: 0.45 }), E('st', 'self', { k: 'guard', n: 5 }), E('shield', 'ally.col', { mx: 0.15 }), { when: 'hit', ...E('dmg', 'src', { n: 0.25, if: 'melee' }) }],
+  K('jinjia2', '万钧金身', ['iron', 'thorn', 'yupi'], 'start', '开战：铜皮蛊得到最大血量 16% 的护体，接下来 4 次受伤减半，同一列的友蛊各得 4.5%；之后被近战打中，扎回这一下的 9%',
+    [E('shield', 'self', { mx: 0.16 }), E('st', 'self', { k: 'guard', n: 4 }), E('shield', 'ally.col', { mx: 0.045 }), { when: 'hit', ...E('dmg', 'src', { n: 0.09, if: 'melee' }) }],
     { c: ['#a8803e', '#e8c76a', '#d8e8d0'], d: '金甲扣满后，玉皮蛊的玉色从甲缝里渗出来，整身变成金玉两色并长出细刺，镜头绕满一整圈正面定格，地面裂纹比原版大一倍' }, { from: 'jinjia' }),
-  K('pojian2', '化蝶三生', ['silk', 'bfly', 'fusang'], 'round', '第 2 轮开始就破茧：同一列的友蛊攻血 +20%，本蛊速 +25%，全体友蛊回复最大血量 20%（只一次）',
-    [E('buff', 'ally.col', { atk: 0.2, hp: 0.2, if: 'round>=2', max: 1 }), E('buff', 'self', { spd: 0.25, if: 'round>=2', max: 1 }), E('heal', 'ally.all', { tmx: 0.2, if: 'round>=2', max: 1 })],
+  K('pojian2', '化蝶三生', ['silk', 'bfly', 'fusang'], 'round', '第 2 轮开始就破茧：同一列的友蛊攻血 +9%，本蛊速 +10%，全体友蛊回复最大血量 9%（只一次）',
+    [E('buff', 'ally.col', { atk: 0.09, hp: 0.09, if: 'round>=2', max: 1 }), E('buff', 'self', { spd: 0.1, if: 'round>=2', max: 1 }), E('heal', 'ally.all', { tmx: 0.09, if: 'round>=2', max: 1 })],
     { c: ['#5e8a4a', '#e8d8f0', '#f0c050'], d: '破茧时背后长出一棵金色扶桑树影，双蝶绕树三圈，每圈洒下一层金粉落到友蛊身上；比原版多一段绕树的环形镜头' }, { from: 'pojian' }),
-  K('xuanwu2', '玄武负山', ['tortoise', 'gecko', 'yue'], 'round', '每轮开始：玄龟站在最前时得到 12% 护体、身后的友蛊各 6%，并嘲讽敌方（到下一轮）',
-    [E('shield', 'self', { mx: 0.12, if: 'front' }), E('shield', 'ally.behind', { mx: 0.06, if: 'front' }), E('st', 'self', { k: 'taunt', n: 2, if: 'front' })],
+  K('xuanwu2', '玄武负山', ['tortoise', 'gecko', 'yue'], 'round', '每轮开始：玄龟站在最前时得到 6% 护体、身后的友蛊各 3.5%，并嘲讽敌方（到下一轮）',
+    [E('shield', 'self', { mx: 0.06, if: 'front' }), E('shield', 'ally.behind', { mx: 0.035, if: 'front' }), E('st', 'self', { k: 'taunt', n: 2, if: 'front' })],
     { c: ['#4a5a4a', '#8a6a3a', '#b5301f'], d: '山影压进龟壳后，镇岳蛊在后方升起一座更高的峰，两座山影叠成一个「山」字，龟身前插起一面红色挑战旗；仰拍加慢推' }, { from: 'xuanwu' }),
-  K('leigu2', '雷霆万钧', ['thunder', 'drum', 'magstorm'], 'attack', '普攻后雷鼓连响：目标和它十字范围各受这一下的 40%，20% 机会全部眩晕一次',
-    [E('dmg', 'tg', { shape: 'cross', n: 0.4 }), E('st', 'same', { k: 'stun', n: 1, chance: 0.2 })],
+  K('leigu2', '雷霆万钧', ['thunder', 'drum', 'magstorm'], 'attack', '普攻后雷鼓连响：目标和它十字范围各受这一下的 25%，12% 机会全部眩晕一次',
+    [E('dmg', 'tg', { shape: 'cross', n: 0.25 }), E('st', 'same', { k: 'stun', n: 1, chance: 0.12 })],
     { c: ['#3a6aa8', '#ffffff', '#a0a0ff'], d: '雷鼓连敲三下，磁暴蛊在敌阵上空张开一张紫色电网，电弧顺着十字同时跳动，闪白三帧；比原版多一个电网的俯视镜头' }, { from: 'leigu' }),
   K('jiutian2', '九霄雷劫', ['dfly', 'firefly', 'jiuxiao'], 'round', '单数轮开始：攻最高的两只敌蛊打上标记（2 轮），九道雷劫落下，敌方全体受攻击 40%，20% 机会全部眩晕一次',
     [E('st', 'foe.top:2', { k: 'mark', n: 2, if: 'round%2' }), E('dmg', 'foe.all', { atk: 0.4, if: 'round%2' }), E('st', 'same', { k: 'stun', n: 1, chance: 0.2, if: 'round%2' })],
     { c: ['#5a8ad0', '#e8e070', '#d9a441'], d: '天幕裂开九道金色裂缝，萤火标记之后九道雷柱依次落下（间隔 0.06 秒），最后一道最粗、带金边；从仰拍一路摇到俯拍' }, { from: 'jiutian' }),
-  K('wudu2', '万毒归宗', ['cent', 'scorp', 'toad', 'cordy'], 'round', '每轮开始：敌方全体中毒（攻击 10%，可叠），攻最高的那只已中毒时再受攻击 30%',
-    [E('st', 'foe.all', { k: 'psn', atk: 0.1 }), E('dmg', 'foe.top', { atk: 0.3, if: 'tg.psn' })],
-    { c: ['#4f7a3a', '#6a3a7a', '#1c1915'], d: '几种毒虫的墨影和一株虫草从四面爬向敌阵中心，在攻最高的那只头顶汇成一个旋转的毒环，收紧后炸成绿紫色的雾；对称构图，越汇越急' }, { from: 'wudu' }),
-  K('bingfeng2', '冰火同炉', ['frost', 'fire', 'magma', 'hail'], 'attack', '普攻命中：目标带着寒时再受攻击 50%；然后目标灼烧 2 轮（攻击 25%），它和十字范围各寒 1 层',
-    [E('dmg', 'tg', { atk: 0.5, if: 'tg.chill' }), E('st', 'tg', { k: 'burn', n: 2, atk: 0.25 }), E('st', 'tg', { shape: 'cross', k: 'chill', n: 1 })],
+  K('wudu2', '万毒归宗', ['cent', 'gecko', 'toad', 'scorp'], 'round', '每 2 轮：敌方全体中毒（攻击 8%，可叠），攻最高的那只已中毒时再受攻击 39%',
+    [E('st', 'foe.all', { k: 'psn', atk: 0.08, every: 2 }), E('dmg', 'foe.top', { atk: 0.39, if: 'tg.psn', every: 2 })],
+    { c: ['#4f7a3a', '#6a3a7a', '#1c1915'], d: '蜈蚣、壁虎、蟾蜍、蝎子的墨影从四面爬向敌阵中心，在攻最高的那只头顶汇成一个旋转的毒环，收紧后炸成绿紫色的雾；对称构图，越汇越急' }, { from: 'wudu' }),
+  K('bingfeng2', '冰火同炉', ['frost', 'fire', 'magma', 'hail'], 'attack', '普攻命中：目标带着寒时再受攻击 25%；然后目标灼烧 2 轮（攻击 10%），它和十字范围各寒 1 层',
+    [E('dmg', 'tg', { atk: 0.25, if: 'tg.chill' }), E('st', 'tg', { k: 'burn', n: 2, atk: 0.1 }), E('st', 'tg', { shape: 'cross', k: 'chill', n: 1 })],
     { c: ['#6a9cc0', '#d0632a', '#7a1a10'], d: '冰火螺旋柱成形后，地下涌出岩浆、天上砸下冰雹，冰与火在目标头顶撞成一只炉鼎的形状再炸开；分屏构图收拢成一个圆' }, { from: 'bingfeng' }),
-  K('baiyi2', '火蚁燎原', ['qant', 'ant', 'fireant'], 'start', '开战：蚁后召三只兵蚁站到后排（各本蛊攻血 25%）；之后每有友蛊被召唤，随机一只敌蛊被火蚁咬中，灼烧 2 轮（攻击 12%）（最多 8 次）',
-    [E('summon', 'self', { sp: 'antling', atk: 0.25, mx: 0.25, at: 'back', count: 3 }), { when: 'summon', ...E('st', 'foe.rand', { k: 'burn', n: 2, atk: 0.12, max: 8 }) }],
+  K('baiyi2', '火蚁燎原', ['qant', 'ant', 'fireant'], 'start', '开战：蚁后召三只兵蚁站到后排（各本蛊攻血 50%）；之后每有友蛊被召唤，随机一只敌蛊被火蚁咬中，灼烧 2 轮（攻击 25%）（最多 8 次）',
+    [E('summon', 'self', { sp: 'antling', atk: 0.5, mx: 0.5, at: 'back', count: 3 }), { when: 'summon', ...E('st', 'foe.rand', { k: 'burn', n: 2, atk: 0.25, max: 8 }) }],
     { c: ['#9a4a2c', '#e05a1a'], d: '蚁穴口喷出一串火星，兵蚁一只只背着小火苗钻出来，红色的蚁流分出几股窜进敌阵，被咬过的地方冒起一缕青烟' }, { from: 'baiyi' }),
   K('suanwu2', '算尽天机', ['diting', 'hex', 'zhihui'], 'start', '开战：敌方攻最高的那只攻 -25%（3 轮）、3 轮内蛊力不涨；敌方全体打上标记 2 轮，全体友蛊蛊力 +25',
     [E('buff', 'foe.top', { atk: -0.25, dur: 3 }), E('st', 'same', { k: 'seal', n: 3 }), E('st', 'foe.all', { k: 'mark', n: 2 }), E('gp', 'ally.all', { v: 25 })],
@@ -1872,13 +1909,107 @@ const COMBO_UP = Object.fromEntries(COMBOS2.filter(c => c.from).map(c => [c.from
 // 新召唤物（bestiary2.js 的 SUMMONS2 里也有）
 const COMBO_SUMMONS = { xueshen: '血神子' };
 
-return { COMBOS2, COMBO2, COMBO_POWER, COMBO_UP, COMBO_SUMMONS };
+// ======================= 打法克制（每个杀招、每种强势打法都标 counters / counteredBy） =======================
+// STRATS = 打法标签：counters 按引擎机制写（例：灼烧、毒不看护体 → 克护体流；群攻 → 克召唤流）；counteredBy 由各打法的 counters 反推，两边一致（tools/v2-data-check.mjs 核对）。
+// daos = 偏这种打法的道（界面「这一道怕什么」可以顺着查）。杀招的 style 是它属于哪几种打法（主的在前），counters / counteredBy 由 style 汇总、各取前 4 个。
+const STRATS = [
+  { id: 'burn', n: '灼烧流', d: '灼烧持续掉血，不看护体', daos: ['yan'], counters: ['shield', 'tank', 'revive', 'reflect'], counteredBy: ['heal', 'cleanse'] },
+  { id: 'poison', n: '毒流', d: '毒一层层叠，不看护体，拖得越久越疼', daos: ['du'], counters: ['shield', 'tank', 'revive', 'scale'], counteredBy: ['heal', 'cleanse'] },
+  { id: 'shield', n: '护体流', d: '护体和「护」先把伤害挡掉', daos: ['jin', 'tu'], counters: ['burst', 'aoe', 'backline'], counteredBy: ['burn', 'poison', 'scale'] },
+  { id: 'heal', n: '续航流', d: '回血、吸血，慢慢磨', daos: ['mu', 'xue'], counters: ['burn', 'poison', 'aoe'], counteredBy: ['burst', 'mark', 'backline', 'scale', 'eat'] },
+  { id: 'summon', n: '召唤流', d: '召出一群帮手，人多挡刀', daos: ['nu'], counters: ['control', 'mark', 'eat'], counteredBy: ['aoe'] },
+  { id: 'burst', n: '开战爆发', d: '开战或头几轮打出一大波伤害', daos: ['li'], counters: ['heal', 'scale', 'cleanse'], counteredBy: ['shield', 'control', 'tank', 'speed', 'revive', 'reflect'] },
+  { id: 'aoe', n: '群攻', d: '一行、一列、全体一起打', daos: ['lei'], counters: ['summon'], counteredBy: ['shield', 'heal', 'revive', 'reflect'] },
+  { id: 'control', n: '控制流', d: '眩晕、寒、网、封住蛊力、削攻', daos: ['bing', 'zhi'], counters: ['speed', 'scale', 'burst'], counteredBy: ['summon', 'cleanse'] },
+  { id: 'mark', n: '集火', d: '打标记，专挑一只打', daos: ['an', 'guang'], counters: ['heal', 'revive'], counteredBy: ['summon', 'tank'] },
+  { id: 'backline', n: '打后排', d: '越过前排打后排，或把后排拽出来', daos: ['yu'], counters: ['scale', 'heal'], counteredBy: ['shield', 'tank'] },
+  { id: 'tank', n: '前排硬抗', d: '嘲讽、减伤，把伤害吸到自己身上', daos: ['tu', 'jin'], counters: ['mark', 'backline', 'burst'], counteredBy: ['burn', 'poison', 'scale', 'eat'] },
+  { id: 'scale', n: '越打越强', d: '叠攻叠血，拖到后面翻盘', daos: ['zhou', 'hun'], counters: ['tank', 'shield', 'heal'], counteredBy: ['poison', 'burst', 'control', 'backline', 'eat'] },
+  { id: 'speed', n: '抢先手', d: '行动条、蛊力、速度，先出手', daos: ['lei', 'guang', 'zhi'], counters: ['burst', 'eat'], counteredBy: ['control', 'reflect'] },
+  { id: 'revive', n: '保命', d: '致命伤不倒、倒下留后手', daos: ['hun'], counters: ['burst', 'eat', 'aoe'], counteredBy: ['burn', 'poison', 'mark'] },
+  { id: 'eat', n: '斩杀', d: '吞掉、收割残血', daos: [], counters: ['tank', 'heal', 'scale'], counteredBy: ['summon', 'speed', 'revive'] },
+  { id: 'reflect', n: '反伤', d: '挨打就照回去', daos: [], counters: ['burst', 'aoe', 'speed'], counteredBy: ['burn'] },
+  { id: 'cleanse', n: '清除减益', d: '清掉毒、灼、控制', daos: [], counters: ['burn', 'poison', 'control'], counteredBy: ['burst'] },
+];
+const STRAT = Object.fromEntries(STRATS.map(s => [s.id, s]));
+const COMBO_COUNTERS = {
+  sanzhu: { style: ['burst', 'burn'], counters: ['heal', 'scale', 'cleanse', 'shield'], counteredBy: ['shield', 'control', 'tank', 'speed'] },
+  huangzai: { style: ['backline', 'aoe'], counters: ['scale', 'heal', 'summon'], counteredBy: ['shield', 'tank', 'heal', 'revive'] },
+  wanwo: { style: ['summon', 'scale'], counters: ['control', 'mark', 'eat', 'tank'], counteredBy: ['aoe', 'poison', 'burst', 'control'] },
+  tunshi: { style: ['eat'], counters: ['tank', 'heal', 'scale'], counteredBy: ['summon', 'speed', 'revive'] },
+  fenshen: { style: ['aoe', 'burn'], counters: ['summon', 'shield', 'tank', 'revive'], counteredBy: ['shield', 'heal', 'revive', 'reflect'] },
+  liaoyuan: { style: ['burn', 'poison'], counters: ['shield', 'tank', 'revive', 'reflect'], counteredBy: ['heal', 'cleanse'] },
+  lieyang: { style: ['burn'], counters: ['shield', 'tank', 'revive', 'reflect'], counteredBy: ['heal', 'cleanse'] },
+  dihuo: { style: ['backline', 'burn'], counters: ['scale', 'heal', 'shield', 'tank'], counteredBy: ['shield', 'tank', 'heal', 'cleanse'] },
+  bingfeng: { style: ['burn', 'control'], counters: ['shield', 'tank', 'revive', 'reflect'], counteredBy: ['heal', 'cleanse', 'summon'] },
+  hanchuan: { style: ['control'], counters: ['speed', 'scale', 'burst'], counteredBy: ['summon', 'cleanse'] },
+  xuebeng: { style: ['control', 'aoe'], counters: ['speed', 'scale', 'burst', 'summon'], counteredBy: ['summon', 'cleanse', 'shield', 'heal'] },
+  jinjia: { style: ['shield', 'tank'], counters: ['burst', 'aoe', 'backline', 'mark'], counteredBy: ['burn', 'poison', 'scale', 'eat'] },
+  tuibao: { style: ['scale'], counters: ['tank', 'shield', 'heal'], counteredBy: ['poison', 'burst', 'control', 'backline'] },
+  tiesuo: { style: ['shield', 'backline'], counters: ['burst', 'aoe', 'scale', 'heal'], counteredBy: ['burn', 'poison', 'scale', 'tank'] },
+  pojian: { style: ['scale', 'speed'], counters: ['tank', 'shield', 'heal', 'burst'], counteredBy: ['poison', 'burst', 'control', 'backline'] },
+  burou: { style: ['revive'], counters: ['burst', 'eat', 'aoe'], counteredBy: ['burn', 'poison', 'mark'] },
+  xuanwu: { style: ['shield', 'tank'], counters: ['burst', 'aoe', 'backline', 'mark'], counteredBy: ['burn', 'poison', 'scale', 'eat'] },
+  banshan: { style: ['burst', 'backline'], counters: ['heal', 'scale', 'cleanse'], counteredBy: ['shield', 'control', 'tank', 'speed'] },
+  leigu: { style: ['aoe'], counters: ['summon'], counteredBy: ['shield', 'heal', 'revive', 'reflect'] },
+  jiutian: { style: ['mark', 'aoe'], counters: ['heal', 'revive', 'summon'], counteredBy: ['summon', 'tank', 'shield', 'heal'] },
+  chunlei: { style: ['control', 'speed'], counters: ['scale', 'burst', 'eat'], counteredBy: ['summon', 'cleanse', 'reflect'] },
+  cishi: { style: ['backline', 'control'], counters: ['scale', 'heal', 'speed', 'burst'], counteredBy: ['shield', 'tank', 'summon', 'cleanse'] },
+  liuying: { style: ['aoe', 'burn'], counters: ['summon', 'shield', 'tank', 'revive'], counteredBy: ['shield', 'heal', 'revive', 'reflect'] },
+  jinghua: { style: ['reflect'], counters: ['burst', 'aoe', 'speed'], counteredBy: ['burn'] },
+  shishan: { style: ['summon', 'revive'], counters: ['control', 'mark', 'eat', 'burst'], counteredBy: ['aoe', 'burn', 'poison', 'mark'] },
+  richu: { style: ['heal', 'burn'], counters: ['poison', 'aoe', 'shield', 'tank'], counteredBy: ['burst', 'mark', 'backline', 'scale'] },
+  duopo: { style: ['eat'], counters: ['tank', 'heal', 'scale'], counteredBy: ['summon', 'speed', 'revive'] },
+  yeshi: { style: ['mark', 'backline'], counters: ['heal', 'revive', 'scale'], counteredBy: ['summon', 'tank', 'shield'] },
+  zuisheng: { style: ['control'], counters: ['speed', 'scale', 'burst'], counteredBy: ['summon', 'cleanse'] },
+  xuehe: { style: ['aoe', 'heal'], counters: ['summon', 'burn', 'poison'], counteredBy: ['shield', 'revive', 'reflect', 'burst'] },
+  baichong: { style: ['summon', 'shield'], counters: ['control', 'mark', 'eat', 'burst'], counteredBy: ['aoe', 'burn', 'poison', 'scale'] },
+  xueshen: { style: ['summon', 'aoe'], counters: ['control', 'mark', 'eat'], counteredBy: ['shield', 'heal', 'revive', 'reflect'] },
+  wudu: { style: ['poison'], counters: ['shield', 'tank', 'revive', 'scale'], counteredBy: ['heal', 'cleanse'] },
+  shidu: { style: ['poison'], counters: ['shield', 'tank', 'revive', 'scale'], counteredBy: ['heal', 'cleanse'] },
+  tixian: { style: ['summon'], counters: ['control', 'mark', 'eat'], counteredBy: ['aoe'] },
+  tianluo: { style: ['control'], counters: ['speed', 'scale', 'burst'], counteredBy: ['summon', 'cleanse'] },
+  suanwu: { style: ['control', 'mark'], counters: ['speed', 'scale', 'burst', 'heal'], counteredBy: ['summon', 'cleanse', 'tank'] },
+  tuoke: { style: ['revive'], counters: ['burst', 'eat', 'aoe'], counteredBy: ['burn', 'poison', 'mark'] },
+  wangu: { style: ['summon', 'scale'], counters: ['control', 'mark', 'eat', 'tank'], counteredBy: ['aoe', 'poison', 'burst', 'control'] },
+  baiyi: { style: ['summon'], counters: ['control', 'mark', 'eat'], counteredBy: ['aoe'] },
+  qunfeng: { style: ['poison', 'summon'], counters: ['shield', 'tank', 'revive', 'scale'], counteredBy: ['heal', 'cleanse', 'aoe'] },
+  yixing: { style: ['backline'], counters: ['scale', 'heal'], counteredBy: ['shield', 'tank'] },
+  zhichi: { style: ['backline', 'speed'], counters: ['scale', 'heal', 'burst', 'eat'], counteredBy: ['shield', 'tank', 'control', 'reflect'] },
+  yiri: { style: ['scale'], counters: ['tank', 'shield', 'heal'], counteredBy: ['poison', 'burst', 'control', 'backline'] },
+  chana: { style: ['burst'], counters: ['heal', 'scale', 'cleanse'], counteredBy: ['shield', 'control', 'tank', 'speed'] },
+  niliu: { style: ['cleanse', 'shield'], counters: ['burn', 'poison', 'control', 'burst'], counteredBy: ['burst', 'burn', 'poison', 'scale'] },
+  yingxue: { style: ['mark', 'control'], counters: ['heal', 'revive', 'speed', 'scale'], counteredBy: ['summon', 'tank', 'cleanse'] },
+  zhuma: { style: ['heal', 'scale'], counters: ['burn', 'poison', 'aoe', 'tank'], counteredBy: ['burst', 'mark', 'backline', 'eat'] },
+  maodu: { style: ['poison', 'heal'], counters: ['shield', 'tank', 'revive', 'scale'], counteredBy: ['cleanse', 'burst', 'mark', 'backline'] },
+  jingyu: { style: ['speed', 'control'], counters: ['burst', 'eat', 'scale'], counteredBy: ['reflect', 'summon', 'cleanse'] },
+  guihuo: { style: ['control', 'burn'], counters: ['speed', 'scale', 'burst', 'shield'], counteredBy: ['summon', 'cleanse', 'heal'] },
+  xiaobing: { style: ['burst', 'shield'], counters: ['heal', 'scale', 'cleanse', 'aoe'], counteredBy: ['control', 'tank', 'speed', 'revive'] },
+  sanzhu2: { style: ['burst', 'burn'], counters: ['heal', 'scale', 'cleanse', 'shield'], counteredBy: ['shield', 'control', 'tank', 'speed'] },
+  jinjia2: { style: ['shield', 'tank'], counters: ['burst', 'aoe', 'backline', 'mark'], counteredBy: ['burn', 'poison', 'scale', 'eat'] },
+  pojian2: { style: ['scale', 'heal'], counters: ['tank', 'shield', 'burn', 'poison'], counteredBy: ['poison', 'burst', 'control', 'backline'] },
+  xuanwu2: { style: ['tank', 'shield'], counters: ['mark', 'backline', 'burst', 'aoe'], counteredBy: ['burn', 'poison', 'scale', 'eat'] },
+  leigu2: { style: ['aoe', 'control'], counters: ['summon', 'speed', 'scale', 'burst'], counteredBy: ['shield', 'heal', 'revive', 'reflect'] },
+  jiutian2: { style: ['mark', 'aoe'], counters: ['heal', 'revive', 'summon'], counteredBy: ['summon', 'tank', 'shield', 'heal'] },
+  wudu2: { style: ['poison'], counters: ['shield', 'tank', 'revive', 'scale'], counteredBy: ['heal', 'cleanse'] },
+  bingfeng2: { style: ['burn', 'control'], counters: ['shield', 'tank', 'revive', 'reflect'], counteredBy: ['heal', 'cleanse', 'summon'] },
+  baiyi2: { style: ['summon', 'burn'], counters: ['control', 'mark', 'eat', 'shield'], counteredBy: ['aoe', 'heal', 'cleanse'] },
+  suanwu2: { style: ['control', 'mark'], counters: ['speed', 'scale', 'burst', 'heal'], counteredBy: ['summon', 'cleanse', 'tank'] },
+  richu2: { style: ['heal', 'burn'], counters: ['poison', 'aoe', 'shield', 'tank'], counteredBy: ['burst', 'mark', 'backline', 'scale'] },
+  zhichi2: { style: ['backline', 'burst'], counters: ['scale', 'heal', 'cleanse'], counteredBy: ['shield', 'tank', 'control', 'speed'] },
+  yiri2: { style: ['scale', 'heal'], counters: ['tank', 'shield', 'burn', 'poison'], counteredBy: ['poison', 'burst', 'control', 'backline'] },
+};
+COMBOS2.forEach(c => Object.assign(c, COMBO_COUNTERS[c.id]));
+
+return { COMBOS2, COMBO2, COMBO_POWER, COMBO_UP, COMBO_SUMMONS, STRATS, STRAT, COMBO_COUNTERS };
 })();
 // ---- src/daos.js（包一层，只放出 export）
 const { DAOS, DAO, DAO_KEYS, DAO_TIERS, CLASH_MUL, DAO_CLASH, CLASH_NOTE, DAO_OF, DAO_BY_SCHOOL, daoCount, daoLine } = (() => {
 // 蛊码 GuCode · 道（流派）。docs/design.md 第 1 节「羁绊分三层」的第一层 + 2.8「道共鸣要有体感」。纯数据 + 纯函数，不 import 任何文件。
 // 16 道都是原著里的流派名（canon: true）。同一道的蛊在空窍里凑到 2 只、4 只时触发共鸣（4 只档替换 2 只档，不叠加），没有 6 只档。
-// 共鸣要有体感（design 2.8）：每道 2 只约 +15%、4 只约 +35% 的基础加成（攻、血或护体，带速度的道略少一点），再加这一道的小特色。
+// 共鸣要有体感（design 2.8）：每道 2 只、4 只各给一档基础加成（攻、血或护体），平均约 +15% / +35%，再加这一道的小特色。
+// 基础加成按模拟逐道定（同一底队，A 换进 4 只同道、B 换进 4 只别道，15/22 点、各 400 局、两边各站一次）：16 道都在 45%–53%。
+// 所以小特色强的道基础加成低（光道 +7% / +16%），没什么特色的道高（土道 +23% / +53%）。改小特色或物种后用 tune/daotune.mjs 重跑。
 // 异道道痕相冲：写在道上 clash: { 道id: 倍率 }，两道同时有共鸣时，两边共鸣都打折（只削共鸣，不影响杀招）。
 //
 // 格式（docs/battle-spec.md 7.1 / 7.2）：DAOS[i] = { id, n, color, d, canon, clash, r2, r4 }
@@ -1888,53 +2019,53 @@ const { DAOS, DAO, DAO_KEYS, DAO_TIERS, CLASH_MUL, DAO_CLASH, CLASH_NOTE, DAO_OF
 const E = (when, op, tg, o = {}) => ({ when, op, tg, up: 0, ...o });
 const DAOS = [
   { id: 'li', n: '力道', color: '#b5301f', d: '一身蛮力，打满血的更狠', canon: true,
-    r2: { d: '力道的蛊攻 +15%', atk: 30 },
-    r4: { d: '力道的蛊攻 +35%；打满血的敌蛊伤害 +15%', atk: 70, eff: [E('deal', 'mul', null, { v: 1.15, if: 'tg.full' })] } },
+    r2: { d: '力道的蛊攻 +13%', atk: 26 },
+    r4: { d: '力道的蛊攻 +30%；打满血的敌蛊伤害 +5%', atk: 60, eff: [E('deal', 'mul', null, { v: 1.05, if: 'tg.full' })] } },
   { id: 'yan', n: '炎道', color: '#d0632a', d: '普攻带火', canon: true, clash: { bing: 0.5 },
-    r2: { d: '炎道的蛊攻 +15%，普攻点燃目标 2 轮（攻击 5%）', atk: 30, eff: [E('attack', 'st', 'tg', { k: 'burn', n: 2, atk: 0.05 })] },
-    r4: { d: '炎道的蛊攻 +35%，普攻点燃目标 2 轮（攻击 8%）', atk: 70, eff: [E('attack', 'st', 'tg', { k: 'burn', n: 2, atk: 0.08 })] } },
+    r2: { d: '炎道的蛊攻 +18%，普攻点燃目标 2 轮（攻击 4%）', atk: 36, eff: [E('attack', 'st', 'tg', { k: 'burn', n: 2, atk: 0.04 })] },
+    r4: { d: '炎道的蛊攻 +42%，普攻点燃目标 2 轮（攻击 7%）', atk: 84, eff: [E('attack', 'st', 'tg', { k: 'burn', n: 2, atk: 0.07 })] } },
   { id: 'bing', n: '冰雪道', color: '#6a9cc0', d: '普攻带寒', canon: true, clash: { yan: 0.5 },
-    r2: { d: '冰雪道的蛊血 +15%，普攻 15% 机会让目标寒 1 层', hp: 30, eff: [E('attack', 'st', 'tg', { k: 'chill', n: 1, chance: 0.15 })] },
-    r4: { d: '冰雪道的蛊血 +35%，普攻 30% 机会让目标寒 1 层', hp: 70, eff: [E('attack', 'st', 'tg', { k: 'chill', n: 1, chance: 0.3 })] } },
+    r2: { d: '冰雪道的蛊血 +13%，普攻 25% 机会让目标寒 1 层', hp: 26, eff: [E('attack', 'st', 'tg', { k: 'chill', n: 1, chance: 0.25 })] },
+    r4: { d: '冰雪道的蛊血 +29%，普攻 45% 机会让目标寒 1 层', hp: 58, eff: [E('attack', 'st', 'tg', { k: 'chill', n: 1, chance: 0.45 })] } },
   { id: 'jin', n: '金道', color: '#a8803e', d: '开战披甲', canon: true, clash: { mu: 0.5 },
-    r2: { d: '金道的蛊开战得到最大血量 15% 的护体', sh: 30 },
-    r4: { d: '金道的蛊开战得到最大血量 35% 的护体，受到的伤害 -8%', sh: 70, eff: [E('take', 'mul', null, { v: 0.92 })] } },
+    r2: { d: '金道的蛊开战得到最大血量 19% 的护体', sh: 38 },
+    r4: { d: '金道的蛊开战得到最大血量 45% 的护体，受到的伤害 -10%', sh: 90, eff: [E('take', 'mul', null, { v: 0.9 })] } },
   { id: 'mu', n: '木道', color: '#5e8a4a', d: '慢慢回血', canon: true, clash: { jin: 0.5 },
-    r2: { d: '木道的蛊血 +15%，每轮回复最大血量 2%', hp: 30, eff: [E('round', 'heal', 'self', { mx: 0.02 })] },
-    r4: { d: '木道的蛊血 +35%，每轮回复最大血量 3%', hp: 70, eff: [E('round', 'heal', 'self', { mx: 0.03 })] } },
+    r2: { d: '木道的蛊血 +11%，每轮回复最大血量 1%', hp: 22, eff: [E('round', 'heal', 'self', { mx: 0.01 })] },
+    r4: { d: '木道的蛊血 +25%，每轮回复最大血量 1.5%', hp: 50, eff: [E('round', 'heal', 'self', { mx: 0.015 })] } },
   { id: 'tu', n: '土道', color: '#8a6a3a', d: '皮糙肉厚，站前排更稳', canon: true, clash: { lei: 0.5 },
-    r2: { d: '土道的蛊血 +15%', hp: 30 },
-    r4: { d: '土道的蛊血 +35%；站在最前时受到的伤害 -10%', hp: 70, eff: [E('take', 'mul', null, { v: 0.9, if: 'front' })] } },
+    r2: { d: '土道的蛊血 +23%', hp: 46 },
+    r4: { d: '土道的蛊血 +53%；站在最前时受到的伤害 -10%', hp: 106, eff: [E('take', 'mul', null, { v: 0.9, if: 'front' })] } },
   { id: 'lei', n: '雷道', color: '#3a6aa8', d: '出手快，偶尔麻住对手', canon: true, clash: { tu: 0.5 },
-    r2: { d: '雷道的蛊攻 +10%、速 +5%', atk: 20, spd: 10 },
-    r4: { d: '雷道的蛊攻 +25%、速 +10%，普攻 8% 机会让目标眩晕一次', atk: 50, spd: 20, eff: [E('attack', 'st', 'tg', { k: 'stun', n: 1, chance: 0.08 })] } },
+    r2: { d: '雷道的蛊攻 +16%、速 +5%，普攻 5% 机会让目标眩晕一次', atk: 32, spd: 10, eff: [E('attack', 'st', 'tg', { k: 'stun', n: 1, chance: 0.05 })] },
+    r4: { d: '雷道的蛊攻 +38%、速 +10%，普攻 12% 机会让目标眩晕一次', atk: 76, spd: 20, eff: [E('attack', 'st', 'tg', { k: 'stun', n: 1, chance: 0.12 })] } },
   { id: 'guang', n: '光道', color: '#c9a53a', d: '光比谁都快，专打被照亮的', canon: true, clash: { an: 0.5 },
-    r2: { d: '光道的蛊攻 +10%、速 +5%', atk: 20, spd: 10 },
-    r4: { d: '光道的蛊攻 +25%、速 +10%；打有标记的敌蛊伤害 +10%', atk: 50, spd: 20, eff: [E('deal', 'mul', null, { v: 1.1, if: 'tg.mark' })] } },
+    r2: { d: '光道的蛊攻 +7%、速 +5%；普攻 30% 机会照亮目标（打上标记 1 轮）', atk: 14, spd: 10, eff: [E('attack', 'st', 'tg', { k: 'mark', n: 1, chance: 0.3 })] },
+    r4: { d: '光道的蛊攻 +16%、速 +10%；普攻照亮目标（标记 2 轮），打有标记的敌蛊伤害 +8%', atk: 32, spd: 20, eff: [E('attack', 'st', 'tg', { k: 'mark', n: 2 }), E('deal', 'mul', null, { v: 1.08, if: 'tg.mark' })] } },
   { id: 'an', n: '暗道', color: '#3a3346', d: '先在暗处做好记号', canon: true, clash: { guang: 0.5 },
-    r2: { d: '暗道的蛊攻 +15%；开战给敌方攻最高的蛊打上标记（第 1 轮）', atk: 30, eff: [E('start', 'st', 'foe.top', { k: 'mark', n: 2 })] },
-    r4: { d: '暗道的蛊攻 +35%，开战标记敌方攻最高的蛊；打有标记的伤害 +12%', atk: 70, eff: [E('start', 'st', 'foe.top', { k: 'mark', n: 2 }), E('deal', 'mul', null, { v: 1.12, if: 'tg.mark' })] } },
+    r2: { d: '暗道的蛊攻 +10%；开战给敌方攻最高的蛊打上标记（第 1 轮）', atk: 20, eff: [E('start', 'st', 'foe.top', { k: 'mark', n: 2 })] },
+    r4: { d: '暗道的蛊攻 +23%，开战标记敌方攻最高的蛊；打有标记的伤害 +12%', atk: 46, eff: [E('start', 'st', 'foe.top', { k: 'mark', n: 2 }), E('deal', 'mul', null, { v: 1.12, if: 'tg.mark' })] } },
   { id: 'xue', n: '血道', color: '#8a1f2b', d: '打出去的伤害吸回来', canon: true,
-    r2: { d: '血道的蛊血 +15%，普攻后回复这一下的 8%', hp: 30, eff: [E('attack', 'heal', 'self', { n: 0.08 })] },
-    r4: { d: '血道的蛊血 +35%，普攻后回复这一下的 15%', hp: 70, eff: [E('attack', 'heal', 'self', { n: 0.15 })] } },
+    r2: { d: '血道的蛊血 +16%，普攻后回复这一下的 15%', hp: 32, eff: [E('attack', 'heal', 'self', { n: 0.15 })] },
+    r4: { d: '血道的蛊攻 +10%、血 +37%，普攻后回复这一下的 25%', atk: 20, hp: 74, eff: [E('attack', 'heal', 'self', { n: 0.25 })] } },
   { id: 'du', n: '毒道', color: '#4f7a3a', d: '普攻带毒', canon: true,
-    r2: { d: '毒道的蛊攻 +15%，普攻让目标中毒（攻击 5%）', atk: 30, eff: [E('attack', 'st', 'tg', { k: 'psn', atk: 0.05 })] },
-    r4: { d: '毒道的蛊攻 +35%，普攻让目标中毒（攻击 8%）；打中毒的敌蛊伤害 +10%', atk: 70, eff: [E('attack', 'st', 'tg', { k: 'psn', atk: 0.08 }), E('deal', 'mul', null, { v: 1.1, if: 'tg.psn' })] } },
+    r2: { d: '毒道的蛊攻 +18%，普攻让目标中毒（攻击 5%）', atk: 36, eff: [E('attack', 'st', 'tg', { k: 'psn', atk: 0.05 })] },
+    r4: { d: '毒道的蛊攻 +42%，普攻让目标中毒（攻击 8%）；打中毒的敌蛊伤害 +8%', atk: 84, eff: [E('attack', 'st', 'tg', { k: 'psn', atk: 0.08 }), E('deal', 'mul', null, { v: 1.08, if: 'tg.psn' })] } },
   { id: 'zhi', n: '智道', color: '#3d5a8a', d: '谋定而后动，主动技来得早', canon: true,
-    r2: { d: '智道的蛊攻、血各 +8%，有主动技的开战蛊力 15', atk: 16, hp: 16, gp: 30 },
-    r4: { d: '智道的蛊攻、血各 +18%，有主动技的开战蛊力 30；开战敌方速最快的行动条推后 10%', atk: 36, hp: 36, gp: 60, eff: [E('start', 'delay', 'foe.fast', { v: 0.1 })] } },
+    r2: { d: '智道的蛊攻、血各 +14%，有主动技的开战蛊力 25', atk: 28, hp: 28, gp: 50 },
+    r4: { d: '智道的蛊攻、血各 +29%，有主动技的开战蛊力 50；开战敌方速最快的行动条推后 20%', atk: 58, hp: 58, gp: 100, eff: [E('start', 'delay', 'foe.fast', { v: 0.2 })] } },
   { id: 'hun', n: '魂道', color: '#5a4a7a', d: '同伴倒下，魂气更盛', canon: true,
-    r2: { d: '魂道的蛊攻 +15%；有友蛊倒下时再攻 +5%', atk: 30, eff: [E('allyDeath', 'buff', 'self', { atk: 0.05 })] },
-    r4: { d: '魂道的蛊攻 +35%；有友蛊倒下时再攻 +8%、血 +5%', atk: 70, eff: [E('allyDeath', 'buff', 'self', { atk: 0.08, hp: 0.05 })] } },
+    r2: { d: '魂道的蛊攻 +19%；有友蛊倒下时再攻 +3%（最多 2 次）', atk: 38, eff: [E('allyDeath', 'buff', 'self', { atk: 0.03, max: 2 })] },
+    r4: { d: '魂道的蛊攻 +35%；有友蛊倒下时再攻 +5%、血 +2%（最多 2 次）', atk: 70, eff: [E('allyDeath', 'buff', 'self', { atk: 0.05, hp: 0.02, max: 2 })] } },
   { id: 'nu', n: '奴道', color: '#7a5a3a', d: '驱使召唤物，越多越壮', canon: true,
-    r2: { d: '奴道的蛊血 +15%；每有友蛊被召唤，攻 +3%（最多 5 次）', hp: 30, eff: [E('summon', 'buff', 'self', { atk: 0.03, max: 5 })] },
-    r4: { d: '奴道的蛊血 +35%；每有友蛊被召唤，攻 +5%（最多 6 次）', hp: 70, eff: [E('summon', 'buff', 'self', { atk: 0.05, max: 6 })] } },
+    r2: { d: '奴道的蛊攻 +7%、血 +19%；每有友蛊被召唤，攻 +4%（最多 5 次）', atk: 14, hp: 38, eff: [E('summon', 'buff', 'self', { atk: 0.04, max: 5 })] },
+    r4: { d: '奴道的蛊攻 +14%、血 +46%；每有友蛊被召唤，攻 +6%（最多 6 次）', atk: 28, hp: 92, eff: [E('summon', 'buff', 'self', { atk: 0.06, max: 6 })] } },
   { id: 'yu', n: '宇道', color: '#4a8a86', d: '站位腾挪，后排更安全', canon: true,
-    r2: { d: '宇道的蛊血 +10%、速 +5%；身前有友蛊时每轮得到最大血量 2% 的护体', hp: 20, spd: 10, eff: [E('round', 'shield', 'self', { mx: 0.02, if: 'back' })] },
-    r4: { d: '宇道的蛊血 +25%、速 +10%；身前有友蛊时每轮得到 4% 护体', hp: 50, spd: 20, eff: [E('round', 'shield', 'self', { mx: 0.04, if: 'back' })] } },
+    r2: { d: '宇道的蛊血 +18%、速 +5%；身前有友蛊时每轮得到最大血量 6% 的护体', hp: 36, spd: 10, eff: [E('round', 'shield', 'self', { mx: 0.06, if: 'back' })] },
+    r4: { d: '宇道的蛊血 +40%、速 +10%；身前有友蛊时每轮得到 10% 护体', hp: 80, spd: 20, eff: [E('round', 'shield', 'self', { mx: 0.1, if: 'back' })] } },
   { id: 'zhou', n: '宙道', color: '#8a7a3a', d: '拖得越久越强', canon: true,
-    r2: { d: '宙道的蛊血 +15%；第 3 轮起每轮攻 +2%', hp: 30, eff: [E('round', 'buff', 'self', { atk: 0.02, if: 'round>=3' })] },
-    r4: { d: '宙道的蛊血 +35%；第 3 轮起每轮攻 +4%、血 +2%', hp: 70, eff: [E('round', 'buff', 'self', { atk: 0.04, hp: 0.02, if: 'round>=3' })] } },
+    r2: { d: '宙道的蛊血 +12%；第 3 轮起每轮攻 +2%', hp: 24, eff: [E('round', 'buff', 'self', { atk: 0.02, if: 'round>=3' })] },
+    r4: { d: '宙道的蛊血 +28%；第 3 轮起每轮攻 +3%、血 +1.5%', hp: 56, eff: [E('round', 'buff', 'self', { atk: 0.03, hp: 0.015, if: 'round>=3' })] } },
 ];
 const DAO = Object.fromEntries(DAOS.map(d => [d.id, d]));
 const DAO_KEYS = DAOS.map(d => d.id);
@@ -2051,7 +2182,7 @@ const FOODS = [
   F('zhuanggu', '壮骨汤', 'fight', 'tu', 2, '下一场战斗：选一只，它攻血 +40%（只这一场）', '一只陶盅，汤色奶白，盅沿搭着一根大骨', { to: 'one', eff: [E('start', 'buff', 'self', { atk: 0.4, hp: 0.4 })] }),
   F('duwu', '毒雾瓶', 'fight', 'du', 3, '下一场战斗：选一只，它开战先向敌方全体放毒（攻击 15%）（只这一场）', '一只细颈小瓷瓶，瓶口塞着布团，渗出一丝绿烟', { to: 'one', eff: [E('start', 'st', 'foe.all', { k: 'psn', atk: 0.15 })] }),
   // —— 挂件（续）——
-  F('guijia', '龟甲符', 'gear', 'tu', 5, '挂在一只蛊上：开战挂「护」2 次，第一次受到的伤害几乎全免', '一片龟甲刻着符文，裂纹里填了金粉', { eff: [E('start', 'st', 'self', { k: 'guard', n: 2 }), E('take', 'mul', null, { v: 0.01, max: 1 })] }),
+  F('guijia', '龟甲符', 'gear', 'tu', 5, '挂在一只蛊上：开战挂「护」2 次，第一次受到的伤害几乎全免', '一片龟甲刻着符文，裂纹里填了金粉', { eff: [E('start', 'st', 'self', { k: 'guard', n: 2 }), E('take', 'mul', null, { v: 0, max: 1 })] }),
   F('kaifeng', '开锋石', 'gear', 'jin', 4, '挂在一只蛊上：它的第一击伤害翻倍，并给目标打上标记 2 轮', '一块青黑的磨刀石，中间磨出一道凹槽', { eff: [E('deal', 'mul', null, { v: 2, if: 'first' }), E('attack', 'st', 'tg', { k: 'mark', n: 2, max: 1 })] }),
   F('duanhun', '断魂针', 'gear', 'an', 6, '挂在一只蛊上：它普攻有标记的敌蛊时，10% 机会一击打倒', '一根乌黑的长针，针尾系着一缕白发', { eff: [E('attack', 'dmg', 'tg', { tmx: 1, pierce: 1, chance: 0.1, if: 'tg.mark' })] }),
   F('lingxi', '灵犀角', 'gear', 'zhi', 4, '挂在一只蛊上：它的技能伤害 +25%', '一小截半透明的犀角，中间有一条白线贯通两头', { eff: [E('deal', 'mul', null, { v: 1.25, if: 'kind=skill' })] }),
@@ -2136,8 +2267,8 @@ const TIMELINE = [
   { id: 'kalpa5', n: '五劫加身', g: '劫数', d: '通关任意秘境的劫五', need: { kalpa: 5 }, after: 'kalpa3', unlock: [{ k: 'species', id: 'guangyin', n: '春秋蝉' }, { k: 'food', id: 'guangyinxiang', n: '光阴香' }, { k: 'food', id: 'houtufu', n: '厚土符' }] },
   { id: 'kalpa7', n: '七劫过尽', g: '劫数', d: '通关任意秘境的劫七', need: { kalpa: 7 }, after: 'kalpa5', unlock: [{ k: 'species', id: 'fate', n: '织命蛛' }] },
   { id: 'kalpa10', n: '十劫圆满', g: '劫数', d: '通关任意秘境的劫十', need: { kalpa: 10 }, after: 'kalpa7', unlock: [{ k: 'species', id: 'jiuxiao', n: '九霄蛊' }, { k: 'combo', id: 'zhichi2', n: '神游万里' }] },
-  { id: 'ch_r1q7', n: '一转亦能', g: '挑战', d: '只用一转蛊，通关额度 7 及以上的秘境', need: { r1q: 7 }, after: 'realm1', unlock: [{ k: 'species', id: 'qingtian', n: '擎天蛊' }] },
-  { id: 'ch_r2q10', n: '低转为本', g: '挑战', d: '只用一转、二转蛊，通关额度 10 及以上的秘境', need: { r2q: 10 }, after: 'realm2', unlock: [{ k: 'combo', id: 'baiyi2', n: '火蚁燎原' }, { k: 'food', id: 'shengzhuan', n: '升转露' }] },
+  { id: 'ch_r1q7', n: '一转亦能', g: '挑战', d: '只用一转蛊，通关额度 7 及以上的秘境', need: { r1q: 7 }, after: 'realm1', unlock: [{ k: 'species', id: 'qingtian', n: '擎天蛊' }, { k: 'combo', id: 'maodu', n: '毛蜱吮毒' }, { k: 'combo', id: 'xiaobing', n: '小卒推山' }] },
+  { id: 'ch_r2q10', n: '低转为本', g: '挑战', d: '只用一转、二转蛊，通关额度 10 及以上的秘境', need: { r2q: 10 }, after: 'realm2', unlock: [{ k: 'combo', id: 'baiyi2', n: '火蚁燎原' }, { k: 'combo', id: 'yingxue', n: '萤雪映书' }, { k: 'food', id: 'shengzhuan', n: '升转露' }] },
   { id: 'ch_no5q14', n: '不仗高转', g: '挑战', d: '不带五转和仙蛊，通关额度 14 及以上的秘境', need: { no5q: 14 }, after: 'realm3', unlock: [{ k: 'species', id: 'dingxian', n: '定仙游' }, { k: 'combo', id: 'yiri2', n: '一梦千秋' }] },
   { id: 'ch_few3', n: '三蛊破阵', g: '挑战', d: '出场不超过 3 只，通关额度 10 及以上的秘境', need: { few3q: 10 }, after: 'realm2', unlock: [{ k: 'species', id: 'chiba', n: '赤魃蛊' }] },
   { id: 'ch_mono', n: '一道到底', g: '挑战', d: '出场的蛊全属同一道，通关额度 10 及以上的秘境', need: { monoq: 10 }, after: 'realm2', unlock: [{ k: 'trip', id: 'maigu', n: '埋骨荒原' }, { k: 'combo', id: 'wudu2', n: '万毒归宗' }] },
@@ -2160,7 +2291,7 @@ const LOCKED = {
     'ring', 'instant',
   ],
   food: ['map', 'yuelan', 'zhujiu', 'huotan', 'lingzhi', 'leizao', 'huorong', 'bingpo', 'yeming', 'taoya', 'shanjiao', 'dinghun', 'jingleifu', 'guangyinxiang', 'houtufu', 'fengxingfu', 'xuejing', 'siwei', 'zhuanggu', 'duwu', 'duanhun', 'lingxi', 'duji', 'zhenshi', 'juqi', 'chuanxin', 'yinhun', 'jinggu', 'baibao', 'yingu', 'shengzhuan'],
-  combo: ['sanzhu2', 'jinjia2', 'pojian2', 'xuanwu2', 'leigu2', 'jiutian2', 'wudu2', 'bingfeng2', 'baiyi2', 'suanwu2', 'richu2', 'zhichi2', 'yiri2'],
+  combo: ['yingxue', 'maodu', 'xiaobing', 'sanzhu2', 'jinjia2', 'pojian2', 'xuanwu2', 'leigu2', 'jiutian2', 'wudu2', 'bingfeng2', 'baiyi2', 'suanwu2', 'richu2', 'zhichi2', 'yiri2'],
   trip: ['maigu', 'tianting'],
   feature: ['kalpa'],
 };
@@ -2226,7 +2357,10 @@ const fuseLv = g => Math.max(0, rankOf(g) - baseRank(g.sp));     // 合成过几
 const rankName = g => RANK.names[rankOf(g)] + SP[g.sp].n;          // 「一转野猪蛊」
 // 出战额度：每个秘境写明额度，上阵蛊的转数加起来不能超过它（只限转数总和，不限只数）。下标 = 秘境所属境界
 const QUOTA = [4, 7, 10, 14, 18, 22];
-const quotaOf = team => (team || []).reduce((s, g) => s + rankOf(g), 0);
+// 六转仙蛊记 IMMORTAL.cost 点（8），一队最多 IMMORTAL.max 只（1）：上阵、换阵、收新蛊进空窍时 immFull 拦下
+const isImm = g => !!(g && SP[g.sp] && SP[g.sp].immortal);
+const quotaOf = team => (team || []).reduce((s, g) => s + (isImm(g) ? IMMORTAL.cost : rankOf(g)), 0);
+const immFull = (team, except = null) => (team || []).filter(g => g !== except && isImm(g)).length >= IMMORTAL.max;
 const driveCap = r => Math.min(RANK.max, (r | 0) + 1);   // 驱使上限：境界 r 只能让 r+1 转及以下的蛊上阵
 // 斗幽灵、战帖按额度分场：上阵转数总和不超过这一场的额度就能进（和秘境一样只限总和，不限只数和单只转数）
 const ARENAS = [4, 9, 15, 22];
@@ -2245,7 +2379,7 @@ const bagCap = () => BAG.cap;
 // 攻血成长表：同一种蛊每一转的攻血固定。G[r] = 该转相对一转的倍数；物种的 atk/hp 是它基础转数时的数值。
 // 物种可带 st: [[攻,血] × 6]（下标 = 转数）直接覆盖这张表。
 // 单只蛊封顶（design 第 0 节）：攻血按「每种蛊每一转」的固定表，五转封顶；加攻血的食物每只最多吃 ATE_MAX 次
-const RANK_GROW = [0, 1, 1.8, 3, 4.6, 6.8, 9.6];
+const RANK_GROW = [0, 1.15, 2.1, 2.7, 3.4, 3.7, 6.4];   // 和 bestiary2.ST_GROW 同一行（物种都带 st，这张只是兜底）
 // 数值放大十倍（design 2.8）：物种表里的攻血是小数字，statFor 统一乘 STAT_SCALE 再给出去（一转约攻 20、血 40），百分比加成才看得出来。
 // 食物加的攻血在 foods.js 里已经是放大后的数，不再乘。
 const STAT_SCALE = 10;
@@ -2356,11 +2490,14 @@ const daoOf = sp => (SP[sp] && SP[sp].dao) || 'li';
 
 // ---------- 杀招（队伍级，自动成形） ----------
 // 返回 { 下标: 杀招 }：每只蛊最多挂一个杀招，配方按 COMBOS 顺序认领
+// 低转杀招（c.low = { 物种: 最高转数 }）：这几种只算转数不超过上限的那几只，升上去就散
+const lowOk = (c, g) => !c.low || c.low[g.sp] == null || rankOf(g) <= c.low[g.sp];
 function teamCombos(team) {
-  const out = {}, sps = new Set(team.map(g => g.sp));
+  const out = {};
   for (const c of COMBOS) {
+    const sps = new Set(team.filter(g => lowOk(c, g)).map(g => g.sp));
     if (!c.need.every(x => sps.has(x))) continue;
-    const i = team.findIndex((g, k) => g.sp === c.need[0] && !out[k]); if (i >= 0) out[i] = c;
+    const i = team.findIndex((g, k) => g.sp === c.need[0] && !out[k] && lowOk(c, g)); if (i >= 0) out[i] = c;
   }
   return out;
 }
@@ -2410,7 +2547,7 @@ function canBuy(team, sp, cap, bag = [], bc = BAG.cap) { return canTake(team, ba
 // 收下一只蛊：能合成先合成；否则空窍有空位进空窍，再不行进蛊囊。mode 'bag'（战利品）只进蛊囊。返回 { where, merged }
 function placeGu(team, bag, g, cap, bc = BAG.cap, mode = 'shop', pick) {
   if (fusable(team, bag, g)) { bag.push(g); return { where: 'merge', merged: mergeAll(team, bag, pick) }; }
-  if (mode === 'shop' && team.length < cap) { g.pos = cellPos(freeCell(team)); team.push(g); sortTeam(team); return { where: 'team', merged: [] }; }
+  if (mode === 'shop' && team.length < cap && !(isImm(g) && immFull(team))) { g.pos = cellPos(freeCell(team)); team.push(g); sortTeam(team); return { where: 'team', merged: [] }; }
   if (bag.length < bc) { bag.push(g); return { where: 'bag', merged: mergeAll(team, bag, pick) }; }
   return { where: null, merged: [] };
 }
@@ -7273,7 +7410,7 @@ function showResult(root, res, opts, me, names, skipped, resolve) {
 return { playBattle };
 })();
 // ---- src/reso.js（包一层，只放出 export）
-const { daoChar, daoColor, resoInfo, resoHTML, resoGain, resoOf } = (() => {
+const { daoChar, daoColor, comboStrat, comboLow, resoInfo, resoHTML, resoGain, resoOf } = (() => {
 // 蛊码 GuCode · 道共鸣和杀招的常驻显示（洞府空窍上方、秘境队伍上方共用这一套，别各写一套）。只出 HTML 字符串，不碰 DOM。
 //   resoHTML(team, opts)  一排横排自动折行的小签：已触发的共鸣一道一签描朱「炎道 2/2 · 攻 +15%」（相冲写「相冲五折」）；
 //                         还没触发的道合成一枚灰签「金·力·奴·血 各 1/2」，悬停逐道写「再 1 只：…」；成形的杀招各一签。
@@ -7286,7 +7423,10 @@ const { daoChar, daoColor, resoInfo, resoHTML, resoGain, resoOf } = (() => {
 //   daoChar(sp)           蛊卡角上的小道字（力、炎、冰……），daoColor(sp) 它的颜色
 //   resoOf(team, g)       这只蛊身上生效的共鸣，写实际数：「力道共鸣：攻 +15%（+3）」，没有就空串（蛊卡悬停用）
 //   resoGain(team, sp)    再上阵一只 sp，哪一道会凑成或升一档共鸣：{ dao, name, tier, sum } 或 null（蛊市「凑共鸣」小签用）
+//   comboStrat(c)         杀招的打法克制一行：「打法：灼烧流、群攻 · 克：护体流… · 被克：续航流…」（蛊典、蛊卡详情、杀招小签悬停共用）
+//   comboLow(c, sp)       低转杀招里这一种的转数要求：「需一转」「需二转及以下」，不是低转杀招就空串
 // team = 阵上的蛊（{ sp, rank, atk, hp }，召唤物不算）。数字和战斗里一样：表里写 30，乘 RES_K（0.5）和相冲倍率，玩家拿到 15%。
+
 
 
 
@@ -7324,6 +7464,20 @@ function perGu(g, r, k) {
 }
 const capOf = n => DAO_TIERS.find(t => t >= n) || DAO_TIERS[DAO_TIERS.length - 1];
 
+function comboStrat(c) {
+  const C = c && (c.style ? c : COMBO2[c.id]); if (!C) return '';
+  const nm = ids => (ids || []).map(i => (STRAT[i] ? STRAT[i].n : i)).join('、'), out = [];
+  if ((C.style || []).length) out.push('打法：' + nm(C.style));
+  if ((C.counters || []).length) out.push('克：' + nm(C.counters));
+  if ((C.counteredBy || []).length) out.push('被克：' + nm(C.counteredBy));
+  return out.join(' · ');
+}
+function comboLow(c, sp) {
+  const C = c && (c.need ? c : COMBO2[c.id]), mx = C && C.low ? C.low[sp] : null;
+  return mx == null ? '' : mx === 1 ? '需一转' : `需${RANK.names[mx]}及以下`;
+}
+const lowLine = c => { const C = COMBO2[c.id]; return C && C.low ? '低转杀招：' + Object.keys(C.low).map(sp => `${SP[sp] ? SP[sp].n : sp}${comboLow(C, sp)}`).join('、') + '，升上去就散' : ''; };
+
 function resoInfo(team) {
   const T = (team || []).filter(g => g && SP[g.sp]);
   let sy; try { sy = synergyOf(T); } catch (e) { sy = { daos: [], combos: [] }; }
@@ -7359,7 +7513,7 @@ function resoHTML(team, opts = {}) {
     chips.push(`<span class="rz lone" data-tip="${esc(tip)}">${esc(txt)}</span>`);
   }
   if (opts.combos !== false) for (const c of combos) {
-    const tip = `杀招「${c.n}」：${c.d || ''}\n核心蛊：${RANK.names[c.rank] || ''}${c.coreName}，威力 ×${c.mul}`;
+    const tip = [`杀招「${c.n}」：${c.d || ''}`, `核心蛊：${RANK.names[c.rank] || ''}${c.coreName}，威力 ×${c.mul}`, lowLine(c), comboStrat(c)].filter(Boolean).join('\n');
     chips.push(`<span class="rz combo" data-tip="${esc(tip)}"><b>招</b>${esc(c.n)}${c.mul && c.mul !== 1 ? ` ×${c.mul}` : ''}</span>`);
   }
   if (!chips.length) return opts.empty ? `<div class="reso2"><span class="rz none">${esc(opts.empty)}</span></div>` : '';
@@ -7390,7 +7544,7 @@ function resoOf(team, g) {
   return `${D.n}共鸣（${x.tier} 只）：${bits.join('，') || r.d}${extra ? '；' + extra : ''}${k < 1 ? `（与${DAO[x.clashWith] ? DAO[x.clashWith].n : ''}相冲，${zhe(k)}）` : ''}`;
 }
 
-return { daoChar, daoColor, resoInfo, resoHTML, resoGain, resoOf };
+return { daoChar, daoColor, comboStrat, comboLow, resoInfo, resoHTML, resoGain, resoOf };
 })();
 // ---- src/meta.js
 // 蛊码 GuCode · 成就道途（纯逻辑，不碰 DOM）。规则见 docs/design.md 第 4 节。
@@ -9201,6 +9355,7 @@ const TXT = {
   whyEmpty: '空窍里还没有蛊',
   whyQuota: (u, q) => `上阵转数 ${u}，超过额度 ${q}：收一只进蛊囊再渡劫`,
   whyDrive: g => `${rankName(g)}要${REALMS[rankOf(g) - 1]}境界才能驱使：先收进蛊囊`,
+  immOne: '一队只能有一只仙蛊',
   driveNo: g => `${REALMS[S.realm]}境界只能驱使${RANK.names[driveCap(S.realm)]}及以下的蛊，${rankName(g)}先留在蛊囊`,
   overDrive: '境界不够，驱使不了：渡劫前收进蛊囊',
   ateLine: g => `加攻血的食物 已吃 ${ateOf(g)}/${ATE_MAX}`,
@@ -10086,11 +10241,11 @@ function guDetail(g, ctx = {}) {
   const recipes = COMBOS_ALL.filter(x => x.need.includes(g.sp)), sk = skills(g.sp, rankOf(g)), skP = sk.find(k => k.kind === 'passive'), skA = sk.find(k => k.kind === 'active');
   sheet(`<div class="detail"><div class="dart">${guSVG(g.sp, { rank: rankOf(g) })}</div><div><h3>${rankName(g)}</h3><p class="lore">${esc(s.lore)}</p><p class="dst"><i class="a">${g.atk}</i><i class="h">${g.hp}</i><i class="v">${spdG(g)}</i> <small>${DAO[daoOf(g.sp)] ? DAO[daoOf(g.sp)].n : ''} · ${reachG(g)}</small></p>${team && resoOf(team, g) ? `<p class="sm rs">${esc(resoOf(team, g))}</p>` : ''}</div></div>
   ${nat ? `<h4>被动技能</h4><p><b>${esc((skP || nat).n)}</b> ${esc(skP ? skP.text : nat.d)}</p>` : ''}${actOfG(g) ? `<h4>主动技能</h4><p><b>${esc((skA || actOfG(g)).n)}</b> ${esc(skA ? skA.text : actOfG(g).d)}<br><small>蛊力攒满自动放</small></p>` : ''}
-  ${c ? `<h4>杀招</h4><div class="skill"><span class="seal">${esc(c.n)}</span><p>${esc(c.d)}<br><small>配方：${c.need.map(x => SP[x].n).join(' + ')}</small></p></div>` : ''}
+  ${c ? `<h4>杀招</h4><div class="skill"><span class="seal">${esc(c.n)}</span><p>${esc(c.d)}<br><small>配方：${c.need.map(x => SP[x].n + (comboLow(c, x) ? `（${comboLow(c, x)}）` : '')).join(' + ')}</small>${comboStrat(c) ? `<br><small>${esc(comboStrat(c))}</small>` : ''}</p></div>` : ''}
   ${f ? `<h4>挂件</h4><p>${fi(f.id)}<b>${esc(f.n)}</b> ${esc(f.d)}</p>` : ''}
   ${g.xing ? `<h4>蛊性</h4><p><b>${esc(xingName(g.xing))}</b> ${esc(xingDesc(g.xing))}</p>` : ''}
   <h4>${TXT.statHead}</h4><p class="sm">${esc(TXT.statSub)}</p>${growHTML(g)}<p class="sm">${esc(TXT.ateLine(g))}${g.bonusA || g.bonusH ? `（已加攻 ${g.bonusA || 0}、血 ${g.bonusH || 0}）` : ''}</p>
-  ${recipes.length ? `<h4>能凑的杀招</h4><ul>${recipes.map(x => `<li><b>${esc(x.n)}</b> ${x.need.map(y => SP[y].n).join(' + ')}${unlocked(x.id, 'combo') ? '' : ' <small>道途解锁</small>'}</li>`).join('')}</ul>` : ''}
+  ${recipes.length ? `<h4>能凑的杀招</h4><ul>${recipes.map(x => `<li><b>${esc(x.n)}</b> ${x.need.map(y => SP[y].n + (comboLow(x, y) ? `<small>（${comboLow(x, y)}）</small>` : '')).join(' + ')}${unlocked(x.id, 'combo') ? '' : ' <small>道途解锁</small>'}</li>`).join('')}</ul>` : ''}
   ${ctx.kind === 'team' || ctx.kind === 'bag' ? `<div class="row2">${ctx.kind === 'team' ? `<button data-act="toBag" data-k="${cellOf(g)}"${S.bag.length < BC() && !tripOn() ? '' : ' disabled'}>收进蛊囊</button>` : `<button class="zhu" data-act="fromBag" data-i="${i}"${S.team.length < SLOTS && rankOf(g) <= driveCap(S.realm) && !tripOn() ? '' : ' disabled'}>上阵</button>`}<button data-act="sell" data-k="${ctx.kind}" data-i="${i}"${tripOn() ? ' disabled' : ''}>卖出 · 退回 ${fmtTok(price(sellValue(g)))}</button></div>` : ''}`);
 }
 function openCodex() {
@@ -10098,7 +10253,7 @@ function openCodex() {
   sheet(`<h3>蛊典</h3><p class="sm">见过 ${Object.keys(S.codex).length} / ${SPECIES.length} 种。</p>
   <h4>杀招图鉴</h4><p class="sm">没凑出来过的杀招只露出核心蛊，其余几只只告诉你属于哪一道；第一次成形后完整揭晓。</p><ul class="recipes">${COMBOS_ALL.map(c => { const seen = (S.combosSeen || []).includes(c.id), core = SP[c.need[0]], rest = c.need.slice(1);
     if (!seen) return `<li class="hid"><b>？？？</b> 核心：<span class="${have.includes(c.need[0]) ? 'got' : ''}">${core ? core.n : '？'}</span> + ${rest.map(x => `<span>某只${DAO[daoOf(x)] ? DAO[daoOf(x)].n : ''}的蛊</span>`).join(' + ')}${unlocked(c.id, 'combo') ? '' : ' <small>道途解锁</small>'}</li>`;
-    const miss = comboMissing(c, have); return `<li class="${miss.length ? '' : 'on'}"><b>${esc(c.n)}</b> ${c.need.map(x => `<span class="${have.includes(x) ? 'got' : ''}">${SP[x] ? SP[x].n : x}</span>`).join(' + ')}${!unlocked(c.id, 'combo') ? '<small>道途解锁</small>' : miss.length ? '' : '<small>已成形</small>'}<br><small>${esc(c.d)}</small></li>`; }).join('')}</ul>
+    const miss = comboMissing(c, S.team.filter(g => lowOk(c, g)).map(g => g.sp)), st = comboStrat(c); return `<li class="${miss.length ? '' : 'on'}"><b>${esc(c.n)}</b> ${c.need.map(x => `<span class="${have.includes(x) ? 'got' : ''}">${SP[x] ? SP[x].n : x}</span>${comboLow(c, x) ? `<small>${comboLow(c, x)}</small>` : ''}`).join(' + ')}${!unlocked(c.id, 'combo') ? '<small>道途解锁</small>' : miss.length ? '' : '<small>已成形</small>'}<br><small>${esc(c.d)}</small>${st ? `<br><small class="strat">${esc(st)}</small>` : ''}</li>`; }).join('')}</ul>
   <h4>道</h4><ul>${DAOS.map(d => `<li><b>${d.n}</b> ${esc(d.d)}<br><small>2 只：${esc(d.r2.d)}；4 只：${esc(d.r4.d)}</small></li>`).join('')}</ul>
   <h4>蛊</h4><div class="codexgrid">${SPECIES.filter(s => !s.immortal).map(s => `<div class="cx${S.codex[s.id] ? '' : ' unseen'}" data-tip="${esc(S.codex[s.id] ? `${s.n}（${RANK.names[baseRank(s.id)]} · ${DAO[daoOf(s.id)] ? DAO[daoOf(s.id)].n : ''}）\n${natDesc(s.id)}` : '还没见过')}">${guSVG(s.id)}<small>${S.codex[s.id] ? s.n : '？'}</small></div>`).join('')}</div>`, 'codex');
 }
@@ -10173,11 +10328,13 @@ function moveGu(fromKey, fi, toKey, ti) {
   if (fromKey === 'bag') {
     const g = S.bag[fi], k = ti == null || ti < 0 ? freeCell(S.team) : ti, o = atCell(k); if (!g || k == null) return false;
     if (rankOf(g) > driveCap(S.realm)) { note(TXT.driveNo(g)); return false; }
+    if (isImm(g) && immFull(S.team, o)) { note(TXT.immOne); return false; }
     if (o) { S.bag[fi] = o; o.pos = null; } else { if (S.team.length >= SLOTS) { note(`阵盘 9 格都满了：拖到一只蛊身上就能换下它`); return false; } S.bag.splice(fi, 1); }
     g.pos = cellPos(k); S.team.push(g); sortTeam(S.team); return true;
   }
   const g = atCell(fi), o = S.bag[ti]; if (!g) return false;
   if (o && rankOf(o) > driveCap(S.realm)) { note(TXT.driveNo(o)); return false; }
+  if (o && isImm(o) && immFull(S.team, g)) { note(TXT.immOne); return false; }
   if (o) { S.bag[ti] = g; o.pos = g.pos; S.team.splice(S.team.indexOf(g), 1, o); g.pos = null; }
   else { if (S.bag.length >= BC()) return false; S.team.splice(S.team.indexOf(g), 1); g.pos = null; S.bag.push(g); }
   sortTeam(S.team); return true;

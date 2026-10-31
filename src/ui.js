@@ -1,5 +1,5 @@
 // 蛊码 GuCode · 界面与流程：洞府（养成）、斗幽灵与战帖（切磋）、战斗回放、秘境接口。规则只认 docs/design.md
-import { SPECIES, SP, TRAITS, REALMS, SLOTS, RANK, COMBOS, COMBO, COMBOS_ALL, setComboLocks, makeRng, hashStr, newGu, starterTeam, baseRank, rankOf, rankName, statFor, STAT_SCALE, HP_SCALE, fuseW, natOf, natMulFor, awOf, QUOTA, quotaOf, ARENAS, arenaOf, GHOST_NAMES, ATE_MAX, ateOf, canEat, statTable, XING, driveCap, quotaTeam, poolFor, BAG, bagCap, canBuy, placeGu, mergeAll, sellValue, guCost, comboMissing, COL_NAMES, cellOf, cellPos, freeCell, autoPlace, sortTeam, daoOf, rollShop, foodCost, feedStat, PRICE, genTeam, posLinks, encodeTeam, decodeTeam, EV_MS, playMs, tempoFor, fmtNum, fmtTok } from './core.js';
+import { SPECIES, SP, TRAITS, REALMS, SLOTS, RANK, COMBOS, COMBO, COMBOS_ALL, setComboLocks, makeRng, hashStr, newGu, starterTeam, baseRank, rankOf, rankName, statFor, STAT_SCALE, HP_SCALE, fuseW, natOf, natMulFor, awOf, QUOTA, quotaOf, ARENAS, arenaOf, GHOST_NAMES, ATE_MAX, ateOf, canEat, statTable, XING, driveCap, quotaTeam, poolFor, BAG, bagCap, canBuy, placeGu, mergeAll, sellValue, guCost, isImm, immFull, lowOk, comboMissing, COL_NAMES, cellOf, cellPos, freeCell, autoPlace, sortTeam, daoOf, rollShop, foodCost, feedStat, PRICE, genTeam, posLinks, encodeTeam, decodeTeam, EV_MS, playMs, tempoFor, fmtNum, fmtTok } from './core.js';
 import { battle, synergyOf, battleProfile, skillText } from './battle.js';
 import { guSVG, ART_DEFS } from './art.js';
 import { TokenSource, VSC } from './tokens.js';
@@ -10,7 +10,7 @@ import { clearEvents } from './timeline.js';
 import { ledgerInit, openLedger, ledgerLimitRows, ledgerBindLimits } from './ledger.js';
 import { DAOS, DAO } from './daos.js';
 import { FOODS, FOOD, FOOD_KIND } from './foods.js';
-import { resoHTML, resoGain, resoOf, daoChar, daoColor } from './reso.js';
+import { resoHTML, resoGain, resoOf, daoChar, daoColor, comboStrat, comboLow } from './reso.js';
 import { foodSVG } from './art-food.js';
 import { TRIP } from './hooks.js';
 
@@ -57,6 +57,7 @@ const TXT = {
   whyEmpty: '空窍里还没有蛊',
   whyQuota: (u, q) => `上阵转数 ${u}，超过额度 ${q}：收一只进蛊囊再渡劫`,
   whyDrive: g => `${rankName(g)}要${REALMS[rankOf(g) - 1]}境界才能驱使：先收进蛊囊`,
+  immOne: '一队只能有一只仙蛊',
   driveNo: g => `${REALMS[S.realm]}境界只能驱使${RANK.names[driveCap(S.realm)]}及以下的蛊，${rankName(g)}先留在蛊囊`,
   overDrive: '境界不够，驱使不了：渡劫前收进蛊囊',
   ateLine: g => `加攻血的食物 已吃 ${ateOf(g)}/${ATE_MAX}`,
@@ -942,11 +943,11 @@ function guDetail(g, ctx = {}) {
   const recipes = COMBOS_ALL.filter(x => x.need.includes(g.sp)), sk = skills(g.sp, rankOf(g)), skP = sk.find(k => k.kind === 'passive'), skA = sk.find(k => k.kind === 'active');
   sheet(`<div class="detail"><div class="dart">${guSVG(g.sp, { rank: rankOf(g) })}</div><div><h3>${rankName(g)}</h3><p class="lore">${esc(s.lore)}</p><p class="dst"><i class="a">${g.atk}</i><i class="h">${g.hp}</i><i class="v">${spdG(g)}</i> <small>${DAO[daoOf(g.sp)] ? DAO[daoOf(g.sp)].n : ''} · ${reachG(g)}</small></p>${team && resoOf(team, g) ? `<p class="sm rs">${esc(resoOf(team, g))}</p>` : ''}</div></div>
   ${nat ? `<h4>被动技能</h4><p><b>${esc((skP || nat).n)}</b> ${esc(skP ? skP.text : nat.d)}</p>` : ''}${actOfG(g) ? `<h4>主动技能</h4><p><b>${esc((skA || actOfG(g)).n)}</b> ${esc(skA ? skA.text : actOfG(g).d)}<br><small>蛊力攒满自动放</small></p>` : ''}
-  ${c ? `<h4>杀招</h4><div class="skill"><span class="seal">${esc(c.n)}</span><p>${esc(c.d)}<br><small>配方：${c.need.map(x => SP[x].n).join(' + ')}</small></p></div>` : ''}
+  ${c ? `<h4>杀招</h4><div class="skill"><span class="seal">${esc(c.n)}</span><p>${esc(c.d)}<br><small>配方：${c.need.map(x => SP[x].n + (comboLow(c, x) ? `（${comboLow(c, x)}）` : '')).join(' + ')}</small>${comboStrat(c) ? `<br><small>${esc(comboStrat(c))}</small>` : ''}</p></div>` : ''}
   ${f ? `<h4>挂件</h4><p>${fi(f.id)}<b>${esc(f.n)}</b> ${esc(f.d)}</p>` : ''}
   ${g.xing ? `<h4>蛊性</h4><p><b>${esc(xingName(g.xing))}</b> ${esc(xingDesc(g.xing))}</p>` : ''}
   <h4>${TXT.statHead}</h4><p class="sm">${esc(TXT.statSub)}</p>${growHTML(g)}<p class="sm">${esc(TXT.ateLine(g))}${g.bonusA || g.bonusH ? `（已加攻 ${g.bonusA || 0}、血 ${g.bonusH || 0}）` : ''}</p>
-  ${recipes.length ? `<h4>能凑的杀招</h4><ul>${recipes.map(x => `<li><b>${esc(x.n)}</b> ${x.need.map(y => SP[y].n).join(' + ')}${unlocked(x.id, 'combo') ? '' : ' <small>道途解锁</small>'}</li>`).join('')}</ul>` : ''}
+  ${recipes.length ? `<h4>能凑的杀招</h4><ul>${recipes.map(x => `<li><b>${esc(x.n)}</b> ${x.need.map(y => SP[y].n + (comboLow(x, y) ? `<small>（${comboLow(x, y)}）</small>` : '')).join(' + ')}${unlocked(x.id, 'combo') ? '' : ' <small>道途解锁</small>'}</li>`).join('')}</ul>` : ''}
   ${ctx.kind === 'team' || ctx.kind === 'bag' ? `<div class="row2">${ctx.kind === 'team' ? `<button data-act="toBag" data-k="${cellOf(g)}"${S.bag.length < BC() && !tripOn() ? '' : ' disabled'}>收进蛊囊</button>` : `<button class="zhu" data-act="fromBag" data-i="${i}"${S.team.length < SLOTS && rankOf(g) <= driveCap(S.realm) && !tripOn() ? '' : ' disabled'}>上阵</button>`}<button data-act="sell" data-k="${ctx.kind}" data-i="${i}"${tripOn() ? ' disabled' : ''}>卖出 · 退回 ${fmtTok(price(sellValue(g)))}</button></div>` : ''}`);
 }
 function openCodex() {
@@ -954,7 +955,7 @@ function openCodex() {
   sheet(`<h3>蛊典</h3><p class="sm">见过 ${Object.keys(S.codex).length} / ${SPECIES.length} 种。</p>
   <h4>杀招图鉴</h4><p class="sm">没凑出来过的杀招只露出核心蛊，其余几只只告诉你属于哪一道；第一次成形后完整揭晓。</p><ul class="recipes">${COMBOS_ALL.map(c => { const seen = (S.combosSeen || []).includes(c.id), core = SP[c.need[0]], rest = c.need.slice(1);
     if (!seen) return `<li class="hid"><b>？？？</b> 核心：<span class="${have.includes(c.need[0]) ? 'got' : ''}">${core ? core.n : '？'}</span> + ${rest.map(x => `<span>某只${DAO[daoOf(x)] ? DAO[daoOf(x)].n : ''}的蛊</span>`).join(' + ')}${unlocked(c.id, 'combo') ? '' : ' <small>道途解锁</small>'}</li>`;
-    const miss = comboMissing(c, have); return `<li class="${miss.length ? '' : 'on'}"><b>${esc(c.n)}</b> ${c.need.map(x => `<span class="${have.includes(x) ? 'got' : ''}">${SP[x] ? SP[x].n : x}</span>`).join(' + ')}${!unlocked(c.id, 'combo') ? '<small>道途解锁</small>' : miss.length ? '' : '<small>已成形</small>'}<br><small>${esc(c.d)}</small></li>`; }).join('')}</ul>
+    const miss = comboMissing(c, S.team.filter(g => lowOk(c, g)).map(g => g.sp)), st = comboStrat(c); return `<li class="${miss.length ? '' : 'on'}"><b>${esc(c.n)}</b> ${c.need.map(x => `<span class="${have.includes(x) ? 'got' : ''}">${SP[x] ? SP[x].n : x}</span>${comboLow(c, x) ? `<small>${comboLow(c, x)}</small>` : ''}`).join(' + ')}${!unlocked(c.id, 'combo') ? '<small>道途解锁</small>' : miss.length ? '' : '<small>已成形</small>'}<br><small>${esc(c.d)}</small>${st ? `<br><small class="strat">${esc(st)}</small>` : ''}</li>`; }).join('')}</ul>
   <h4>道</h4><ul>${DAOS.map(d => `<li><b>${d.n}</b> ${esc(d.d)}<br><small>2 只：${esc(d.r2.d)}；4 只：${esc(d.r4.d)}</small></li>`).join('')}</ul>
   <h4>蛊</h4><div class="codexgrid">${SPECIES.filter(s => !s.immortal).map(s => `<div class="cx${S.codex[s.id] ? '' : ' unseen'}" data-tip="${esc(S.codex[s.id] ? `${s.n}（${RANK.names[baseRank(s.id)]} · ${DAO[daoOf(s.id)] ? DAO[daoOf(s.id)].n : ''}）\n${natDesc(s.id)}` : '还没见过')}">${guSVG(s.id)}<small>${S.codex[s.id] ? s.n : '？'}</small></div>`).join('')}</div>`, 'codex');
 }
@@ -1029,11 +1030,13 @@ function moveGu(fromKey, fi, toKey, ti) {
   if (fromKey === 'bag') {
     const g = S.bag[fi], k = ti == null || ti < 0 ? freeCell(S.team) : ti, o = atCell(k); if (!g || k == null) return false;
     if (rankOf(g) > driveCap(S.realm)) { note(TXT.driveNo(g)); return false; }
+    if (isImm(g) && immFull(S.team, o)) { note(TXT.immOne); return false; }
     if (o) { S.bag[fi] = o; o.pos = null; } else { if (S.team.length >= SLOTS) { note(`阵盘 9 格都满了：拖到一只蛊身上就能换下它`); return false; } S.bag.splice(fi, 1); }
     g.pos = cellPos(k); S.team.push(g); sortTeam(S.team); return true;
   }
   const g = atCell(fi), o = S.bag[ti]; if (!g) return false;
   if (o && rankOf(o) > driveCap(S.realm)) { note(TXT.driveNo(o)); return false; }
+  if (o && isImm(o) && immFull(S.team, g)) { note(TXT.immOne); return false; }
   if (o) { S.bag[ti] = g; o.pos = g.pos; S.team.splice(S.team.indexOf(g), 1, o); g.pos = null; }
   else { if (S.bag.length >= BC()) return false; S.team.splice(S.team.indexOf(g), 1); g.pos = null; S.bag.push(g); }
   sortTeam(S.team); return true;
