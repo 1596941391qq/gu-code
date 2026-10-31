@@ -452,6 +452,9 @@ button.mg{font:inherit;font-size:11px;border:0;cursor:pointer;position:relative;
 .segs{display:flex;border:1px solid var(--line);border-radius:3px;overflow:hidden;flex:none}
 .segs button{padding:6px 12px;font:14px var(--kai);color:var(--mu);border-right:1px solid var(--line)}
 .segs button:last-child{border-right:0}
+/* 斗幽灵分场：4 / 9 / 15 / 22 点场 */
+.segs.arenas{display:flex;margin:10px 0 4px}.segs.arenas button{flex:1;padding:7px 4px}
+.foeopt .fh small{font-size:12px;color:var(--mu)}
 .segs button.on,.tog.on{background:var(--zhu);color:var(--on-zhu)}
 .tog{flex:none;min-width:58px;padding:6px 12px;border:1px solid var(--line);border-radius:3px;font:14px var(--kai);color:var(--tx)}
 .tog.on{border-color:var(--zhu)}

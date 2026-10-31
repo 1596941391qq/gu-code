@@ -32,6 +32,9 @@ export const rankName = g => RANK.names[rankOf(g)] + SP[g.sp].n;          // 「
 export const QUOTA = [4, 7, 10, 14, 18, 22];
 export const quotaOf = team => (team || []).reduce((s, g) => s + rankOf(g), 0);
 export const driveCap = r => Math.min(RANK.max, (r | 0) + 1);   // 驱使上限：境界 r 只能让 r+1 转及以下的蛊上阵
+// 斗幽灵、战帖按额度分场：上阵转数总和不超过这一场的额度就能进（和秘境一样只限总和，不限只数和单只转数）
+export const ARENAS = [4, 9, 15, 22];
+export const arenaOf = team => ARENAS.find(q => quotaOf(team) <= q) || 0;   // 这队最低能进几点场（超过 22 点返回 0）
 // 各转的主色（升转外貌、转数角标用）：一转青铜、二转赤铁、三转白银、四转黄金、五转紫晶
 export const ZHENYUAN = { colors: ['#a0703f', '#a0703f', '#a4442c', '#9aa4ab', '#d9a441', '#7d62a8'] };
 // 价格（元气 = 消耗的 token）：单位是「千」，乘 tokens.js 的 unit 才是 token 数（插件 8000，网页 200）。
@@ -307,10 +310,6 @@ export function arrangeTeam(team) {
   team.splice(0, n, ...best); return team;
 }
 
-export function ghostTrio(rng, realm) {
-  const names = [...GHOST_NAMES], n = slotCap(realm);
-  return [['easy', '易', 0, Math.max(1, n - 1)], ['mid', '中', 0.25, n], ['hard', '难', 0.6, Math.min(SLOTS, n + 1)]].map(([tier, label, up, k]) => ({ tier, label, name: names.splice(rng.int(names.length), 1)[0], team: genTeam(rng, { realm, n: k, up }) }));
-}
 export const GHOST_NAMES = ['夜码人', '零点蛊师', '断点散人', '递归僧', '缓存道人', '并发狂徒', '栈溢出', '空指针', '热重载', '回滚真人', '合并冲突', '无限循环'];
 
 // ---------- 界壁坐标码：阵容 → 位流 → base64url ----------
