@@ -149,6 +149,9 @@ i{font-style:normal}
 .unls{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
 .unls li{border:1px dashed var(--line2);border-radius:3px;padding:6px;display:flex;flex-direction:column;opacity:.6}
 .unls li.on{border-style:solid;border-color:var(--qing);opacity:1}.unls b{font:400 14px var(--kai)}.unls small{font-size:11px;color:var(--mu)}
+.gains li{display:grid;grid-template-columns:auto auto 1fr;gap:8px;align-items:baseline;padding:6px 0;border-bottom:1px solid var(--line);font-size:13px}
+.gains time{font:11px var(--mono);color:var(--mu)}.gains .gs{font:12px var(--kai);color:var(--qing);white-space:nowrap}
+.sheet h3 .mini-b{float:right;margin-top:4px}
 .odds-t{display:flex;gap:10px;flex-wrap:wrap;font:600 13px var(--mono)}
 .wares.n4{grid-template-columns:repeat(4,1fr)}.wares.n5{grid-template-columns:repeat(5,1fr)}
 
