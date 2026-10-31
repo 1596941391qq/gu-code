@@ -496,6 +496,20 @@ button.mg{font:inherit;font-size:11px;border:0;cursor:pointer;position:relative;
 /* ---- v2 洞府：主道与共鸣、蛊囊行、战报、食物位、出征、罗盘、全屏时刻 ---- */
 .home.away .qiao{opacity:.72}
 .hhead{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:baseline;margin:12px 0 6px}
+/* 道共鸣常驻小签（reso.js，洞府和秘境共用）：已触发描朱，差一只虚线，相冲加波浪下划线，杀招朱底 */
+.reso2{display:flex;flex-wrap:wrap;gap:5px;width:100%}
+.rz{display:inline-flex;align-items:center;gap:4px;font:12px/1.5 var(--sans);color:var(--mu);border:1px solid var(--line2);border-radius:3px;padding:0 6px 0 3px;white-space:nowrap}
+.rz b{font:400 12px/1 var(--kai);color:var(--dc,var(--mu));border:1px solid currentColor;border-radius:2px;padding:1px 2px}
+.rz.on{color:var(--zhu2);border-color:var(--zhu2)}
+.rz.near{border-style:dashed}
+.rz.clash{text-decoration:underline wavy rgba(216,85,63,.55);text-underline-offset:3px}
+.rz.combo{color:var(--on-zhu);background:var(--zhu);border-color:var(--zhu)}.rz.combo b{color:var(--on-zhu)}
+.rz.none{border:0;padding:0}
+/* 蛊卡右上角的小道字 */
+.gu .dz,.mg .dz,.ware .dz{position:absolute;top:3px;right:3px;font:11px/1 var(--kai);color:var(--dc,var(--mu));border:1px solid currentColor;border-radius:2px;padding:1px 2px;background:var(--paper)}
+.gu .mseal + .dz{top:22px}
+.ware .dz{left:3px;right:auto}
+.ware .fu.rzg{background:var(--paper);color:var(--zhu2);border:1px solid var(--zhu2)}
 .reso{display:flex;flex-wrap:wrap;gap:6px}.reso .ro{font:12px var(--sans);color:var(--mu)}.reso .ro.on{color:var(--qing);border:1px solid var(--qing);border-radius:10px;padding:0 7px}
 .bagline .bhead{display:flex;justify-content:space-between;align-items:baseline}
 .mini.bagrow{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;overflow:visible}

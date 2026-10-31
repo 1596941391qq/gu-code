@@ -10,6 +10,7 @@ import { clearEvents } from './timeline.js';
 import { ledgerInit, openLedger, ledgerLimitRows, ledgerBindLimits } from './ledger.js';
 import { DAOS, DAO } from './daos.js';
 import { FOODS, FOOD, FOOD_KIND } from './foods.js';
+import { resoHTML, resoGain, daoChar, daoColor } from './reso.js';
 import { TRIP } from './hooks.js';
 
 const KEY = 'gucode.v1';
@@ -78,6 +79,8 @@ const TXT = {
   floor: g => `洞府里一只蛊都没有了，免费领到${rankName(g)}`,
   poor: (need) => `元气不够：还差 ${fmtTok(need)}，写会儿代码就有了`,
   spar: '纯切磋：不死蛊，也不给东西',
+  resoGain: '凑共鸣',
+  resoGainTip: x => `买下放上阵盘：${x.name}凑到 ${x.tier} 只，${x.sum}`,
   tryName: '试阵', tryGo: '先试阵', tryOne: '模拟一场', try20: '连打 20 场',
   trySub: '用阵盘上现在的摆法打',
   tryTip: '试阵：拿阵盘上现在的摆法和幽灵、本秘境的精英或首领打一场看看。纯模拟，什么都不会变。',
@@ -289,10 +292,11 @@ function mainHTML() {
   <footer class="foot"><button data-act="duelInput">粘贴坐标码应战</button><button data-act="tryOpen">试阵</button><button data-act="codex">蛊典</button><button data-act="path">道途</button><button data-act="ledger">履历</button><button data-act="reset" id="bReset">重开一局</button></footer>`;
 }
 // 卡面只放攻、血、速三个数，加被动技、主动技两个小印（没有主动技就不显示）；杀招成形时右上角亮朱印
+const dzHTML = sp => { const c = daoChar(sp); return c ? `<span class="dz" style="--dc:${daoColor(sp)}">${esc(c)}</span>` : ''; };
 function guCard(g, combo) {
   const nat = natOfG(g), act = actOfG(g), k = cellOf(g), over = rankOf(g) > driveCap(S.realm);
   return `<button class="gu${over ? ' over' : ''}" data-act="gu" data-uid="${g.uid}" data-drag="${k}" data-tip-fn="gu">
-  <span class="art">${guSVG(g.sp, { rank: rankOf(g) })}</span><span class="rk rk${rankOf(g)}">${RANK.ch[rankOf(g)]}</span>${combo ? `<span class="mseal">${esc(combo.n[0])}</span>` : ''}
+  <span class="art">${guSVG(g.sp, { rank: rankOf(g) })}</span><span class="rk rk${rankOf(g)}">${RANK.ch[rankOf(g)]}</span>${combo ? `<span class="mseal">${esc(combo.n[0])}</span>` : ''}${dzHTML(g.sp)}
   <span class="nm">${SP[g.sp].n}</span><span class="st"><i class="a">${g.atk}</i><i class="h">${g.hp}</i><i class="v">${spdG(g)}</i></span>
   <span class="tr">${nat ? `<span class="tc nat">${esc(nat.ch)}</span>` : ''}${act ? `<span class="tc act">${esc(act.ch)}</span>` : ''}</span></button>`;
 }
@@ -301,7 +305,7 @@ function renderHome() {
   const t = tripOn();
   box.classList.toggle('away', t);
   const land = curLand(), used = quotaOf(S.team), why = goWhy(land);
-  box.innerHTML = `<div class="hhead"><span class="lbl" data-tip="${esc(TXT.daoTip)}">${S.dao ? TXT.daoLine(S.dao) : TXT.daoNone}</span><span id="reso" class="reso"></span></div>
+  box.innerHTML = `<div class="hhead"><span class="lbl" data-tip="${esc(TXT.daoTip)}">${S.dao ? TXT.daoLine(S.dao) : TXT.daoNone}</span></div><div id="reso" class="reso"></div>
   <section class="qiao" id="qiao"><button class="landbtn" data-act="lands"${t ? ' disabled' : ''}><span class="lbl">秘境</span><b>${esc(land.n)}</b><small>${esc(TXT.landLine(land))}</small><span class="lchg">${t ? '渡劫中' : '换秘境'}</span></button>
   <div class="qhead"><span class="lbl">${TXT.slotsHead} <small>${TXT.slotsSub}</small></span><span class="qmeta quota${used > land.quota ? ' over' : ''}" data-tip="${esc(TXT.quotaTip(used, land.quota) + '\n' + TXT.driveTip())}">已用 ${used} / 额度 ${land.quota}</span>${t ? '' : `<button class="trybtn" data-act="tryOpen" data-tip="${esc(TXT.tryTip)}">${TXT.tryName}</button>`}</div><div class="slots" id="slots"></div>
   <div class="bagline" id="bagline"></div></section>
@@ -323,14 +327,12 @@ function renderSlots() {
 function renderBagLine() {
   const b = $('#bagline'); if (!b) return;
   b.innerHTML = `<div class="bhead" data-tip-fn="bag"><span class="lbl">${TXT.bagHead} <small>${TXT.bagSub}</small></span><span class="qmeta">${S.bag.length}/${BC()}</span></div>
-  <div class="mini bagrow" data-sort="bag" data-group="main">${Array.from({ length: BC() }, (_, i) => { const g = S.bag[i]; return g ? `<div class="mg" data-drag="${i}" data-act="bagGu" data-i="${i}" data-tip-fn="bg"><span class="art">${guSVG(g.sp, { rank: rankOf(g) })}</span><span class="rk rk${rankOf(g)}">${RANK.ch[rankOf(g)]}</span><b>${SP[g.sp].n}</b><span class="st"><i class="a">${g.atk}</i><i class="h">${g.hp}</i></span></div>` : `<div class="mg empty" data-drag="${i}"></div>`; }).join('')}</div>`;
+  <div class="mini bagrow" data-sort="bag" data-group="main">${Array.from({ length: BC() }, (_, i) => { const g = S.bag[i]; return g ? `<div class="mg" data-drag="${i}" data-act="bagGu" data-i="${i}" data-tip-fn="bg"><span class="art">${guSVG(g.sp, { rank: rankOf(g) })}</span><span class="rk rk${rankOf(g)}">${RANK.ch[rankOf(g)]}</span>${dzHTML(g.sp)}<b>${SP[g.sp].n}</b><span class="st"><i class="a">${g.atk}</i><i class="h">${g.hp}</i></span></div>` : `<div class="mg empty" data-drag="${i}"></div>`; }).join('')}</div>`;
 }
+// 道共鸣和杀招常驻在空窍上方（reso.js，秘境队伍上方用同一套）
 function renderReso() {
   const r = $('#reso'); if (!r) return;
-  const sy = synOf(S.team), on = sy.daos.filter(x => x.tier), near = sy.daos.filter(x => !x.tier && x.next);
-  const tip = [...on.map(x => `${x.name}·${x.cnt}：${x.d}${x.clash < 1 ? `（和${DAO[x.clashWith] ? DAO[x.clashWith].n : ''}相冲，效果 ×${x.clash}）` : ''}${x.next ? `；再来 ${x.next} 只更强` : ''}`),
-    ...sy.combos.map(c => `杀招·${c.n}：${c.d}（核心蛊${RANK.names[c.rank] || ''}，威力 ×${c.mul}）`), ...near.map(x => `${x.name}·${x.cnt}：再来 ${x.next} 只触发共鸣`)].join('\n');
-  setHTML(r, sy.line ? `<span class="ro on" data-tip="${esc(tip)}">${esc(sy.line)}</span>` : `<span class="ro"${tip ? ` data-tip="${esc(tip)}"` : ''}>${esc(TXT.resoNone)}</span>`);
+  setHTML(r, resoHTML(S.team, { empty: S.team.length ? '' : TXT.resoNone }) || `<div class="reso2"><span class="rz none">${esc(TXT.resoNone)}</span></div>`);
 }
 // ---------- 罗盘：回到洞府时三选一，选中的道在这一轮蛊市里多出 5% ----------
 function rollCompass() { const r = R(), ids = DAOS.map(d => d.id), out = []; while (out.length < 3 && ids.length) out.push(ids.splice(r.int(ids.length), 1)[0]); S.compass = out; }
@@ -346,8 +348,8 @@ function wareHTML(w, i) {
     const f = FOOD[w.id], c = price(foodCost(w.id));
     return `<div class="ware food${w.frozen ? ' frozen' : ''}${w.sold ? ' sold' : ''}"><button class="wbuy" data-act="ware" data-i="${i}" data-tip-fn="ware"${w.sold ? ' disabled' : ''}><span class="fart">${esc(f.n[0])}</span><b>${esc(f.n)}</b><small>${FOOD_KIND[f.kind]}</small><span class="tag">${w.sold ? '已购' : fmtTok(c)}</span></button></div>`;
   }
-  const s = SP[w.sp], st = statFor(w.sp, baseRank(w.sp)), c = price(PRICE.gu), merge = !w.sold && owned(w.sp) >= 2;
-  return `<div class="ware${w.frozen ? ' frozen' : ''}${w.sold ? ' sold' : ''}${merge ? ' merge' : ''}"><button class="wbuy" data-act="ware" data-i="${i}" data-tip-fn="ware"${w.sold ? ' disabled' : ''}><span class="art">${guSVG(w.sp)}</span><b>${s.n}</b><span class="st"><i class="a">${st.atk}</i><i class="h">${st.hp}</i></span><span class="tag">${w.sold ? '已购' : (merge ? '合成 · ' : '') + fmtTok(c)}</span>${merge ? '<span class="fu">可合成</span>' : ''}</button></div>`;
+  const s = SP[w.sp], st = statFor(w.sp, baseRank(w.sp)), c = price(PRICE.gu), merge = !w.sold && owned(w.sp) >= 2, gain = !w.sold && !merge ? resoGain(S.team, w.sp) : null;
+  return `<div class="ware${w.frozen ? ' frozen' : ''}${w.sold ? ' sold' : ''}${merge ? ' merge' : ''}"><button class="wbuy" data-act="ware" data-i="${i}" data-tip-fn="ware"${w.sold ? ' disabled' : ''}><span class="art">${guSVG(w.sp)}</span>${dzHTML(w.sp)}<b>${s.n}</b><span class="st"><i class="a">${st.atk}</i><i class="h">${st.hp}</i></span><span class="tag">${w.sold ? '已购' : (merge ? '合成 · ' : '') + fmtTok(c)}</span>${merge ? '<span class="fu">可合成</span>' : gain ? `<span class="fu rzg">${TXT.resoGain}</span>` : ''}</button></div>`;
 }
 function renderShop() {
   const box = $('#shop'); if (!box) return;
@@ -478,7 +480,7 @@ function tripPlayBattle(foeTeam, opts = {}) {
   const A = { team, name: S.name || '无名蛊师', realm: S.realm, trial: S.trial }, B = { team: foeTeam, name: opts.foeName || '秘境', realm: S.realm };
   return new Promise(resolve => runBattle({ kind: 'trip', title: opts.title || '秘境 · 斗蛊', res, A, B, sota, done: () => resolve({ res, A, B }) }));
 }
-TRIP.api = { S: () => S, save, unlocked: (id, k) => unlocked(id, k), get el() { return $('#trip'); }, playBattle: tripPlayBattle, onTripEnd, big, note, float: (uid, t, k) => fxFloat(uid, t, k || 'buff'), renderHome };
+TRIP.api = { S: () => S, save, unlocked: (id, k) => unlocked(id, k), synLine: (team, o) => resoHTML(team, { lone: false, ...(o || {}) }), get el() { return $('#trip'); }, playBattle: tripPlayBattle, onTripEnd, big, note, float: (uid, t, k) => fxFloat(uid, t, k || 'buff'), renderHome };
 function meters() {
   if (!S.started) return;
   const q = $('#qiTxt'); if (!q) return;
@@ -850,7 +852,7 @@ const TIPS = {
   gu: t => { const i = S.team.findIndex(g => g.uid === t.dataset.uid); return guTip(S.team[i], S.team, i); },
   bag: () => esc(TXT.bagTip()),
   bg: t => { const g = S.bag[+t.dataset.i]; return g ? guTip(g) + '<small>在蛊囊里：不上场、不跟去渡劫，拖进空窍才上场</small>' : ''; },
-  ware: t => { const w = S.shop[+t.dataset.i]; if (!w) return ''; if (w.kind === 'food') { const f = FOOD[w.id]; return `<b>${esc(f.n)}</b> · ${FOOD_KIND[f.kind]}<br>${esc(f.d)}<br><small>价格 ${fmtTok(price(foodCost(w.id)))} 元气</small>`; } const n = owned(w.sp); return guTip(newGu(w.sp)).replace('<small>点开看完整详情</small>', '') + `<small>价格 ${fmtTok(price(PRICE.gu))} 元气 · 点开看完整详情</small>` + (n >= 2 ? `<p>你已有 ${n} 只${RANK.names[baseRank(w.sp)]}${SP[w.sp].n}，买下当场合成${RANK.names[baseRank(w.sp) + 1]}</p>` : ''); },
+  ware: t => { const w = S.shop[+t.dataset.i]; if (!w) return ''; if (w.kind === 'food') { const f = FOOD[w.id]; return `<b>${esc(f.n)}</b> · ${FOOD_KIND[f.kind]}<br>${esc(f.d)}<br><small>价格 ${fmtTok(price(foodCost(w.id)))} 元气</small>`; } const n = owned(w.sp); return guTip(newGu(w.sp)).replace('<small>点开看完整详情</small>', '') + `<small>价格 ${fmtTok(price(PRICE.gu))} 元气 · 点开看完整详情</small>` + (n >= 2 ? `<p>你已有 ${n} 只${RANK.names[baseRank(w.sp)]}${SP[w.sp].n}，买下当场合成${RANK.names[baseRank(w.sp) + 1]}</p>` : '' + (n < 2 && resoGain(S.team, w.sp) ? `<p>${esc(TXT.resoGainTip(resoGain(S.team, w.sp)))}</p>` : '')); },
 };
 let tipT = 0, tipEl = null, tipFor = null, tipLongT = 0, tipLongAt = -1e9;
 function tipShow(t) {

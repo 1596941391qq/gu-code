@@ -5963,6 +5963,104 @@ function showResult(root, res, opts, me, names, skipped, resolve) {
 
 return { playBattle };
 })();
+// ---- src/reso.js（包一层，只放出 export）
+const { daoChar, daoColor, resoInfo, resoHTML, resoGain } = (() => {
+// 蛊码 GuCode · 道共鸣和杀招的常驻显示（洞府空窍上方、秘境队伍上方共用这一套，别各写一套）。只出 HTML 字符串，不碰 DOM。
+//   resoHTML(team, opts)  一排小签：阵上出现的每一道「力道 1/2」「炎道 2/2 · 攻 +15%」，已触发的描朱，差一只的写「再 1 只：攻 +15%」，
+//                         相冲的写明打几折；成形的杀招各一签。悬停（data-tip）写每只蛊实际加了多少，例如「赤焰蛊 攻 20 → 23（+3）」。
+//     opts.near   = false 不写「再 1 只」（默认写）
+//     opts.lone   = false 只有 1 只、还没触发的道不列（秘境队伍上方地方小时用；默认列）
+//     opts.combos = false 不列杀招（默认列）
+//     opts.empty  = 阵上没有蛊时的那句话（默认空串）
+//   resoInfo(team)        上面用到的数：{ daos: [...], combos: [...] }
+//   daoChar(sp)           蛊卡角上的小道字（力、炎、冰……），daoColor(sp) 它的颜色
+//   resoGain(team, sp)    再上阵一只 sp，哪一道会凑成或升一档共鸣：{ dao, name, tier, sum } 或 null（蛊市「凑共鸣」小签用）
+// team = 阵上的蛊（{ sp, rank, atk, hp }，召唤物不算）。数字和战斗里一样：表里写 30，乘 RES_K（0.5）和相冲倍率，玩家拿到 15%。
+
+
+
+
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const CN_ZHE = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
+const zhe = k => { const t = Math.round(k * 10); return t > 0 && t < 10 ? `打${CN_ZHE[t]}折` : `×${k}`; };
+const pctOf = (v, k) => Math.round(v * RES_K * k);
+const addOf = (n, p) => (p > 0 ? Math.max(1, Math.round(n * p / 100)) : 0);
+const nmOf = g => (SP[g.sp] ? SP[g.sp].n : g.sp);
+
+const daoChar = sp => { const d = DAO[daoOf(sp)]; return d ? (d.ch || d.n.replace(/道$/, '')[0]) : ''; };
+const daoColor = sp => { const d = DAO[daoOf(sp)]; return d ? d.color : ''; };
+
+// 一档共鸣的简短写法：「攻 +15%」「血 +15% 护体 15%」；表里只有特效的道，取 d 去掉「X道的蛊」开头、到第一个逗号为止
+function sumOf(r, k = 1) {
+  if (!r) return '';
+  const out = [];
+  if (r.atk) out.push(`攻 +${pctOf(r.atk, k)}%`);
+  if (r.hp) out.push(`血 +${pctOf(r.hp, k)}%`);
+  if (r.sh) out.push(`护体 ${pctOf(r.sh, k)}%`);
+  if (r.spd) out.push(`速 +${pctOf(r.spd, k)}%`);
+  if (r.gp) out.push(`开战蛊力 ${Math.round(r.gp * RES_K * k)}`);
+  if (out.length) return out.join(' ');
+  return String(r.d || '').replace(/^.{1,3}道的蛊/, '').split(/[，；]/)[0];
+}
+// 每只蛊实际加多少（悬停用）：「赤焰蛊 攻 20 → 23（+3）」
+function perGu(g, r, k) {
+  const bits = [];
+  if (r.atk) { const p = pctOf(r.atk, k), a = addOf(g.atk, p); bits.push(`攻 ${g.atk} → ${g.atk + a}（+${a}）`); }
+  if (r.hp) { const p = pctOf(r.hp, k), a = addOf(g.hp, p); bits.push(`血 ${g.hp} → ${g.hp + a}（+${a}）`); }
+  if (r.sh) { const p = pctOf(r.sh, k); bits.push(`护体 ${addOf(g.hp, p)}`); }
+  if (r.spd) bits.push(`速 +${pctOf(r.spd, k)}%`);
+  return bits.length ? `${nmOf(g)} ${bits.join('，')}` : '';
+}
+const capOf = n => DAO_TIERS.find(t => t >= n) || DAO_TIERS[DAO_TIERS.length - 1];
+
+function resoInfo(team) {
+  const T = (team || []).filter(g => g && SP[g.sp]);
+  let sy; try { sy = synergyOf(T); } catch (e) { sy = { daos: [], combos: [] }; }
+  const daos = sy.daos.map(x => {
+    const D = DAO[x.dao] || { n: x.name }, k = x.clash || 1, gus = T.filter(g => daoOf(g.sp) === x.dao);
+    const nextR = x.next === 1 ? D['r' + (x.cnt + 1)] : null;
+    return {
+      dao: x.dao, name: D.n || x.name, ch: D.ch || String(D.n || '').replace(/道$/, '')[0], color: D.color || '', cnt: x.cnt, cap: capOf(x.cnt), tier: x.tier, on: !!x.tier,
+      clash: k, clashWith: x.clashWith, clashName: x.clashWith && DAO[x.clashWith] ? DAO[x.clashWith].n : '',
+      sum: x.tier ? sumOf(x.eff, k) : '', d: x.tier && x.eff ? x.eff.d : '', next: x.next, nextSum: nextR ? sumOf(nextR) : '', nextD: nextR ? nextR.d : '',
+      gus: x.tier && x.eff ? gus.map(g => perGu(g, x.eff, k)).filter(Boolean) : [],
+    };
+  });
+  const combos = (sy.combos || []).map(c => ({ id: c.id, n: c.n, d: c.d, mul: c.mul, rank: c.rank, core: c.core, coreName: SP[c.core] ? SP[c.core].n : c.core }));
+  return { daos, combos };
+}
+
+function resoHTML(team, opts = {}) {
+  const { daos, combos } = resoInfo(team), near = opts.near !== false, lone = opts.lone !== false;
+  const chips = [];
+  for (const x of daos) {
+    if (!x.on && !lone && !(near && x.next === 1)) continue;
+    const head = `${x.name} ${x.cnt}/${x.cap}`;
+    const clash = x.on && x.clash < 1 ? `与${x.clashName}相冲，${zhe(x.clash)}` : '';
+    const hint = near && x.next === 1 && x.nextSum ? `再 1 只：${x.nextSum}` : '';
+    const txt = [head, x.on ? x.sum : '', clash, hint].filter(Boolean).join(' · ');
+    const tip = [x.on ? `${x.name}共鸣（${x.tier} 只）：${x.d}${clash ? `（${clash}）` : ''}` : `${x.name}：阵上 ${x.cnt} 只，凑到 ${x.cap} 只触发共鸣`,
+      ...x.gus, x.next === 1 && x.nextD ? `再上 1 只${x.name}的蛊：${x.nextD}` : x.next > 1 ? `再上 ${x.next} 只${x.name}的蛊升一档` : ''].filter(Boolean).join('\n');
+    chips.push(`<span class="rz${x.on ? ' on' : ''}${clash ? ' clash' : ''}${hint ? ' near' : ''}" style="--dc:${esc(x.color)}" data-tip="${esc(tip)}"><b>${esc(x.ch)}</b>${esc(txt)}</span>`);
+  }
+  if (opts.combos !== false) for (const c of combos) {
+    const tip = `杀招「${c.n}」：${c.d || ''}\n核心蛊：${RANK.names[c.rank] || ''}${c.coreName}，威力 ×${c.mul}`;
+    chips.push(`<span class="rz combo" data-tip="${esc(tip)}"><b>招</b>${esc(c.n)}${c.mul && c.mul !== 1 ? ` ×${c.mul}` : ''}</span>`);
+  }
+  if (!chips.length) return opts.empty ? `<div class="reso2"><span class="rz none">${esc(opts.empty)}</span></div>` : '';
+  return `<div class="reso2">${chips.join('')}</div>`;
+}
+
+// 再上阵一只 sp：哪一道会凑成或升一档（只数阵上的，召唤物不算）
+function resoGain(team, sp) {
+  const d = daoOf(sp), D = DAO[d]; if (!D) return null;
+  const n = (team || []).filter(g => g && SP[g.sp] && daoOf(g.sp) === d).length + 1;
+  if (!DAO_TIERS.includes(n) || !D['r' + n]) return null;
+  return { dao: d, name: D.n, tier: n, sum: sumOf(D['r' + n]) };
+}
+
+return { daoChar, daoColor, resoInfo, resoHTML, resoGain };
+})();
 // ---- src/meta.js
 // 蛊码 GuCode · 成就道途（纯逻辑，不碰 DOM）。规则见 docs/design.md 第 4 节。
 // 成就是一条逐步点亮的道途：达成一个，就解锁新的蛊、食物、秘境或玩法。成就本身不给数值。没有等级、经验、宝箱、每日任务。
@@ -7674,6 +7772,7 @@ TRIP.feed = (S, tok) => {
 
 
 
+
 const KEY = 'gucode.v1';
 const $ = (s, r = document) => r.querySelector(s);
 const el = html => { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstElementChild; };
@@ -7740,6 +7839,8 @@ const TXT = {
   floor: g => `洞府里一只蛊都没有了，免费领到${rankName(g)}`,
   poor: (need) => `元气不够：还差 ${fmtTok(need)}，写会儿代码就有了`,
   spar: '纯切磋：不死蛊，也不给东西',
+  resoGain: '凑共鸣',
+  resoGainTip: x => `买下放上阵盘：${x.name}凑到 ${x.tier} 只，${x.sum}`,
   tryName: '试阵', tryGo: '先试阵', tryOne: '模拟一场', try20: '连打 20 场',
   trySub: '用阵盘上现在的摆法打',
   tryTip: '试阵：拿阵盘上现在的摆法和幽灵、本秘境的精英或首领打一场看看。纯模拟，什么都不会变。',
@@ -7951,10 +8052,11 @@ function mainHTML() {
   <footer class="foot"><button data-act="duelInput">粘贴坐标码应战</button><button data-act="tryOpen">试阵</button><button data-act="codex">蛊典</button><button data-act="path">道途</button><button data-act="ledger">履历</button><button data-act="reset" id="bReset">重开一局</button></footer>`;
 }
 // 卡面只放攻、血、速三个数，加被动技、主动技两个小印（没有主动技就不显示）；杀招成形时右上角亮朱印
+const dzHTML = sp => { const c = daoChar(sp); return c ? `<span class="dz" style="--dc:${daoColor(sp)}">${esc(c)}</span>` : ''; };
 function guCard(g, combo) {
   const nat = natOfG(g), act = actOfG(g), k = cellOf(g), over = rankOf(g) > driveCap(S.realm);
   return `<button class="gu${over ? ' over' : ''}" data-act="gu" data-uid="${g.uid}" data-drag="${k}" data-tip-fn="gu">
-  <span class="art">${guSVG(g.sp, { rank: rankOf(g) })}</span><span class="rk rk${rankOf(g)}">${RANK.ch[rankOf(g)]}</span>${combo ? `<span class="mseal">${esc(combo.n[0])}</span>` : ''}
+  <span class="art">${guSVG(g.sp, { rank: rankOf(g) })}</span><span class="rk rk${rankOf(g)}">${RANK.ch[rankOf(g)]}</span>${combo ? `<span class="mseal">${esc(combo.n[0])}</span>` : ''}${dzHTML(g.sp)}
   <span class="nm">${SP[g.sp].n}</span><span class="st"><i class="a">${g.atk}</i><i class="h">${g.hp}</i><i class="v">${spdG(g)}</i></span>
   <span class="tr">${nat ? `<span class="tc nat">${esc(nat.ch)}</span>` : ''}${act ? `<span class="tc act">${esc(act.ch)}</span>` : ''}</span></button>`;
 }
@@ -7963,7 +8065,7 @@ function renderHome() {
   const t = tripOn();
   box.classList.toggle('away', t);
   const land = curLand(), used = quotaOf(S.team), why = goWhy(land);
-  box.innerHTML = `<div class="hhead"><span class="lbl" data-tip="${esc(TXT.daoTip)}">${S.dao ? TXT.daoLine(S.dao) : TXT.daoNone}</span><span id="reso" class="reso"></span></div>
+  box.innerHTML = `<div class="hhead"><span class="lbl" data-tip="${esc(TXT.daoTip)}">${S.dao ? TXT.daoLine(S.dao) : TXT.daoNone}</span></div><div id="reso" class="reso"></div>
   <section class="qiao" id="qiao"><button class="landbtn" data-act="lands"${t ? ' disabled' : ''}><span class="lbl">秘境</span><b>${esc(land.n)}</b><small>${esc(TXT.landLine(land))}</small><span class="lchg">${t ? '渡劫中' : '换秘境'}</span></button>
   <div class="qhead"><span class="lbl">${TXT.slotsHead} <small>${TXT.slotsSub}</small></span><span class="qmeta quota${used > land.quota ? ' over' : ''}" data-tip="${esc(TXT.quotaTip(used, land.quota) + '\n' + TXT.driveTip())}">已用 ${used} / 额度 ${land.quota}</span>${t ? '' : `<button class="trybtn" data-act="tryOpen" data-tip="${esc(TXT.tryTip)}">${TXT.tryName}</button>`}</div><div class="slots" id="slots"></div>
   <div class="bagline" id="bagline"></div></section>
@@ -7985,14 +8087,12 @@ function renderSlots() {
 function renderBagLine() {
   const b = $('#bagline'); if (!b) return;
   b.innerHTML = `<div class="bhead" data-tip-fn="bag"><span class="lbl">${TXT.bagHead} <small>${TXT.bagSub}</small></span><span class="qmeta">${S.bag.length}/${BC()}</span></div>
-  <div class="mini bagrow" data-sort="bag" data-group="main">${Array.from({ length: BC() }, (_, i) => { const g = S.bag[i]; return g ? `<div class="mg" data-drag="${i}" data-act="bagGu" data-i="${i}" data-tip-fn="bg"><span class="art">${guSVG(g.sp, { rank: rankOf(g) })}</span><span class="rk rk${rankOf(g)}">${RANK.ch[rankOf(g)]}</span><b>${SP[g.sp].n}</b><span class="st"><i class="a">${g.atk}</i><i class="h">${g.hp}</i></span></div>` : `<div class="mg empty" data-drag="${i}"></div>`; }).join('')}</div>`;
+  <div class="mini bagrow" data-sort="bag" data-group="main">${Array.from({ length: BC() }, (_, i) => { const g = S.bag[i]; return g ? `<div class="mg" data-drag="${i}" data-act="bagGu" data-i="${i}" data-tip-fn="bg"><span class="art">${guSVG(g.sp, { rank: rankOf(g) })}</span><span class="rk rk${rankOf(g)}">${RANK.ch[rankOf(g)]}</span>${dzHTML(g.sp)}<b>${SP[g.sp].n}</b><span class="st"><i class="a">${g.atk}</i><i class="h">${g.hp}</i></span></div>` : `<div class="mg empty" data-drag="${i}"></div>`; }).join('')}</div>`;
 }
+// 道共鸣和杀招常驻在空窍上方（reso.js，秘境队伍上方用同一套）
 function renderReso() {
   const r = $('#reso'); if (!r) return;
-  const sy = synOf(S.team), on = sy.daos.filter(x => x.tier), near = sy.daos.filter(x => !x.tier && x.next);
-  const tip = [...on.map(x => `${x.name}·${x.cnt}：${x.d}${x.clash < 1 ? `（和${DAO[x.clashWith] ? DAO[x.clashWith].n : ''}相冲，效果 ×${x.clash}）` : ''}${x.next ? `；再来 ${x.next} 只更强` : ''}`),
-    ...sy.combos.map(c => `杀招·${c.n}：${c.d}（核心蛊${RANK.names[c.rank] || ''}，威力 ×${c.mul}）`), ...near.map(x => `${x.name}·${x.cnt}：再来 ${x.next} 只触发共鸣`)].join('\n');
-  setHTML(r, sy.line ? `<span class="ro on" data-tip="${esc(tip)}">${esc(sy.line)}</span>` : `<span class="ro"${tip ? ` data-tip="${esc(tip)}"` : ''}>${esc(TXT.resoNone)}</span>`);
+  setHTML(r, resoHTML(S.team, { empty: S.team.length ? '' : TXT.resoNone }) || `<div class="reso2"><span class="rz none">${esc(TXT.resoNone)}</span></div>`);
 }
 // ---------- 罗盘：回到洞府时三选一，选中的道在这一轮蛊市里多出 5% ----------
 function rollCompass() { const r = R(), ids = DAOS.map(d => d.id), out = []; while (out.length < 3 && ids.length) out.push(ids.splice(r.int(ids.length), 1)[0]); S.compass = out; }
@@ -8008,8 +8108,8 @@ function wareHTML(w, i) {
     const f = FOOD[w.id], c = price(foodCost(w.id));
     return `<div class="ware food${w.frozen ? ' frozen' : ''}${w.sold ? ' sold' : ''}"><button class="wbuy" data-act="ware" data-i="${i}" data-tip-fn="ware"${w.sold ? ' disabled' : ''}><span class="fart">${esc(f.n[0])}</span><b>${esc(f.n)}</b><small>${FOOD_KIND[f.kind]}</small><span class="tag">${w.sold ? '已购' : fmtTok(c)}</span></button></div>`;
   }
-  const s = SP[w.sp], st = statFor(w.sp, baseRank(w.sp)), c = price(PRICE.gu), merge = !w.sold && owned(w.sp) >= 2;
-  return `<div class="ware${w.frozen ? ' frozen' : ''}${w.sold ? ' sold' : ''}${merge ? ' merge' : ''}"><button class="wbuy" data-act="ware" data-i="${i}" data-tip-fn="ware"${w.sold ? ' disabled' : ''}><span class="art">${guSVG(w.sp)}</span><b>${s.n}</b><span class="st"><i class="a">${st.atk}</i><i class="h">${st.hp}</i></span><span class="tag">${w.sold ? '已购' : (merge ? '合成 · ' : '') + fmtTok(c)}</span>${merge ? '<span class="fu">可合成</span>' : ''}</button></div>`;
+  const s = SP[w.sp], st = statFor(w.sp, baseRank(w.sp)), c = price(PRICE.gu), merge = !w.sold && owned(w.sp) >= 2, gain = !w.sold && !merge ? resoGain(S.team, w.sp) : null;
+  return `<div class="ware${w.frozen ? ' frozen' : ''}${w.sold ? ' sold' : ''}${merge ? ' merge' : ''}"><button class="wbuy" data-act="ware" data-i="${i}" data-tip-fn="ware"${w.sold ? ' disabled' : ''}><span class="art">${guSVG(w.sp)}</span>${dzHTML(w.sp)}<b>${s.n}</b><span class="st"><i class="a">${st.atk}</i><i class="h">${st.hp}</i></span><span class="tag">${w.sold ? '已购' : (merge ? '合成 · ' : '') + fmtTok(c)}</span>${merge ? '<span class="fu">可合成</span>' : gain ? `<span class="fu rzg">${TXT.resoGain}</span>` : ''}</button></div>`;
 }
 function renderShop() {
   const box = $('#shop'); if (!box) return;
@@ -8140,7 +8240,7 @@ function tripPlayBattle(foeTeam, opts = {}) {
   const A = { team, name: S.name || '无名蛊师', realm: S.realm, trial: S.trial }, B = { team: foeTeam, name: opts.foeName || '秘境', realm: S.realm };
   return new Promise(resolve => runBattle({ kind: 'trip', title: opts.title || '秘境 · 斗蛊', res, A, B, sota, done: () => resolve({ res, A, B }) }));
 }
-TRIP.api = { S: () => S, save, unlocked: (id, k) => unlocked(id, k), get el() { return $('#trip'); }, playBattle: tripPlayBattle, onTripEnd, big, note, float: (uid, t, k) => fxFloat(uid, t, k || 'buff'), renderHome };
+TRIP.api = { S: () => S, save, unlocked: (id, k) => unlocked(id, k), synLine: (team, o) => resoHTML(team, { lone: false, ...(o || {}) }), get el() { return $('#trip'); }, playBattle: tripPlayBattle, onTripEnd, big, note, float: (uid, t, k) => fxFloat(uid, t, k || 'buff'), renderHome };
 function meters() {
   if (!S.started) return;
   const q = $('#qiTxt'); if (!q) return;
@@ -8512,7 +8612,7 @@ const TIPS = {
   gu: t => { const i = S.team.findIndex(g => g.uid === t.dataset.uid); return guTip(S.team[i], S.team, i); },
   bag: () => esc(TXT.bagTip()),
   bg: t => { const g = S.bag[+t.dataset.i]; return g ? guTip(g) + '<small>在蛊囊里：不上场、不跟去渡劫，拖进空窍才上场</small>' : ''; },
-  ware: t => { const w = S.shop[+t.dataset.i]; if (!w) return ''; if (w.kind === 'food') { const f = FOOD[w.id]; return `<b>${esc(f.n)}</b> · ${FOOD_KIND[f.kind]}<br>${esc(f.d)}<br><small>价格 ${fmtTok(price(foodCost(w.id)))} 元气</small>`; } const n = owned(w.sp); return guTip(newGu(w.sp)).replace('<small>点开看完整详情</small>', '') + `<small>价格 ${fmtTok(price(PRICE.gu))} 元气 · 点开看完整详情</small>` + (n >= 2 ? `<p>你已有 ${n} 只${RANK.names[baseRank(w.sp)]}${SP[w.sp].n}，买下当场合成${RANK.names[baseRank(w.sp) + 1]}</p>` : ''); },
+  ware: t => { const w = S.shop[+t.dataset.i]; if (!w) return ''; if (w.kind === 'food') { const f = FOOD[w.id]; return `<b>${esc(f.n)}</b> · ${FOOD_KIND[f.kind]}<br>${esc(f.d)}<br><small>价格 ${fmtTok(price(foodCost(w.id)))} 元气</small>`; } const n = owned(w.sp); return guTip(newGu(w.sp)).replace('<small>点开看完整详情</small>', '') + `<small>价格 ${fmtTok(price(PRICE.gu))} 元气 · 点开看完整详情</small>` + (n >= 2 ? `<p>你已有 ${n} 只${RANK.names[baseRank(w.sp)]}${SP[w.sp].n}，买下当场合成${RANK.names[baseRank(w.sp) + 1]}</p>` : '' + (n < 2 && resoGain(S.team, w.sp) ? `<p>${esc(TXT.resoGainTip(resoGain(S.team, w.sp)))}</p>` : '')); },
 };
 let tipT = 0, tipEl = null, tipFor = null, tipLongT = 0, tipLongAt = -1e9;
 function tipShow(t) {
