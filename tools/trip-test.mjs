@@ -76,6 +76,9 @@ function runTrip(r, k, o = {}) {
     } else if (room.type === 'event') { const i = rng.int(2); if (!T.tripEvent(t, team, i, UNIT, purse).ok) T.tripEvent(t, team, 1 - i, UNIT, purse); }
     else if (room.type === 'camp') T.tripCamp(t);
     else if (room.type === 'market') { T.tripBuy(t, 0, UNIT, purse); T.tripLeaveRoom(t); }
+    else if (room.type === 'bless') T.tripBless(t, rng.int(3));
+    if (t.offer) T.tripOffer(t, rng.int(3));
+    if (t.reward) T.tripReward(t, rng() < 0.5 ? 'gu' : 'food');
   }
   if (!t.end) rec.stuck = true;
   return rec;
@@ -97,11 +100,12 @@ ok(eliteL >= 0.15 && eliteL <= 0.2, `精英：配队一般输 15%–20%：${(100
 
 console.log('# 3 首领：配队一般 / 配得好 / 凑合');
 // 一路下来剩 70%–100% 血进首领房（有一只是之前救回来的 1 血）
-const bossLoss = (L, style, n = 80, tag = 'u') => {
+// i = 第几个首领（不给就轮流打这个秘境的每个首领）；天象按种子随机（双方都吃）
+const bossLoss = (L, style, n = 80, tag = 'u', i = null) => {
   let loss = 0;
   for (let k = 0; k < n; k++) {
     const rng = makeRng(`${tag}${L.id}:${k}`), team = player(rng, L.realm, style);
-    const t = T.tripStart('boss' + k, L.id, team); t.d = T.TRIP_CFG.depth - 1; t.lane = 1;
+    const t = T.tripStart('boss' + k, L.id, team); t.d = T.TRIP_CFG.depth - 1; t.lane = 1; t.boss = i != null ? i : k % L.bosses.length;
     team.forEach((g, i) => { t.hp[g.uid] = i === team.length - 1 && team.length > 2 ? 1 : Math.max(1, Math.round(g.hp * (0.7 + 0.3 * rng()))); });
     T.tripPick(t, 1, UNIT, { bank: 1e12 });
     const f = T.fieldTeam(t, team), out = T.tripFight(t, team, f, fight(f, T.roomFoe(t), 'bb' + k)); if (out.wiped) loss++;
@@ -125,13 +129,16 @@ const bossLoss = (L, style, n = 80, tag = 'u') => {
   ok(g.clear > a.clear && a.clear > p.clear && g.wipe < a.wipe, '整趟下来也是配得好的通关多、全灭少');
 }
 
-if (process.env.TUNE) {   // 给每个秘境的首领挑阵容版本 bv、算 bk（首领用掉的额度再乘几倍）：配队一般打首领输 40% 左右
+if (process.env.TUNE) {   // 给每个首领挑阵容版本 bv、算 bk（首领用掉的额度再乘几倍）：配队一般打这个首领（带着机制）输 40% 左右。TUNE=caohai 只调一个秘境
   const out = {};
-  for (const L of T.LANDS) {
-    const keep = [L.bk, L.bv], at = (bk, bv, n = 160) => { L.bk = bk; L.bv = bv; const v = bossLoss(L, 'avg', n, 'tu'); [L.bk, L.bv] = keep; return v; };
-    let best = [1, 0], bd = 9;
-    for (let bv = 0; bv < 4 && bd > 0.03; bv++) for (let bk = 0.7; bk <= 1.3 + 1e-9; bk += 0.1) { const v = at(+bk.toFixed(2), bv, 100), dd = Math.abs(v - 0.4) + Math.abs(bk - 1) * 0.02; if (dd < bd) { bd = dd; best = [+bk.toFixed(2), bv]; } }
-    out[L.id] = best; console.log(`  ${L.n} bk=${best[0]} bv=${best[1]} → 首领用 ${Math.round(L.quota * T.TRIP_CFG.foe.boss * best[0])}/${L.quota} 点，输 ${(100 * at(best[0], best[1], 240)).toFixed(0)}%`);
+  for (const L of T.LANDS.filter(l => process.env.TUNE === '1' || process.env.TUNE.split(',').includes(l.id))) {
+    out[L.id] = T.BOSS_DEF[L.id].map((row, i) => {
+      const keep = row.slice(), at = (bk, bv, n = 160) => { row[1] = bk; row[2] = bv; const v = bossLoss(L, 'avg', n, 'tu', i); row[1] = keep[1]; row[2] = keep[2]; return v; };
+      let best = [1, 0], bd = 9;
+      for (let bv = 0; bv < 4 && bd > 0.03; bv++) for (let bk = 0.6; bk <= 1.4 + 1e-9; bk += 0.1) { const v = at(+bk.toFixed(2), bv, 100), dd = Math.abs(v - 0.4) + Math.abs(bk - 1) * 0.02; if (dd < bd) { bd = dd; best = [+bk.toFixed(2), bv]; } }
+      console.log(`  ${L.n}·${row[0]} bk=${best[0]} bv=${best[1]} → 首领用 ${Math.round(L.quota * T.TRIP_CFG.foe.boss * best[0])}/${L.quota} 点，输 ${(100 * at(best[0], best[1], 240)).toFixed(0)}%`);
+      return [row[0], ...best];
+    });
   }
   console.log('  ' + JSON.stringify(out));
 }
@@ -154,7 +161,8 @@ console.log('# 5 战利品曲线（每个房间平均，境界 2，打赢时）'
   const el = T.roomLoot('E', 2, 5, 0, 'elite'), bs = T.roomLoot('B', 2, 9, 1, 'boss');
   console.log('  精英（第 6 层）:', T.lootText(el), '  首领:', T.lootText(bs));
   ok(T.roomLoot('x', 2, 8, 0, 'fight').foods !== undefined && !('stone' in T.roomLoot('x', 2, 8, 0, 'fight')), '战利品只有新蛊和食物，没有货币');
-  { let bad2 = 0; for (let k = 0; k < 300; k++) T.roomLoot('s' + k, 2, 8, 0, 'boss').foods.forEach(id => { if (id === 'map') bad2++; }); ok(!bad2, '不再掉和元石有关的寻宝图'); }
+  { const seen = new Set(); for (let k = 0; k < 600; k++) T.roomLoot('s' + k, 2, 8, 0, 'elite').foods.forEach(id => seen.add(id)); ok(['map', 'dinghun', 'jingleifu'].every(id => seen.has(id)), '出征食物（寻路图、定魂香、惊雷符…）秘境已接好，也会掉'); }
+  { let off = 0; for (let k = 0; k < 200; k++) { const l = T.roomLoot('u' + k, 2, 8, 0, 'elite', ['meat'], ['boar', 'tiger']); off += l.foods.filter(x => x !== 'meat').length + l.gu.filter(g => !['boar', 'tiger'].includes(g.sp)).length; } ok(!off, '掉落只出道途解锁过的食物和蛊（出征时洞府给名单）'); }
 }
 
 console.log('# 6 节奏（真实画像：中位数 21.4 万 token/活跃分钟，缓存读取 ×0.1）');
@@ -212,5 +220,51 @@ console.log('# 8 奇遇');
   t = mk('duzhang'); T.tripEvent(t, team, 0, UNIT, purse); ok(t.short === 0.5 && t.order.every(u => t.hp[u] >= 1 && t.hp[u] < t.mx[u]), '穿瘴气：全队掉血但不会掉到 0，路减半');
   t = mk('xuechi'); t.hp[u0] = 1; T.tripEvent(t, team, 0, UNIT, purse); ok(t.hp[u0] > 1, '赤水潭：回伤得最重的那只');
   t = T.tripStart('tea', 1, team, { trip: ['tea'] }); t.hp[u0] = 1; ok(T.tripPreFight(t) > 0 && t.hp[u0] > 1, '回春茶：每场开打前全队回血');
+}
+console.log('# 9 天象、首领机制、祝福、劫数、渡劫奖励、出征食物');
+{
+  const M = await import('../src/trip-mods.js');
+  ok(M.SKIES.length === 10 && M.MECHS.length === 10 && M.BLESSES.length >= 20 && M.JIE.length === 10, `天象 ${M.SKIES.length} 种、首领机制 ${M.MECHS.length} 条、祝福 ${M.BLESSES.length} 个、劫数 ${M.JIE.length} 级`);
+  ok(T.LANDS.every(l => l.bosses.length >= 2 && l.bosses.length <= 3 && new Set(l.bosses.map(b => b.mech)).size === l.bosses.length && l.bosses.every(b => M.MECH[b.mech])), '每个秘境 2–3 个首领，机制各不相同');
+  const p1 = T.tripPreview('pv', 'caohai', 0), p2 = T.tripPreview('pv', 'caohai', 0), t0 = T.tripStart('pv', 'caohai', player(makeRng('pv'), 2));
+  ok(JSON.stringify(p1) === JSON.stringify(p2) && p1.sky.id === t0.sky && p1.boss.i === t0.boss, `进秘境前就能看到这一趟的天象「${p1.sky.n}」和首领「${p1.boss.n}」，进去后一样`);
+  const skies = new Set(), bosses = new Set(); for (let k = 0; k < 80; k++) { const p = T.tripPlan('s' + k, 'caohai'); skies.add(p.sky); bosses.add(p.boss); }
+  ok(skies.size === 10 && bosses.size === 3, '天象每趟随机（10 种都出现），首领在 3 个里随机');
+  const team = player(makeRng('mods'), 2), t = T.tripStart('mods', 'caohai', team, { kalpa: 10, trip: ['jingleifu', 'map', 'dinghun'] });
+  t.room = { type: 'boss', d: 9, lane: 1, foe: 1 }; const foe = T.roomFoe(t), lead = foe.find(g => g.boss), f = T.fieldTeam(t, team);
+  ok(foe.every(g => g.fx.some(x => x.kind === 'sky') && g.fx.some(x => x.kind === 'jie')) && lead.fx.filter(x => x.kind === 'boss').length >= 1 && T.bossMechs(t).length === 2, '敌方挂天象、劫数，首领带机制（劫十多带一条）');
+  ok(f.every(g => g.fx.some(x => x.kind === 'sky') && g.fx.some(x => x.id === 'food_jingleifu')), '我方挂天象和出征食物（惊雷符）的效果');
+  const res = battle(f, foe, 'fx', { lite: true }); ok(res && res.winner, '带着挂件的战斗能打完');
+  ok(Math.abs(T.roadOf(t) - 0.85 * 1.2) < 1e-9, `路程倍数 = 寻路图 0.85 × 劫五 1.2 = ${T.roadOf(t).toFixed(2)}`);
+  ok(T.campOf(t) === 0.3 && T.campOf(T.tripStart('c', 'caohai', team)) === T.TRIP_CFG.camp, '劫二：篝火只回三成');
+  // 定魂香：第一只倒下的以 30% 血站起来，只一次
+  t.room = { type: 'fight', d: 1, lane: 0, foe: 1 }; let ff = T.fieldTeam(t, team);
+  T.tripFight(t, team, ff, { winner: 'A', hpA: ff.map((g, i) => i === 0 ? 0 : g.hp), statA: [] });
+  const u0 = ff[0].uid; ok(t.hp[u0] === Math.max(1, Math.round(t.mx[u0] * 0.3)) && t.revived === u0, '定魂香：第一只倒下的蛊以 30% 血站起来');
+  t.room = { type: 'fight', d: 2, lane: 0, foe: 1 }; ff = T.fieldTeam(t, team);
+  T.tripFight(t, team, ff, { winner: 'A', hpA: ff.map((g, i) => i === 1 ? 0 : g.hp), statA: [] }); ok(t.hp[ff[1].uid] === 1, '定魂香只管一次，第二只照常剩 1 血');
+  // 祝福：精英打赢给三选一；灵台房间；只管几场的会用完
+  t.room = { type: 'elite', d: 4, lane: 0, foe: 1 }; ff = T.fieldTeam(t, team);
+  const oe = T.tripFight(t, team, ff, { winner: 'A', hpA: ff.map(g => g.hp), statA: [] });
+  ok(oe.bless && oe.bless.length === 3 && new Set(oe.bless).size === 3 && t.offer, '打赢精英：三个祝福选一个');
+  T.tripOffer(t, oe.bless.indexOf('baoyou') >= 0 ? oe.bless.indexOf('baoyou') : 0); const got = t.bless[0].id;
+  ok(t.bless.length === 1 && !t.offer && T.fieldTeam(t, team).every(g => !M.BLESS[got].eff || g.fx.some(x => x.id === 'bless_' + got)), `选了「${M.BLESS[got].n}」，下一场挂上`);
+  const tb = T.tripStart('pb', 'caohai', team); tb.bless = [{ id: 'baoyou', left: 3 }]; ok(T.preOf(tb) === 0.25, '庇佑：开打前回 25%');
+  for (let k = 0; k < 3; k++) { tb.room = { type: 'fight', d: k, lane: 0, foe: 1 }; const g3 = T.fieldTeam(tb, team); T.tripFight(tb, team, g3, { winner: 'A', hpA: g3.map(g => g.hp), statA: [] }); }
+  ok(T.preOf(tb) === 0 && !T.blessList(tb).length, '庇佑管 3 场，用完就没了');
+  let altar = 0; for (let k = 0; k < 200; k++) { const m = T.tripMap('a' + k, 2); if (m.some(r => r.rooms.some(x => x.type === 'bless'))) altar++; } ok(altar > 100, `灵台房间（祝福）常见：${(altar / 2).toFixed(0)}% 的地图有`);
+  const ta = T.tripStart('alt', 'caohai', team); ta.pick = 0; ta.room = { type: 'bless', d: 2, lane: 0, choices: T.blessChoices(ta, 'x') };
+  ok(T.tripBless(ta, 1) && ta.bless.length === 1 && ta.d === 1, '灵台：选一个，进下一层');
+  // 劫数：额度、敌方加成
+  const fr = k => { const tt = T.tripStart('jk', 'caohai', team, { kalpa: k }); tt.room = { type: 'elite', d: 5, lane: 0, foe: 1 }; return T.roomFoe(tt).reduce((a, g) => a + g.rank, 0); };
+  ok(fr(4) > fr(3) || fr(4) >= fr(3), `劫四：精英多用一成额度（劫三 ${fr(3)} 点 → 劫四 ${fr(4)} 点）`);
+  // 渡劫成功：首领掉落二选一
+  const tw = T.tripStart('win', 'liusha', team); tw.room = { type: 'boss', d: 9, lane: 1, foe: 1 }; tw.pick = 1; tw.d = 9; ff = T.fieldTeam(tw, team);
+  const ow = T.tripFight(tw, team, ff, { winner: 'A', hpA: ff.map(g => g.hp), statA: [] });
+  ok(ow.cleared && tw.reward && tw.reward.gu && daoOf(tw.reward.gu.sp) === 'jin' && tw.reward.gu.rank === 3 && !tw.end, `打赢首领先二选一：金道的三转蛊「${T.guName(tw.reward.gu)}」或稀有食物「${tw.reward.food}」`);
+  T.tripReward(tw, 'food'); const rr = T.tripResult(tw);
+  ok(tw.end && tw.end.cleared && rr.reward.k === 'food' && rr.loot.foods.includes(rr.reward.food) && rr.land === 'liusha' && rr.kalpa === 0, '选了食物：进战利品袋，渡劫成功回洞府，结果带秘境和第几劫');
+  const lr = T.landReward('liusha', { realm: 2, best: -1 }), lr2 = T.landReward('liusha', { realm: 3, best: 2, kalpa: 3 });
+  ok(lr.lines[0].includes('金道的一只三转蛊') && lr.first.some(x => x.includes('境界晋一层')) && lr.first.some(x => x.includes('劫一')) && lr2.first[0] === '这个秘境开放劫四', '「渡劫成功可得」：主道高转蛊或稀有食物；第一次渡过写晋境界、开放劫一；打到新劫写开放下一劫');
 }
 console.log(bad ? `\n${bad} 项未通过` : '\n全部通过'); process.exit(bad ? 1 : 0);

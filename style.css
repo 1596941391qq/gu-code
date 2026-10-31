@@ -1176,3 +1176,25 @@ button.tu-room:hover{transform:translateY(-2px)}
 .tu-bag small{flex-basis:100%;font-size:11px;color:var(--mu)}
 @media (max-width:400px){.tu-team{grid-template-columns:repeat(2,minmax(0,1fr))}.tu-room{min-height:78px}}
 .tu-saved{padding:6px 10px;border-left:3px solid var(--qing);background:color-mix(in srgb,var(--qing) 10%,transparent);font-size:13px}
+/* 秘境：天象、劫数、祝福、首领机制、渡劫掉落 */
+.tu-mods{display:flex;flex-wrap:wrap;gap:5px;margin:-2px 0 8px}
+.tu-chip{display:inline-flex;align-items:center;gap:4px;padding:2px 8px 2px 3px;border:1px solid var(--line2);border-radius:2px;font:13px var(--kai);color:var(--tx);cursor:help}
+.tu-chip i{font:11px var(--sans);font-style:normal;padding:0 4px;border-radius:1px;background:var(--faint2);color:var(--mu)}
+.tu-chip.sky i{background:color-mix(in srgb,var(--qing) 22%,transparent);color:var(--tx)}
+.tu-chip.jie{border-color:var(--zhu2)}
+.tu-chip.jie i{background:color-mix(in srgb,var(--zhu2) 22%,transparent);color:var(--tx)}
+.tu-chip.bless i{background:color-mix(in srgb,var(--hp) 25%,transparent);color:var(--tx)}
+.tu-rules{list-style:none;margin:0 0 8px;padding:0;display:grid;gap:4px}
+.tu-rules li{padding:5px 10px;border-left:3px solid var(--qing);background:color-mix(in srgb,var(--qing) 8%,transparent);font-size:13px;line-height:1.55}
+.tu-rules li b{font:14px var(--kai);margin-right:6px}
+.tu-rules li.mech{border-left-color:var(--zhu2);background:color-mix(in srgb,var(--zhu2) 8%,transparent)}
+.tu-rules li small{display:inline-block;margin-left:6px;font-size:11px;color:var(--mu)}
+.tu-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-top:8px}
+.tu-card{display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:10px 12px;background:var(--paper);color:var(--ink);border-radius:3px;box-shadow:0 1px 0 var(--shadow);text-align:left;transition:transform .15s}
+.tu-card:hover{transform:translateY(-2px)}
+.tu-card b{font:17px var(--kai)}
+.tu-card span{font-size:13px;line-height:1.5}
+.tu-card small{margin-top:auto;font-size:11px;color:#5b5244;border-top:1px dashed rgba(28,25,21,.2);padding-top:4px;align-self:stretch}
+.tu-card .tu-art{width:56px}
+.tu-first{list-style:none;margin:0 0 8px;padding:6px 10px;border-left:3px solid var(--zhu2);background:color-mix(in srgb,var(--zhu2) 10%,transparent);font:15px/1.7 var(--kai)}
+.tu-drop{font-style:normal;margin-left:6px;font-size:11px;color:var(--zhu);border:1px solid var(--zhu);padding:0 3px;border-radius:2px}
