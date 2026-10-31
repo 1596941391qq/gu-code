@@ -2,23 +2,28 @@
 // 规则正本：docs/design.md 第 2 节。界面在 trip-ui.js。战斗引擎归战斗一侧：秘境给出场蛊带 hpNow，读回 res.hpEnd（每只剩血，0 = 倒下）
 // 和 res.statA（每只这一场的经历，判蛊性用）；引擎还没给 hpEnd 时，用最后一帧快照兜底（hpFromLog）。
 // 资源只有元气（= 消耗的 token）：房间路程、坊市、奇遇里要花的都按元气算，先花洞府攒着的（purse.bank），不够就等实时 token。
-import { makeRng, hashStr, SP, poolFor, genTeam, slotCap, baseRank, RANK, SLOTS, XING } from './core.js';
+import { makeRng, hashStr, SP, poolFor, genTeam, slotCap, baseRank, RANK, SLOTS, XING, fmtTok } from './core.js';
 import { FOODS } from './foods.js';
 
 // ───────────── 蛊性：秘境里打出来的经历。每只蛊最多 1 个；数值按进场攻血的百分比，后期不贬值 ─────────────
 // 顺序 = 坐标码里的下标（只能往后加）。prio 越小越优先（同一场同时达成几个时取一个）。get = 怎么得到，d = 效果（界面原样显示）
 // eff = 战斗效果，格式见 docs/battle-spec.md 第 6 节（{ when, op, … }，按攻血百分比）；引擎触发时发 trig { uid, xg }
 Object.assign(XING, {
-  jianren: { n: '坚韧', prio: 1, get: '残血（不到四分之一）活过一场', d: '每场第一次受到致命伤时，留 1 血', eff: [{ when: 'lethal', op: 'endure', v: 0, max: 1 }] },
-  shisha:  { n: '嗜杀', prio: 2, get: '一场里斩杀三只', d: '每斩杀一只，攻 +20%（按进场时的攻算）', eff: [{ when: 'kill', op: 'buff', tg: 'self', atk: 0.2 }] },
-  ruiqi:   { n: '锐气', prio: 3, get: '第一轮出手就斩杀一只', d: '每场第一次出手，伤害 ×1.5', eff: [{ when: 'deal', op: 'mul', v: 1.5, if: 'first' }] },
-  zhenyue: { n: '镇岳', prio: 4, get: '站最前挨了 4 下还活着', d: '开战时站最前，得满血 25% 的护体', eff: [{ when: 'start', op: 'shield', tg: 'self', mx: 0.25, up: 0, if: 'front' }] },
+  jianren:  { n: '坚韧', prio: 1, get: '残血（不到四分之一）活过一场', d: '每场第一次受到致命伤时，留 1 血', eff: [{ when: 'lethal', op: 'endure', v: 0, max: 1 }] },
+  shisha:   { n: '嗜杀', prio: 2, get: '一场里斩杀三只', d: '每斩杀一只，攻 +20%（按进场时的攻算）', eff: [{ when: 'kill', op: 'buff', tg: 'self', atk: 0.2 }] },
+  ruiqi:    { n: '锐气', prio: 4, get: '第一轮就斩杀一只', d: '每场第一次出手，伤害 ×1.5', eff: [{ when: 'deal', op: 'mul', v: 1.5, if: 'first' }] },
+  zhanshou: { n: '斩首', prio: 3, get: '一下打倒一只满血的敌蛊', d: '打满血的敌蛊，伤害 ×1.3', eff: [{ when: 'deal', op: 'mul', v: 1.3, if: 'tg.full' }] },
+  tongpao:  { n: '同袍', prio: 5, get: '相邻的友蛊倒下了，自己撑到打赢', d: '相邻友蛊倒下时，回满血的 25%', eff: [{ when: 'allyDeath', op: 'heal', tg: 'self', mx: 0.25, up: 0, if: 'dead.adj' }] },
+  zhenyue:  { n: '镇岳', prio: 6, get: '站最前挨了 4 下还活着', d: '开战时站最前，得满血 25% 的护体', eff: [{ when: 'start', op: 'shield', tg: 'self', mx: 0.25, up: 0, if: 'front' }] },
+  yuxue:    { n: '浴血', prio: 7, get: '一场里掉的血超过自己满血，还活着', d: '每被普攻打中一次还活着，攻 +10%', eff: [{ when: 'hit', op: 'buff', tg: 'self', atk: 0.1, if: 'kind=hit' }] },
+  zhefu:    { n: '蛰伏', prio: 8, get: '身前的友蛊倒下了，自己撑到打赢', d: '身前友蛊倒下时，攻和血 +15%', eff: [{ when: 'allyDeath', op: 'buff', tg: 'self', atk: 0.15, hp: 0.15, if: 'dead.ahead' }] },
 });
 const XORDER = () => Object.keys(XING).sort((a, b) => (XING[a].prio || 99) - (XING[b].prio || 99));
 // 一场打完，这只蛊达成了哪个蛊性（只看活下来的；已经有的那个不算新的）。st 见战斗结果的 statA
 export function xingEarned(st, won, cur) {
   if (!st || !(st.hp > 0) || !st.mx) return null;
-  const ok = { jianren: st.hp / st.mx <= 0.25, shisha: st.kills >= 3, ruiqi: !!st.killT1, zhenyue: !!st.front && st.hits >= 4 };
+  const ok = { jianren: st.hp / st.mx <= 0.25, shisha: st.kills >= 3, ruiqi: !!st.killT1, zhanshou: !!st.oneShot, tongpao: won && !!st.adjFell,
+    zhenyue: !!st.front && st.hits >= 4, yuxue: st.taken >= st.mx, zhefu: won && !!st.frontFell };
   return XORDER().find(k => ok[k] && k !== cur) || null;
 }
 
@@ -140,7 +145,9 @@ export function lootText(l) {
 }
 
 // ───────────── 奇遇：两个选项，两个结果都写明。fx 见 applyFx ─────────────
-// heal/hurt = 按满血的比例；Front = 只作用在最前那只活着的蛊；shortcut = 下一个房间路程倍数（0.5 = 减半）
+// heal/hurt = 按满血的比例；Front = 只作用在最前那只活着的蛊；healLow = 只回伤得最重的那只；hurtAll = 全队掉（不会掉到 0）
+// shortcut / slow = 下一个房间路程倍数（0.5 = 减半，1.5 = 多走一半）；pay = 花几份元气（×单位×境界系数，先花攒着的，不够就选不了）
+// bump = 新蛊更稀有一档。越深的奇遇给的食物越偏贵（foodPick），新蛊转数随层数涨（lootGu）
 export const EVENTS = [
   { id: 'yishui', n: '古修遗蜕', s: '崖下坐着一具古修士的遗蜕，衣袍一碰就碎，掌心还托着一团温热的灵光。',
     o: [{ t: '吸了这团灵光', fx: { heal: 0.3 } }, { t: '翻他的遗物', fx: { food: 1 } }] },
@@ -152,6 +159,16 @@ export const EVENTS = [
     o: [{ t: '走窄道', fx: { shortcut: 0.5, hurtFront: 0.4 } }, { t: '绕远路', fx: {} }] },
   { id: 'guzhen', n: '古阵残影', s: '地上刻着残缺的阵纹，阵里有一道虚影，在等人进来过招。',
     o: [{ t: '让最前的蛊入阵过招', fx: { xing: 'ruiqi', hurtFront: 0.2 } }, { t: '不进阵', fx: {} }] },
+  { id: 'guchao', n: '树洞蛊巢', s: '老树洞里结着一个野蛊巢，里面有动静，守巢的那只脾气不好。',
+    o: [{ t: '掏巢', fx: { gu: 1, bump: 1, hurtFront: 0.35 } }, { t: '不惊动它', fx: {} }] },
+  { id: 'duzhang', n: '毒瘴林', s: '前面一片林子笼着灰绿的瘴气。穿过去最近，绕开要多走不少路。',
+    o: [{ t: '屏住气穿过去', fx: { hurtAll: 0.15, shortcut: 0.5 } }, { t: '绕开走', fx: { slow: 1.5 } }] },
+  { id: 'shibei', n: '无字石碑', s: '路边立着一块无字石碑，盯久了，碑面像有一座山压下来。',
+    o: [{ t: '让最前的蛊对着石碑静坐', fx: { xing: 'zhenyue', slow: 1.3 } }, { t: '不看它，接着走', fx: {} }] },
+  { id: 'xuechi', n: '赤水潭', s: '一潭暗红的水冒着热气。泡进去伤口发烫，出来却像换了一身筋骨。',
+    o: [{ t: '让伤得最重的蛊泡进去', fx: { healLow: 0.6 } }, { t: '让最前的蛊泡到发烫', fx: { xing: 'yuxue', hurtFront: 0.25 } }] },
+  { id: 'luonan', n: '落难修士', s: '一个修士靠着石头喘气，元气耗尽了，身边一只蛊守着他不肯走。',
+    o: [{ t: '分他一些元气', fx: { pay: 30, gu: 1, bump: 1 } }, { t: '问他前面的路', fx: { shortcut: 0.7 } }] },
 ];
 export const EVENT = Object.fromEntries(EVENTS.map(e => [e.id, e]));
 export function pickEvent(seed, d, lane, seen = []) {
@@ -159,14 +176,19 @@ export function pickEvent(seed, d, lane, seen = []) {
   return rng.pick(pool.length ? pool : EVENTS).id;
 }
 // 一个选项写成人话：结果是什么、放到哪
-export function fxText(fx) {
+export const evPay = (t, fx, unit) => fx && fx.pay ? Math.round(fx.pay * unit * (1 + (t ? t.realm : 0) * TRIP_CFG.pay.realm)) : 0;
+export function fxText(fx, pay = 0) {
   const out = [], pc = p => Math.round(p * 100) + '%';
+  if (fx.pay) out.push(`花 ${fmtTok(pay || fx.pay)} 元气`);
   if (fx.heal) out.push(`全队回满血的 ${pc(fx.heal)}`);
   if (fx.food) out.push(`食物 ×${fx.food}（进战利品袋）`);
-  if (fx.gu) out.push(`新蛊 ×${fx.gu}（进战利品袋，回洞府放进蛊囊）`);
+  if (fx.healLow) out.push(`伤得最重的那只回满血的 ${pc(fx.healLow)}`);
+  if (fx.gu) out.push(`新蛊 ×${fx.gu}${fx.bump ? '，转数高一档' : ''}（进战利品袋，回洞府放进蛊囊）`);
   if (fx.xing) out.push(`最前的蛊得蛊性「${XING[fx.xing].n}」：${XING[fx.xing].d}`);
   if (fx.shortcut) out.push(`下一个房间少走 ${pc(1 - fx.shortcut)} 的路`);
+  if (fx.slow) out.push(`下一个房间多走 ${pc(fx.slow - 1)} 的路`);
   if (fx.hurtFront) out.push(`最前的蛊掉满血的 ${pc(fx.hurtFront)}（不会掉到 0）`);
+  if (fx.hurtAll) out.push(`全队掉满血的 ${pc(fx.hurtAll)}（不会掉到 0）`);
   return out.length ? out.join('，') : '什么也不发生';
 }
 
@@ -276,9 +298,10 @@ export function tripPreFight(t) {
 }
 export function acceptXing(team, uid, key) { const g = team.find(x => x.uid === uid); if (g && XING[key]) { g.xing = key; return true; } return false; }
 // 奇遇：选第 i 个选项。返回 { ok, lines, offer? }
-export function tripEvent(t, team, i) {
+export function tripEvent(t, team, i, unit = 0, purse = null) {
   const room = t.room; if (!room || room.type !== 'event' || room.done) return { ok: false };
   const e = EVENT[room.ev], o = e && e.o[i]; if (!o) return { ok: false };
+  const pay = evPay(t, o.fx, unit); if (pay) { if (!purse || (purse.bank || 0) < pay) return { ok: false, why: '元气不够' }; purse.bank -= pay; }
   const r = applyFx(t, team, o.fx, room);
   room.done = true; tlog(t, `${e.n}：${o.t}。${r.lines.join('，') || '无事发生'}`); leave(t); return r;
 }
@@ -287,8 +310,11 @@ function applyFx(t, team, fx, room) {
   const rng = makeRng(`trip:${t.seed}:fx:${room.d}:${room.lane}`); let offer = null;
   if (fx.heal) { al.forEach(u => { t.hp[u] = Math.min(t.mx[u], t.hp[u] + Math.max(1, Math.round(t.mx[u] * fx.heal))); }); lines.push(`全队回血 ${Math.round(fx.heal * 100)}%`); }
   for (let k = 0; k < (fx.food || 0); k++) { const id = foodPick(rng, foodPoolOf(t), room.d); t.loot.foods.push(id); lines.push(`食物：${foodName(id)}`); }
-  for (let k = 0; k < (fx.gu || 0); k++) { const g = lootGu(rng, t.realm, room.d); t.loot.gu.push(g); lines.push(`新蛊：${guName(g)}`); }
+  if (fx.healLow) { const u = al.slice().sort((a, b) => t.hp[a] / t.mx[a] - t.hp[b] / t.mx[b])[0]; if (u) { const v = Math.min(t.mx[u] - t.hp[u], Math.round(t.mx[u] * fx.healLow)); t.hp[u] += v; lines.push(`${nm(u)} 回 ${v} 血`); } }
+  for (let k = 0; k < (fx.gu || 0); k++) { const g = lootGu(rng, t.realm, room.d, fx.bump || 0); t.loot.gu.push(g); lines.push(`新蛊：${guName(g)}`); }
   if (fx.shortcut) { t.short = fx.shortcut; lines.push(`下一个房间少走 ${Math.round((1 - fx.shortcut) * 100)}% 的路`); }
+  if (fx.slow) { t.short = fx.slow; lines.push(`下一个房间多走 ${Math.round((fx.slow - 1) * 100)}% 的路`); }
+  if (fx.hurtAll) { al.forEach(u => { t.hp[u] -= Math.max(0, Math.min(t.hp[u] - 1, Math.max(1, Math.round(t.mx[u] * fx.hurtAll)))); }); lines.push(`全队掉 ${Math.round(fx.hurtAll * 100)}% 血`); }
   if (fx.hurtFront && front) { const v = Math.max(0, Math.min(t.hp[front] - 1, Math.round(t.mx[front] * fx.hurtFront))); t.hp[front] -= v; lines.push(`${nm(front)} 掉 ${v} 血`); }
   if (fx.xing && front && by[front]) {
     const g = by[front]; if (!g.xing) { g.xing = fx.xing; lines.push(`${nm(front)} 得蛊性「${XING[fx.xing].n}」`); }

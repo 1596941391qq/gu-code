@@ -1034,3 +1034,107 @@ body:has(#lgx) :is(.float,.inkburst,.cut,.stamp,.chain){visibility:hidden}   /* 
 .natl li.off { opacity: .42; }
 .natl li.off b::after { content: ' · 未解锁'; font-weight: 400; font-size: .85em; }
 .tc.nat { outline: 1px solid currentColor; outline-offset: -1px; border-radius: 3px; }
+/* ── 秘境（trip-ui.js）：出征中洞府收起，只看秘境 ── */
+.home.away{display:none}
+.trip:empty{display:none}
+.trip{margin-top:6px}
+.tu-head{display:flex;align-items:center;gap:10px;margin:4px 0 8px}
+.tu-head .lbl{white-space:nowrap}
+.tu-dots{display:flex;align-items:center;gap:3px;flex:1;min-width:0}
+.tu-dots i{flex:1;max-width:22px;height:6px;border:1px solid var(--line2);border-radius:1px}
+.tu-dots i.past{background:var(--mu);border-color:var(--mu)}
+.tu-dots i.now{border-color:var(--zhu2);background:color-mix(in srgb,var(--zhu2) 40%,transparent)}
+.tu-dots i.boss{flex:0 0 18px;height:18px;font:12px/16px var(--kai);text-align:center;color:var(--zhu2);border-color:var(--zhu2)}
+.tu-flee{padding:5px 12px;border:1px solid var(--line2);border-radius:3px;font:14px var(--kai);color:var(--mu)}
+.tu-flee:hover{color:var(--tx);border-color:var(--tx)}
+.tu-team{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;margin-bottom:8px}
+.tu-g{display:grid;grid-template-columns:36px 1fr;gap:6px;align-items:center;background:var(--paper);color:var(--ink);border-radius:3px;padding:3px 8px 3px 3px;box-shadow:0 1px 0 var(--shadow)}
+.tu-art{display:block;aspect-ratio:1}
+.tu-art svg{width:100%;height:100%;display:block}
+.tu-g .tu-art{width:36px}
+.tu-gi{display:flex;flex-direction:column;min-width:0;gap:3px}
+.tu-gi b{font:14px/1.1 var(--kai);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tu-gi small{font-size:11px;line-height:1;color:#5b5244;font-variant-numeric:tabular-nums}
+.tu-hp{display:block;height:5px;background:rgba(28,25,21,.14);border-radius:1px;overflow:hidden}
+.tu-hp i{display:block;height:100%;background:var(--hp);transition:width .3s}
+.tu-g.low .tu-hp i{background:var(--atk)}
+.tu-g.dead{background:transparent;color:var(--mu);box-shadow:none;outline:1px dashed var(--faint);outline-offset:-1px}
+.tu-g.dead .tu-art{filter:grayscale(1);opacity:.35}
+.tu-g.dead small{color:var(--mu)}
+.tu-xg{font-style:normal;margin-left:4px;font-size:11px;color:var(--zhu);border:1px solid var(--zhu);padding:0 2px;border-radius:2px;vertical-align:1px}
+.tu-msg{margin:0 0 8px;padding:6px 10px;border-left:3px solid var(--qing);background:color-mix(in srgb,var(--qing) 10%,transparent);font-size:13px;line-height:1.55}
+.tu-cap{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin:6px 0 5px;font:14px var(--kai);color:var(--mu);letter-spacing:.06em}
+.tu-cap small{font:11px var(--sans);letter-spacing:0}
+.tu-cap.sub{margin-top:0}
+.tu-row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.tu-room{display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 4px 7px;background:var(--paper);color:var(--ink);border-radius:3px;box-shadow:0 1px 0 var(--shadow);text-align:center;min-height:84px;transition:transform .15s}
+button.tu-room:hover{transform:translateY(-2px)}
+.tu-room.none{visibility:hidden}
+.tu-room.off{background:transparent;color:var(--mu);box-shadow:none;outline:1px dashed var(--faint);outline-offset:-1px}
+.tu-room.cur{outline:2px solid var(--zhu2);outline-offset:2px}
+.tu-room span{font:15px/1.1 var(--kai)}
+.tu-room small{font-size:11px;color:#5b5244;font-variant-numeric:tabular-nums}
+.tu-room.off small{color:var(--mu)}
+.tu-row.next .tu-room{min-height:0;padding:5px 4px;flex-direction:row;justify-content:center;gap:6px}
+.tu-row.next .tu-room small{display:none}
+.tu-row.next .tu-seal{width:22px;height:22px;font-size:13px}
+.tu-seal{display:inline-grid;place-items:center;flex:0 0 auto;width:30px;height:30px;font:18px/1 var(--kai);border:1.5px solid currentColor;border-radius:2px}
+.t-elite .tu-seal,.t-boss .tu-seal{background:var(--zhu);color:var(--on-zhu);border-color:var(--zhu)}
+.t-event .tu-seal{color:var(--qing)}
+.tu-room.off .tu-seal{background:transparent;color:inherit;border-color:currentColor}
+.tu-links{display:block;width:100%;height:22px;margin:2px 0}
+.tu-links line{stroke:var(--line2);stroke-width:1.5;vector-effect:non-scaling-stroke}
+.tu-hint{font-size:12px;color:var(--mu);margin:8px 0 0;line-height:1.5}
+.tu-walk{display:flex;gap:10px;align-items:center;margin-top:10px;padding:10px;border:1px solid var(--line);border-radius:3px;background:var(--bg2)}
+.tu-walk > div{flex:1;min-width:0}
+.tu-walk p{margin:0 0 6px;font:15px var(--kai)}
+.tu-bar{height:6px;background:var(--faint2);border-radius:1px;overflow:hidden;margin-bottom:4px}
+.tu-bar i{display:block;height:100%;background:var(--qing);transition:width .8s linear}
+.tu-walk small{font-size:12px;color:var(--mu);font-variant-numeric:tabular-nums}
+.tu-panel{background:var(--bg2);border:1px solid var(--line);border-radius:4px;padding:12px 14px 14px}
+.tu-panel h3{display:flex;align-items:center;gap:8px;margin:2px 0 6px;font:22px var(--kai);color:var(--strong)}
+.tu-panel p{margin:0 0 8px;line-height:1.6}
+.tu-panel p.tu-eyebrow{margin:0;font:13px var(--kai);color:var(--zhu2);letter-spacing:.2em}
+.tu-warn{padding:6px 10px;border-left:3px solid var(--zhu2);background:color-mix(in srgb,var(--zhu2) 10%,transparent);font-weight:600}
+.tu-foes{display:grid;grid-template-columns:repeat(auto-fill,minmax(68px,1fr));gap:6px;margin-bottom:6px}
+.tu-f{display:flex;flex-direction:column;align-items:center;padding:3px 3px 5px;background:var(--paper2);color:var(--ink);border-radius:3px;font-size:11px}
+.tu-f .tu-art{width:72%}
+.tu-f b{font:13px var(--kai);white-space:nowrap}
+.tu-f .st{display:flex;gap:5px}
+.tu-f.boss{outline:1.5px solid var(--zhu);outline-offset:2px}
+.tu-main{display:flex;flex-direction:column;align-items:center;gap:8px;margin-top:12px}
+.tu-sec{padding:4px 10px;font:14px var(--kai);color:var(--mu);text-decoration:underline;text-underline-offset:3px}
+.tu-opts{display:grid;gap:8px;margin-top:8px}
+.tu-opt{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:10px 12px;background:var(--paper);color:var(--ink);border-radius:3px;box-shadow:0 1px 0 var(--shadow);text-align:left}
+.tu-opt b{font:16px var(--kai)}
+.tu-opt small{font-size:12px;line-height:1.5;color:#4a4239}
+.tu-opt:disabled{opacity:.5}
+.tu-wares{display:grid;gap:6px;margin:8px 0}
+.tu-ware{display:grid;grid-template-columns:34px 1fr auto;gap:8px;align-items:center;padding:6px 8px;background:var(--paper);color:var(--ink);border-radius:3px}
+.tu-ware .tu-art{width:34px}
+.tu-ware .tu-seal{width:28px;height:28px;font-size:15px}
+.tu-ware span{font-size:13px;line-height:1.4}
+.tu-ware button{padding:6px 10px;border:1px solid var(--zhu);border-radius:3px;color:var(--zhu);font:13px var(--kai);font-variant-numeric:tabular-nums}
+.tu-ware button:disabled{border-color:#8a7f6d;color:#8a7f6d}
+.tu-ware.sold{opacity:.55}
+.tu-xl{list-style:none;padding:0;margin:6px 0;display:grid;gap:6px}
+.tu-xl li{padding:8px 10px;background:var(--paper);color:var(--ink);border-radius:3px;font-size:13px;line-height:1.5}
+.tu-xl b{display:block;font:15px var(--kai)}
+.tu-fare{text-align:center}
+.tu-fare .tu-art{width:96px;margin:4px auto 6px}
+.tu-fare h3{justify-content:center}
+.tu-art.gone{filter:grayscale(1) contrast(.9);opacity:.55}
+.tu-got,.tu-gone{list-style:none;padding:0;margin:0 0 8px;display:grid;gap:6px}
+.tu-got li{display:grid;grid-template-columns:30px 1fr auto;gap:8px;align-items:center;padding:4px 8px;background:var(--paper);color:var(--ink);border-radius:3px;font:15px var(--kai)}
+.tu-got .tu-art{width:30px}
+.tu-got .tu-seal{width:26px;height:26px;font-size:14px}
+.tu-got small{font:11px var(--sans);color:#5b5244}
+.tu-gone li{display:grid;grid-template-columns:40px 1fr;gap:10px;align-items:center;padding:6px 8px;outline:1px dashed var(--faint);outline-offset:-1px;border-radius:3px}
+.tu-gone .tu-art{width:40px}
+.tu-gone b{display:block;font:15px var(--kai);color:var(--strong)}
+.tu-gone small{font-size:12px;line-height:1.5;color:var(--mu)}
+.tu-end.w-clear h3{color:var(--zhu2)}
+.tu-bag{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;margin-top:10px;padding:8px 2px 0;border-top:1px solid var(--line);font-size:13px}
+.tu-bag .lbl{font-size:15px}
+.tu-bag small{flex-basis:100%;font-size:11px;color:var(--mu)}
+@media (max-width:400px){.tu-team{grid-template-columns:repeat(2,minmax(0,1fr))}.tu-room{min-height:78px}}

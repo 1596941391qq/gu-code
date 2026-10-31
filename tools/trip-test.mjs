@@ -1,5 +1,5 @@
 // node tools/trip-test.mjs —— 秘境自检：同种子同图、不卡死、撤退/全灭都走得通、各层死亡率、战利品曲线、节奏（真实 token 画像）
-import { makeRng, genTeam, slotCap, arrangeTeam } from '../src/core.js';
+import { makeRng, genTeam, slotCap, arrangeTeam, XING } from '../src/core.js';
 import { battle } from '../src/battle.js';
 import * as T from '../src/trip.js';
 if (process.env.FOE) Object.assign(T.TRIP_CFG.foe, JSON.parse(process.env.FOE)); if (process.env.BOSS) Object.assign(T.TRIP_CFG.boss, JSON.parse(process.env.BOSS));
@@ -41,7 +41,7 @@ function runTrip(r, k, o = {}) {
     if (room.foe) {
       const f = T.fieldTeam(t, team), foe = T.roomFoe(t), res = fight(f, foe, `b${k}:${room.d}`), out = T.tripFight(t, team, f, res);
       rec.fights.push({ d: room.d, type: room.type, n: f.length, dead: out.dead.length, win: out.win, loot: out.loot });
-    } else if (room.type === 'event') T.tripEvent(t, team, rng.int(2));
+    } else if (room.type === 'event') { const i = rng.int(2); if (!T.tripEvent(t, team, i, UNIT, purse).ok) T.tripEvent(t, team, 1 - i, UNIT, purse); }
     else if (room.type === 'camp') T.tripCamp(t);
     else if (room.type === 'market') { T.tripBuy(t, 0, UNIT, purse); T.tripLeaveRoom(t); }
   }
@@ -118,5 +118,30 @@ console.log('# 7 蛊性');
   t.room = { type: 'fight', d: 0, lane: 0, foe: 1 }; t.pick = 0;
   const f = T.fieldTeam(t, team), res = { winner: 'A', hpEnd: f.map(g => g.hp), statA: f.map((g, i) => ({ hp: g.hp, mx: g.hp, kills: i === 0 ? 3 : 0 })) };
   const out = T.tripFight(t, team, f, res); ok(out.offers.length === 1 && out.offers[0].old === 'jianren' && out.offers[0].xing === 'shisha' && team[0].xing === 'jianren', '已有蛊性时先问要不要替换，不直接换');
+}
+{
+  const K = Object.keys(XING), need = ['jianren', 'shisha', 'ruiqi', 'zhanshou', 'tongpao', 'zhenyue', 'yuxue', 'zhefu'];
+  ok(K.length === 8 && need.every((k, i) => K[i] === k), `8 个蛊性，顺序固定（坐标码按下标）：${K.join(' ')}`);
+  ok(K.every(k => { const x = XING[k]; return x.n && x.d && x.get && Array.isArray(x.eff) && x.eff.every(e => e.when && e.op); }), '每个蛊性都有名字、效果说明、怎么得到、战斗效果数据');
+  const base = { hp: 9, mx: 10, kills: 0, hits: 0, taken: 0 }, got = {
+    jianren: [{ hp: 2 }, false], shisha: [{ kills: 3 }, true], ruiqi: [{ killT1: true }, true], zhanshou: [{ oneShot: true }, true],
+    tongpao: [{ adjFell: 1 }, true], zhenyue: [{ front: true, hits: 4 }, true], yuxue: [{ taken: 12, hp: 5 }, false], zhefu: [{ frontFell: 1 }, true] };
+  ok(K.every(k => T.xingEarned({ ...base, ...got[k][0] }, got[k][1], null) === k), '8 个蛊性各有一条打得出来的路');
+  ok(T.xingEarned({ ...base, adjFell: 1 }, false, null) === null && T.xingEarned({ hp: 0, mx: 10, kills: 5 }, true, null) === null, '同袍/蛰伏要打赢；倒下的蛊不得蛊性');
+}
+console.log('# 8 奇遇');
+{
+  const FX = ['heal', 'food', 'gu', 'bump', 'xing', 'shortcut', 'slow', 'hurtFront', 'hurtAll', 'healLow', 'pay'];
+  ok(T.EVENTS.length === 10 && new Set(T.EVENTS.map(e => e.id)).size === 10, `10 个奇遇：${T.EVENTS.map(e => e.n).join('、')}`);
+  ok(T.EVENTS.every(e => e.s && e.o.length === 2 && e.o.every(o => o.t && Object.keys(o.fx).every(k => FX.includes(k)) && (!o.fx.xing || XING[o.fx.xing]))), '每个奇遇两个选项，效果都认得');
+  ok(T.EVENTS.every(e => e.o.every(o => T.fxText(o.fx).length > 3)), '每个选项的结果都写成了人话');
+  const team = player(makeRng('ev'), 1), mk = id => { const t = T.tripStart('ev', 1, team); t.pick = 0; t.room = { type: 'event', d: 4, lane: 0, ev: id }; return t; };
+  let t = mk('luonan'), purse = { bank: 0 }; const pay = T.evPay(t, T.EVENT.luonan.o[0].fx, UNIT);
+  ok(!T.tripEvent(t, team, 0, UNIT, purse).ok && !t.room.done, '花元气的选项：元气不够就选不了');
+  purse.bank = pay + 5; const r = T.tripEvent(t, team, 0, UNIT, purse); ok(r.ok && purse.bank === 5 && t.loot.gu.length === 1, `元气够就扣 ${pay} 换一只新蛊`);
+  t = mk('duzhang'); const u0 = t.order[0]; T.tripEvent(t, team, 1, UNIT, purse); ok(t.short === 1.5, '绕路：下一个房间多走一半');
+  t = mk('duzhang'); T.tripEvent(t, team, 0, UNIT, purse); ok(t.short === 0.5 && t.order.every(u => t.hp[u] >= 1 && t.hp[u] < t.mx[u]), '穿瘴气：全队掉血但不会掉到 0，路减半');
+  t = mk('xuechi'); t.hp[u0] = 1; T.tripEvent(t, team, 0, UNIT, purse); ok(t.hp[u0] > 1, '赤水潭：回伤得最重的那只');
+  t = T.tripStart('tea', 1, team, { trip: ['tea'] }); t.hp[u0] = 1; ok(T.tripPreFight(t) > 0 && t.hp[u0] > 1, '回春茶：每场开打前全队回血');
 }
 console.log(bad ? `\n${bad} 项未通过` : '\n全部通过'); process.exit(bad ? 1 : 0);

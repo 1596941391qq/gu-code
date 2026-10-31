@@ -6,11 +6,7 @@ import { SP, RANK, XING, fmtTok } from './core.js';
 import { guSVG } from './art.js';
 import { VSC } from './tokens.js';
 import { FOOD } from './foods.js';
-import {
-  TRIP_CFG, ROOMS, EVENT, nextLanes, tripStart, tripMapOf, tripAlive, tripReach, roomAt, curRoom, needTok, tripPick, tripFeed, roomFoe,
-  fieldTeam, tripFight, tripPreFight, acceptXing, tripEvent, tripCamp, wareTok, tripBuy, wareText, tripLeaveRoom, tripEnd, tripResult,
-  epitaph, lootEmpty, guName, fxText, tripSeed,
-} from './trip.js';
+import { TRIP_CFG, ROOMS, EVENT, nextLanes, tripStart, tripMapOf, tripAlive, tripReach, roomAt, curRoom, needTok, tripPick, tripFeed, roomFoe, fieldTeam, tripFight, tripPreFight, acceptXing, tripEvent, tripCamp, wareTok, tripBuy, wareText, tripLeaveRoom, tripEnd, tripResult, epitaph, lootEmpty, fxText, evPay, tripSeed } from './trip.js';
 
 const tuUnit = () => (VSC ? 8000 : 200);   // 1 份路程 = 多少 token（插件 8000，网页模拟 200），和 TokenSource.unit 一致
 const tuEsc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -99,7 +95,7 @@ function tuRoom(t, S) {
   }
   if (room.type === 'event') {
     const e = EVENT[room.ev];
-    return `<div class="tu-panel t-event">${title.replace(R.n, tuEsc(e.n))}<p>${tuEsc(e.s)}</p><div class="tu-opts">${e.o.map((o, i) => `<button class="tu-opt" data-trip="ev" data-i="${i}"><b>${tuEsc(o.t)}</b><small>${tuEsc(fxText(o.fx))}</small></button>`).join('')}</div></div>`;
+    return `<div class="tu-panel t-event">${title.replace(R.n, tuEsc(e.n))}<p>${tuEsc(e.s)}</p><div class="tu-opts">${e.o.map((o, i) => { const pay = evPay(t, o.fx, tuUnit()), can = !pay || S.bank >= pay; return `<button class="tu-opt" data-trip="ev" data-i="${i}"${can ? '' : ' disabled'}><b>${tuEsc(o.t)}</b><small>${tuEsc(fxText(o.fx, pay))}${can ? '' : `（元气不够，现在 ${fmtTok(S.bank)}）`}</small></button>`; }).join('')}</div></div>`;
   }
   if (room.type === 'camp') return `<div class="tu-panel t-camp">${title}<p>${tuEsc(R.d)}</p><div class="tu-main"><button class="zhu big" data-trip="camp">歇一阵 · 全队回 ${Math.round(TRIP_CFG.camp * 100)}% 血</button></div></div>`;
   if (room.type === 'market') {
@@ -159,7 +155,7 @@ const TU_ACT = {
   pick(api, t, a) { tuUI(t).msg = []; tripPick(t, +a.dataset.lane, tuUnit(), api.S()); },
   fight(api, t) { return tuFight(api, t); },
   ev(api, t, a) {
-    const S = api.S(), r = tripEvent(t, S.team, +a.dataset.i), ui = tuUI(t); if (!r.ok) return;
+    const S = api.S(), r = tripEvent(t, S.team, +a.dataset.i, tuUnit(), S), ui = tuUI(t); if (!r.ok) { ui.msg = [r.why || '选不了']; return; }
     ui.msg = [r.lines.length ? r.lines.join('，') : '什么也没发生'];
     if (r.offer) ui.offers = [r.offer];
   },
