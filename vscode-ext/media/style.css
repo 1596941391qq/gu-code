@@ -161,6 +161,9 @@ i{font-style:normal}
 .chip{border:1px solid var(--qing);border-radius:10px;padding:1px 8px;font:12px var(--sans);color:var(--qing);background:var(--bg)}
 .vsrc{position:relative;z-index:1;display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 .vsrc[hidden]{display:none}
+.chip.demo{border-color:var(--zhu2);color:var(--on-zhu);background:var(--zhu);font-weight:600}
+.sheet a.btn{display:block;text-align:center;padding:10px 16px;border-radius:3px;font:15px var(--kai);text-decoration:none}
+.sheet a.btn.zhu{background:var(--zhu);color:var(--on-zhu)}
 .schip{font:12px var(--sans);color:var(--mu);border:1px solid var(--line);border-radius:10px;padding:1px 8px;background:var(--bg)}
 .schip b{font:600 12px var(--mono);color:var(--tx)}
 .schip.off{opacity:.5}
