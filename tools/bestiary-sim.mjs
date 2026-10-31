@@ -117,7 +117,9 @@ for (let t = 0; t < 6; t++) {
   const r = rows.filter(([id]) => tierOf(id) === t);
   console.log(`[${TN[t]}] ` + r.map(([id, v]) => `${SP[id].n}${NEW_SPECIES.some(s => s.id === id) ? '' : '(旧)'} ${pc(v)}`).join('  '));
 }
-const out = rows.filter(([, v]) => v.w / v.n < 0.42 || v.w / v.n > 0.60);
+const MINS = 600;   // 样本太少时胜率误差大（±4%），只提示不判失败；默认 8000 场每种约 800 样本
+const out = rows.filter(([, v]) => v.n >= MINS && (v.w / v.n < 0.42 || v.w / v.n > 0.60));
+if (rows.some(([, v]) => v.n < MINS)) console.log(`（有物种样本少于 ${MINS}，胜率只作参考；请用默认 8000 场或更多）`);
 console.log(out.length ? '!! 超出 42–60%：' + out.map(([id, v]) => `${SP[id].n} ${pc(v)}(${v.n})`).join('  ') : 'OK：全部物种同阶胜率在 42–60%');
 const allRates = rows.map(([, v]) => v.w / v.n);
 console.log(`物种胜率区间 ${(100 * Math.min(...allRates)).toFixed(1)}% – ${(100 * Math.max(...allRates)).toFixed(1)}%，最少样本 ${Math.min(...rows.map(r => r[1].n))}`);
