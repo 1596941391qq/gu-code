@@ -396,6 +396,7 @@ export function tripFight(t, team, fielded, res) {
   offers.filter(o => o.auto).forEach(o => tlog(t, `${name(o.uid)} 得蛊性「${XING[o.xing].n}」`));
   const out = { win, saved, dead: [], loot, offers, revived };
   if (room.type === 'boss') {
+    t.bossFought = true;   // 和首领打过了（赢或打平）：回洞府时转市价回到原价（core.tribDone）
     if (win) { t.reward = bossReward(t.seed, t.land, { sp: t.spPool, foods: t.foodPool, imm: immOffer(t) }); tlog(t, `渡劫成功。首领必掉一样东西，${t.reward.imm ? '三' : '二'}选一`); return { ...out, cleared: true, reward: t.reward }; }
     tripEnd(t, 'retreat'); return { ...out, fled: true };
   }
@@ -565,7 +566,7 @@ export function tripLeaveRoom(t) { const room = t.room; if (!room || room.type !
 export function tripEnd(t, why) {
   if (t.end) return t.end;
   const wiped = why === 'wipe', copy = l => ({ foods: l.foods.slice(), gu: l.gu.map(g => ({ ...g })) });
-  t.end = { why, dead: t.dead.slice(), survivors: tripAlive(t), saved: (t.saved || []).filter(u => !t.dead.includes(u)), loot: wiped ? { foods: [], gu: [] } : copy(t.loot), lost: wiped ? copy(t.loot) : null, cleared: why === 'clear', wiped, depth: t.d, fallen: t.fallen.slice() };
+  t.end = { why, dead: t.dead.slice(), survivors: tripAlive(t), saved: (t.saved || []).filter(u => !t.dead.includes(u)), loot: wiped ? { foods: [], gu: [] } : copy(t.loot), lost: wiped ? copy(t.loot) : null, cleared: why === 'clear', wiped, depth: t.d, fallen: t.fallen.slice(), boss: !!t.bossFought };
   t.room = null; t.pick = null; t.prog = 0; t.offer = null; t.reward = null;
   tlog(t, wiped ? '渡劫失败，全队永久死亡。这一趟的战利品全部丢在了秘境里。' : why === 'clear' ? '渡劫成功，带着战利品回洞府。' : '退出秘境，带着战利品回洞府。');
   return t.end;
@@ -573,7 +574,7 @@ export function tripEnd(t, why) {
 // 给 api.onTripEnd 的结果（hooks.js）：新蛊写成 { sp, rank }，洞府放进蛊囊；规则第二版没有元石
 //   land 秘境 id、kalpa 这一趟第几劫（道途的「劫数」计数用）、reward 渡劫成功时选的那样（{ k: 'gu', gu } 或 { k: 'food', food }）
 export const tripResult = t => t.end ? { dead: t.end.dead, survivors: t.end.survivors, loot: { foods: t.end.loot.foods.slice(), gu: t.end.loot.gu.map(g => ({ sp: g.sp, rank: g.rank })) }, cleared: t.end.cleared, wiped: t.end.wiped,
-  land: t.land, kalpa: t.kalpa || 0, reward: t.got || null } : null;
+  land: t.land, kalpa: t.kalpa || 0, reward: t.got || null, boss: !!t.end.boss } : null;
 export function epitaph(f) {   // 告别词：死在哪、这一趟斩敌几只、带着什么蛊性
   return `死在第 ${f.d + 1} 层的${ROOMS[f.type] ? ROOMS[f.type].n : ''}${f.kills ? `，这一趟斩敌 ${f.kills} 只` : ''}${f.xing && XING[f.xing] ? `，带着「${XING[f.xing].n}」走了` : ''}。`;
 }

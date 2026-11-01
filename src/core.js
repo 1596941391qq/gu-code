@@ -46,8 +46,13 @@ export const ZHENYUAN = { colors: ['#a0703f', '#a0703f', '#a4442c', '#9aa4ab', '
 // 价格（元气 = 消耗的 token）：单位是「千」，乘 tokens.js 的 unit 才是 token 数（插件 8000，网页 200）。数字按真实画像调过，见 tools/econ-sim.mjs：
 // 中位数玩家（每天约 120 活跃分钟 × 21.4 万）走一趟秘境之后剩下的元气，大约够养出一只五转。
 // gu 一转蛊的价钱，原生 N 转的蛊 × rankK^(N−1)（三只合一只，价钱也按三倍走，买五转原生蛊和自己合出来花的一样多）；
-// refresh 转市；sell 卖蛊退回 = sell × rankK^(转数−1)（按现在的转数，约买价的三分之一）；食物的价格 = FOODS[].cost × food
-export const PRICE = { gu: 20, rankK: 3, refresh: 8, sell: 7, food: 7 };
+// refresh 转市的原价，refreshUp 每花元气转一次市、下一次涨多少（渡劫打完回到原价，见 refreshCost / tribDone）；
+// sell 卖蛊退回 = sell × rankK^(转数−1)（按现在的转数，约买价的三分之一）；食物的价格 = FOODS[].cost × food
+export const PRICE = { gu: 20, rankK: 3, refresh: 8, refreshUp: 1, sell: 7, food: 7 };
+// 转市价：n = 自上次渡劫以来花元气转市的次数（存档 rfN，老存档没有按 0）。转市令免费转、从秘境回来那次自动刷新都不算次数
+export const refreshCost = n => PRICE.refresh + PRICE.refreshUp * Math.max(0, n | 0);
+// 这一趟秘境算不算「渡劫打完」（转市价回到原价）：渡劫成功、全队阵亡（渡劫失败）、和首领打平退回都算；没打首领就退出秘境不算
+export const tribDone = r => !!(r && (r.cleared || r.wiped || r.boss));
 export const guCost = sp => PRICE.gu * Math.pow(PRICE.rankK, baseRank(sp) - 1);   // 单位同 PRICE；蛊市里「升转露」多升的那一转不加价
 // 蛊囊（场下）：凑合成用，不上场、不跟去渡劫，放在里面绝对安全。固定 8 格
 export const BAG = { cap: 8 };

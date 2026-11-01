@@ -1,5 +1,5 @@
 // node tools/trip-test.mjs —— 秘境自检：同种子同图、不卡死、撤退/全灭都走得通、各层死亡率、战利品曲线、节奏（真实 token 画像）
-import { makeRng, arrangeTeam, autoPlace, XING, NORMAL_SPECIES, baseRank, daoOf, statFor, RANK, QUOTA } from '../src/core.js';
+import { makeRng, arrangeTeam, autoPlace, XING, NORMAL_SPECIES, baseRank, daoOf, statFor, RANK, QUOTA, PRICE, refreshCost, tribDone } from '../src/core.js';
 import { battle } from '../src/battle.js';
 import * as T from '../src/trip.js';
 if (process.env.FOE) Object.assign(T.TRIP_CFG.foe, JSON.parse(process.env.FOE));   // 调参：FOE='{"st":{...},"qk":0.1}' node tools/trip-test.mjs
@@ -152,6 +152,25 @@ console.log('# 4 撤退与全灭');
   const t = T.tripStart('qi', 0, player(makeRng('q'), 0)), purse = { bank: 5e6 };
   T.tripPick(t, 0, UNIT, purse); ok(t.room && purse.bank < 5e6, '出征先花攒着的元气：攒够一个房间就一口气走到');
   const t2 = T.tripStart('qi2', 0, player(makeRng('q2'), 0)), p2 = { bank: 0 }; T.tripFeed(t2, 1000, UNIT, p2); ok(p2.bank === 1000 && !t2.room, '没选路时进账的 token 存回元气');
+}
+
+console.log('# 4b 转市越转越贵，渡劫打完回到原价');
+{
+  ok(refreshCost(0) === PRICE.refresh && [1, 2, 5, 10, 30].every(n => refreshCost(n) > refreshCost(n - 1)) && refreshCost(10) >= 2 * PRICE.refresh,
+    `转市价：渡劫回来第 1 次 ${refreshCost(0)}，每花钱转一次 +${PRICE.refreshUp}，转 10 次以后 ${refreshCost(10)}（原价的 2 倍以上）`);
+  // 洞府的记法（ui.js）：花元气转市 rfN + 1、转市令不加；一趟秘境回来 tribDone(结果) 就把 rfN 清零
+  let rfN = 0; const paid = []; for (let i = 0; i < 12; i++) { const free = i === 5; if (!free) { paid.push(refreshCost(rfN)); rfN++; } }
+  ok(rfN === 11 && paid[0] === PRICE.refresh && paid[10] === refreshCost(10) && paid.every((c, i) => !i || c > paid[i - 1]), `转 12 次（其中 1 次用转市令）：花钱的 11 次价钱一路涨 ${paid.join('→')}，转市令那次不涨也不算次数`);
+  const runs = {};
+  for (let k = 0; k < 400 && Object.keys(runs).length < 4; k++) {
+    const rec = runTrip(k % 2 ? 2 : 4, k, k % 4 === 1 ? { retreatAt: 2 } : {}), e = rec.t.end; if (!e) continue;
+    const kind = e.cleared ? 'clear' : e.wiped ? 'wipe' : e.boss ? 'draw' : 'retreat'; if (!runs[kind]) runs[kind] = rec.t;
+  }
+  const back = t => (tribDone(T.tripResult(t)) ? 0 : 7);   // 出发前已经花钱转了 7 次
+  ok(runs.clear && T.tripResult(runs.clear).boss && back(runs.clear) === 0, '渡劫成功回来：转市价回到原价');
+  ok(runs.wipe && back(runs.wipe) === 0, '全队阵亡（渡劫失败）回来：转市价也回到原价，从蛊市重建不被高价压');
+  ok(runs.retreat && !T.tripResult(runs.retreat).boss && back(runs.retreat) === 7, '没打首领就退出秘境：转市价不重置，接着涨');
+  ok(runs.draw ? back(runs.draw) === 0 : tribDone({ boss: true, cleared: false, wiped: false }), `和首领打平退回也算渡劫打完${runs.draw ? '' : '（这批模拟没碰上打平，按结果字段检查）'}`);
 }
 
 console.log('# 5 战利品曲线（每个房间平均，境界 2，打赢时）');

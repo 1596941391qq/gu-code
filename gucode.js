@@ -2445,8 +2445,13 @@ const ZHENYUAN = { colors: ['#a0703f', '#a0703f', '#a4442c', '#9aa4ab', '#d9a441
 // 价格（元气 = 消耗的 token）：单位是「千」，乘 tokens.js 的 unit 才是 token 数（插件 8000，网页 200）。数字按真实画像调过，见 tools/econ-sim.mjs：
 // 中位数玩家（每天约 120 活跃分钟 × 21.4 万）走一趟秘境之后剩下的元气，大约够养出一只五转。
 // gu 一转蛊的价钱，原生 N 转的蛊 × rankK^(N−1)（三只合一只，价钱也按三倍走，买五转原生蛊和自己合出来花的一样多）；
-// refresh 转市；sell 卖蛊退回 = sell × rankK^(转数−1)（按现在的转数，约买价的三分之一）；食物的价格 = FOODS[].cost × food
-const PRICE = { gu: 20, rankK: 3, refresh: 8, sell: 7, food: 7 };
+// refresh 转市的原价，refreshUp 每花元气转一次市、下一次涨多少（渡劫打完回到原价，见 refreshCost / tribDone）；
+// sell 卖蛊退回 = sell × rankK^(转数−1)（按现在的转数，约买价的三分之一）；食物的价格 = FOODS[].cost × food
+const PRICE = { gu: 20, rankK: 3, refresh: 8, refreshUp: 1, sell: 7, food: 7 };
+// 转市价：n = 自上次渡劫以来花元气转市的次数（存档 rfN，老存档没有按 0）。转市令免费转、从秘境回来那次自动刷新都不算次数
+const refreshCost = n => PRICE.refresh + PRICE.refreshUp * Math.max(0, n | 0);
+// 这一趟秘境算不算「渡劫打完」（转市价回到原价）：渡劫成功、全队阵亡（渡劫失败）、和首领打平退回都算；没打首领就退出秘境不算
+const tribDone = r => !!(r && (r.cleared || r.wiped || r.boss));
 const guCost = sp => PRICE.gu * Math.pow(PRICE.rankK, baseRank(sp) - 1);   // 单位同 PRICE；蛊市里「升转露」多升的那一转不加价
 // 蛊囊（场下）：凑合成用，不上场、不跟去渡劫，放在里面绝对安全。固定 8 格
 const BAG = { cap: 8 };
@@ -8945,6 +8950,7 @@ function tripFight(t, team, fielded, res) {
   offers.filter(o => o.auto).forEach(o => tlog(t, `${name(o.uid)} 得蛊性「${XING[o.xing].n}」`));
   const out = { win, saved, dead: [], loot, offers, revived };
   if (room.type === 'boss') {
+    t.bossFought = true;   // 和首领打过了（赢或打平）：回洞府时转市价回到原价（core.tribDone）
     if (win) { t.reward = bossReward(t.seed, t.land, { sp: t.spPool, foods: t.foodPool, imm: immOffer(t) }); tlog(t, `渡劫成功。首领必掉一样东西，${t.reward.imm ? '三' : '二'}选一`); return { ...out, cleared: true, reward: t.reward }; }
     tripEnd(t, 'retreat'); return { ...out, fled: true };
   }
@@ -9114,7 +9120,7 @@ function tripLeaveRoom(t) { const room = t.room; if (!room || room.type !== 'mar
 function tripEnd(t, why) {
   if (t.end) return t.end;
   const wiped = why === 'wipe', copy = l => ({ foods: l.foods.slice(), gu: l.gu.map(g => ({ ...g })) });
-  t.end = { why, dead: t.dead.slice(), survivors: tripAlive(t), saved: (t.saved || []).filter(u => !t.dead.includes(u)), loot: wiped ? { foods: [], gu: [] } : copy(t.loot), lost: wiped ? copy(t.loot) : null, cleared: why === 'clear', wiped, depth: t.d, fallen: t.fallen.slice() };
+  t.end = { why, dead: t.dead.slice(), survivors: tripAlive(t), saved: (t.saved || []).filter(u => !t.dead.includes(u)), loot: wiped ? { foods: [], gu: [] } : copy(t.loot), lost: wiped ? copy(t.loot) : null, cleared: why === 'clear', wiped, depth: t.d, fallen: t.fallen.slice(), boss: !!t.bossFought };
   t.room = null; t.pick = null; t.prog = 0; t.offer = null; t.reward = null;
   tlog(t, wiped ? '渡劫失败，全队永久死亡。这一趟的战利品全部丢在了秘境里。' : why === 'clear' ? '渡劫成功，带着战利品回洞府。' : '退出秘境，带着战利品回洞府。');
   return t.end;
@@ -9122,7 +9128,7 @@ function tripEnd(t, why) {
 // 给 api.onTripEnd 的结果（hooks.js）：新蛊写成 { sp, rank }，洞府放进蛊囊；规则第二版没有元石
 //   land 秘境 id、kalpa 这一趟第几劫（道途的「劫数」计数用）、reward 渡劫成功时选的那样（{ k: 'gu', gu } 或 { k: 'food', food }）
 const tripResult = t => t.end ? { dead: t.end.dead, survivors: t.end.survivors, loot: { foods: t.end.loot.foods.slice(), gu: t.end.loot.gu.map(g => ({ sp: g.sp, rank: g.rank })) }, cleared: t.end.cleared, wiped: t.end.wiped,
-  land: t.land, kalpa: t.kalpa || 0, reward: t.got || null } : null;
+  land: t.land, kalpa: t.kalpa || 0, reward: t.got || null, boss: !!t.end.boss } : null;
 function epitaph(f) {   // 告别词：死在哪、这一趟斩敌几只、带着什么蛊性
   return `死在第 ${f.d + 1} 层的${ROOMS[f.type] ? ROOMS[f.type].n : ''}${f.kills ? `，这一趟斩敌 ${f.kills} 只` : ''}${f.xing && XING[f.xing] ? `，带着「${XING[f.xing].n}」走了` : ''}。`;
 }
@@ -9465,6 +9471,7 @@ const TXT = {
   bagTip: () => `蛊囊 ${S.bag.length}/${BC()}：场下的蛊放这里，不上场、不跟去渡劫，所以绝对安全。主要用来凑合成：空窍和蛊囊里同种同转的蛊凑够三只，自动合成高一转。拖进空窍就上场。`,
   shopHead: '蛊市',
   shopTip: '花元气买蛊和食物。原生转数越高的蛊越贵，每高一转贵三倍，和自己买三只合一只花的一样多。什么道的蛊都会刷，罗盘选中的道出现得稍多一点（+5%）。转市换一批，冻结的货下次还在。',
+  shopRule: (base, up, now) => `转市越转越贵：每花元气转一次，下一次贵 ${up}，打完一次渡劫（不管输赢）回到 ${base}；转市令免费转，不涨价。现在转一次 ${now}。`,
   refresh: c => `转市 · ${c}`,
   freeze: on => on ? '解冻' : '冻结',
   daoNone: '罗盘：渡劫回来可以转一次',
@@ -9575,7 +9582,7 @@ const trialTag = on => on ? `<span class="trialtag">${TXT.trial}</span>` : '';
 // v3 = v2 玩法的存档（gu = { uid, sp, rank, atk, hp, food, xing, bonusA?, bonusH? }）。旧版本存档一律不读，启动时另存到 BAK_KEY。
 // bank = 元气（token），没有上限；所有价格都是 token 数
 const BAK_KEY = 'gucode.v1.bak-v2';
-const fresh = () => ({ v: 3, sx: STAT_SCALE, hx: HP_SCALE, started: false, name: '', realm: 0, bank: 0, total: 0, team: [], bag: [], shop: [], dao: null, compass: null, tripFood: [], pantry: [], trip: null, land: null,
+const fresh = () => ({ v: 3, sx: STAT_SCALE, hx: HP_SCALE, started: false, name: '', realm: 0, bank: 0, total: 0, rfN: 0, team: [], bag: [], shop: [], dao: null, compass: null, tripFood: [], pantry: [], trip: null, land: null,
   seed: (Math.random() * 1e9) >>> 0, step: 0, speed: 1, mute: true, theme: 'auto', calm: false, codex: {}, combosSeen: [], log: [], hlog: [], meta: null, todayKey: '', todayTok: 0, sim: null, fightFood: [], shopBuff: [], trial: false, sotaAt: 0 });
 const today = () => { const d = new Date(); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); };
 const curCap = () => SLOTS, BC = () => Math.max(bagCap(S.realm), S.bag.length);
@@ -9849,7 +9856,7 @@ function pendingHTML() {
 function renderShop() {
   const box = $('#shop'); if (!box) return;
   if (!S.shop.length) newShop();
-  box.innerHTML = `<div class="shead"><span class="lbl" data-tip="${esc(TXT.shopTip)}">${TXT.shopHead}</span><button class="mini-b" data-act="refresh">${(S.shopBuff || []).some(b => b.shop === 'free') ? TXT.refreshFree : TXT.refresh(fmtTok(price(PRICE.refresh)))}</button></div>
+  box.innerHTML = `<div class="shead"><span class="lbl" data-tip="${esc(TXT.shopTip + '\n' + TXT.shopRule(fmtTok(price(PRICE.refresh)), fmtTok(price(PRICE.refreshUp)), fmtTok(price(refreshCost(S.rfN)))))}">${TXT.shopHead}</span><button class="mini-b" data-act="refresh">${(S.shopBuff || []).some(b => b.shop === 'free') ? TXT.refreshFree : TXT.refresh(fmtTok(price(refreshCost(S.rfN))))}</button></div>
   <div class="wares">${S.shop.map(wareHTML).join('')}</div>${S.pantry.length ? `<div class="pantry"><span class="lbl">带回的食物</span>${S.pantry.map((id, i) => `<button class="pfood" data-act="pantry" data-i="${i}" data-tip="${esc(FOOD[id] ? FOOD[id].d + (notYet(id) ? '\n' + TXT.tripLocked : '') : '')}"${notYet(id) ? ' disabled' : ''}>${fi(id)}${esc(FOOD[id] ? FOOD[id].n : id)}</button>`).join('')}</div>` : ''}${(() => { const l = notYetList(); return l.length ? `<p class="sm tlocked" data-tip="${esc(l.map(id => `${FOOD[id].n}：${FOOD[id].d}`).join('\n'))}">${esc(TXT.tripLockedLine(l.map(id => '「' + FOOD[id].n + '」').join('')))}</p>` : ''; })()}${pendingHTML()}${S.tripFood.length ? `<p class="sm">下一次渡劫带着：${S.tripFood.map(id => fi(id) + esc(FOOD[id] ? FOOD[id].n : id)).join('、')}</p>` : ''}`;
 }
 // 新得一只蛊：能合成先合成；蛊市买的先进空窍再进蛊囊；战利品只进蛊囊
@@ -10010,6 +10017,7 @@ function onTripEnd(result = {}) {
     if ((loot.foods || []).length || (loot.gu || []).length) note(`带回战利品：${[...(loot.gu || []).map(g => SP[g.sp] ? SP[g.sp].n : ''), ...(loot.foods || []).map(id => FOOD[id] ? FOOD[id].n : '')].filter(Boolean).join('、')}`);
   } else note('全灭：这次的战利品全部丢失');
   S.trip = null; S.tripFood = [];
+  if (tribDone(result)) S.rfN = 0;   // 渡劫打完（成功、阵亡、和首领打平）转市价回到原价；没打首领就退出不算
   achieve('trips', 1);
   if (result.cleared) clearEvents({ quota: land ? land.quota : 0, ranks: went.map(g => (SP[g.sp] && SP[g.sp].immortal ? 6 : rankOf(g))), daos: went.map(g => daoOf(g.sp)),
     fallen: dead.size + (end.saved || []).length, combos: synOf(went).combos.length, kalpa: result.kalpa || end.kalpa || 0, cnt: M().cnt }).forEach(([k, n, set]) => achieve(k, n, { set }));
@@ -10542,7 +10550,7 @@ const ACT = {
   },
   buy(a) { buyWare(+a.dataset.i); },
   freeze(a) { const w = S.shop[+a.dataset.i]; if (!w) return; w.frozen = !w.frozen; closeSheet(); renderShop(); save(); },
-  refresh() { const fr = (S.shopBuff || []).find(b => b.shop === 'free'); if (tripOn() || (!fr && !pay(PRICE.refresh))) return; if (fr) S.shopBuff.splice(S.shopBuff.indexOf(fr), 1); newShop(); renderShop(); meters(); save(); snd('tick'); },
+  refresh() { const fr = (S.shopBuff || []).find(b => b.shop === 'free'); if (tripOn() || (!fr && !pay(refreshCost(S.rfN)))) return; if (fr) S.shopBuff.splice(S.shopBuff.indexOf(fr), 1); else S.rfN = (S.rfN || 0) + 1; newShop(); renderShop(); meters(); save(); snd('tick'); },
   pantry(a) { const i = +a.dataset.i, id = S.pantry[i], f = FOOD[id]; if (!f) return; if (needsPick(f)) { useFood(id, 'pantry', i); return; } if (useFood(id, 'pantry', i)) { S.pantry.splice(i, 1); renderHome(); save(); } },
   feedTo(a) { const all = [...S.team, ...S.bag]; feedTo(all[+a.dataset.k]); },
   feedDao(a) { const f = FEED && FOOD[FEED.id]; if (!f) return; const fr = FEED; FEED = null; if (!takeFed(fr)) { closeSheet(); return; } (S.shopBuff = S.shopBuff || []).push({ id: f.id, shop: 'dao', pct: f.pct || 0, dao: a.dataset.d }); note(TXT.shopFood(f)); achieve('feeds', 1); closeSheet(); renderHome(); save(); },
