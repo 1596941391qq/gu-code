@@ -226,10 +226,10 @@ const CN = ['', '一', '二', '三', '四', '五', '仙'];
 const ST_ORDER = ['burn', 'psn', 'para', 'chill', 'stun', 'web', 'grd', 'mark', 'seal', 'taunt'];
 const ST_COL = ST_COLOR;   // 图标底色和「状态说明」表同一套（gloss.js）
 const stNum = (k, v) => k === 'burn' ? v[1] : v;   // 图标上的数：灼烧 = 还剩几轮，中毒 = 每轮掉多少，其余 = 层数 / 次数 / 轮数
-const ST_DESC = {
-  burn: v => `还剩 ${v[1]} 轮，每轮烧 ${v[0]}（护体挡不住）`, psn: v => `每轮掉 ${v} 血，不会自己消失（护体挡不住）`, para: v => `每轮掉 ${v} 血`,
-  chill: v => `${v} 层，速 -${Math.round(TUNE.chill * 100 * v)}%，叠到 3 层冻住一次；每轮退一层`, stun: v => `跳过接下来 ${v} 次出手`, web: v => `接下来 ${v} 次普攻落空`,
-  grd: v => `接下来 ${v} 次挨打伤害减半`, mark: v => `还剩 ${v} 轮，受到的伤害 +25%`, seal: v => `还剩 ${v} 轮，蛊力不涨`, taunt: v => `还剩 ${v} 轮，敌方单体攻击优先打它`,
+const ST_DESC = {   // 悬停时带实际数字，规则和 gloss.js 一致
+  burn: v => `每轮开始受到 ${v[0]} 点伤害，还剩 ${v[1]} 轮。无视护体`, psn: v => `每轮开始失去 ${v} 点血，不会消退。无视护体`, para: v => `每轮开始失去 ${v} 点血，不会消退。无视护体`,
+  chill: v => `速度 -${Math.round(TUNE.chill * 100 * v)}%，再叠 ${3 - v} 层冻住。每轮开始退 1 层`, stun: v => `跳过接下来 ${v} 次出手`, web: v => `接下来 ${v} 次普攻落空`,
+  grd: v => `接下来 ${v} 次受到敌蛊的伤害减半`, mark: v => `受到敌蛊的伤害 +25%，还剩 ${v} 轮`, seal: v => `蛊力不增长，还剩 ${v} 轮`, taunt: v => `敌方的普攻和单体技能只能打它，还剩 ${v} 轮`,
 };
 const ST_LOG = { psn: n => `中毒（每轮 ${n}）`, para: n => `寄生（每轮 ${n}）`, burn: n => `灼烧 ${n} 轮`, chill: n => `冰寒 ${n} 层`, freeze: () => '冻住', stun: n => `眩晕 ${n} 次`, web: n => `落网 ${n} 次`, guard: n => `格挡 ${n} 次`, mark: n => `印记 ${n} 轮`, seal: n => `封印 ${n} 轮`, taunt: n => `嘲讽 ${n} 轮` };
 const FL_IC = {

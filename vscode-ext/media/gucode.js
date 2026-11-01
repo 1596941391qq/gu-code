@@ -2336,30 +2336,32 @@ const { GL_KIND, GLOSS, GL, GL_BY_NAME, ST_NAME, ST_COLOR, glossKind, glossHTML,
 //   glossNote(text)  这段文字里出现了哪些词，逐个写「名字 · 增益或减益：说明」（悬停提示框里用：提示框本身不能再悬停，就把说明直接列在下面）
 //   glossTip(id)     一个词的提示框内容
 //   glossTable()     「状态说明」整张表（战斗画面顶部的按钮、蛊典的「状态说明」分区共用）
-// 界面一律写「增益（对它有利）」「减益（对它不利）」，不写英文。改名字只改这里和数据文案，不动数值。
-const GL_KIND = { buff: '增益（对它有利）', debuff: '减益（对它不利）', act: '招式效果（当场生效，不挂在身上）', rule: '战斗规则', term: '说明' };
+// 界面写「增益」「减益」，不写英文；状态说明表的分区标题写明「对它有利 / 不利」。改名字只改这里和数据文案，不动数值。
+const GL_KIND = { buff: '增益', debuff: '减益', act: '效果', rule: '规则', term: '说明' };
+// 写法照卡牌游戏的状态说明：只写机制和数字。X = 蛊身上小牌子的数。「敌蛊的伤害」= 普攻、技能、撞击，不含灼烧、中毒、寄生、天劫压阵。数字照 battle.js / bestiary.js 写，改数值时同步改这里
 const GLOSS = [
-  { id: 'debuffs', n: '减益', kind: 'term', d: '挂在蛊身上、对它不利的状态，比如灼烧、中毒、冰寒、眩晕。写着「清掉减益」的效果能把它们一次清掉。' },
-  { id: 'buffs', n: '增益', kind: 'term', d: '挂在蛊身上、对它有利的状态，比如格挡、护体、嘲讽。' },
-  { id: 'burn', n: '灼烧', kind: 'debuff', col: '#c2501f', d: '每轮开始掉血，持续几轮；再挂一次取伤害更高、轮数更长的那个，不叠加。护体挡不住。' },
-  { id: 'psn', n: '中毒', kind: 'debuff', col: '#3d7a33', d: '每轮开始掉血，再挂就越叠越多（最多约最大血量的四分之一），不会自己消失。护体挡不住。' },
-  { id: 'para', n: '寄生', kind: 'debuff', col: '#4f6e2a', d: '虫卵在身上安了家：每轮开始掉血，不会自己消失，有的还会削攻。护体挡不住。' },
-  { id: 'chill', n: '冰寒', kind: 'debuff', col: '#3d78a8', d: '每层速度 -15%，叠到 3 层就冻住一次（层数清空）；每轮退一层。' },
-  { id: 'freeze', n: '冻住', kind: 'debuff', col: '#5f93c0', d: '冰寒叠满 3 层时触发：跳过下一次出手（算一次眩晕）。' },
-  { id: 'stun', n: '眩晕', kind: 'debuff', col: '#6a5a8a', d: '跳过接下来几次出手（最多攒 4 次），每轮到它出手就用掉一次。' },
-  { id: 'web', n: '落网', kind: 'debuff', col: '#6e6a5e', d: '接下来几次普攻落空，主动技照放。' },
-  { id: 'mark', n: '印记', kind: 'debuff', col: '#a8352c', d: '持续几轮：受到敌方的伤害 +25%。' },
-  { id: 'seal', n: '封印', kind: 'debuff', col: '#5a5244', d: '持续几轮：蛊力不涨，攒不满就放不出主动技。' },
-  { id: 'grd', n: '格挡', kind: 'buff', col: '#8a7434', d: '接下来几次挨敌方打，伤害减半，每挨一次用掉一次。和护体不同：格挡是减半，护体是先扣一层护盾。' },
-  { id: 'sh', n: '护体', kind: 'buff', col: '#9a7a2a', d: '一层护盾：挨打时先扣护体，扣完才掉血。灼烧、中毒、寄生和破甲的伤害绕过护体。' },
-  { id: 'taunt', n: '嘲讽', kind: 'buff', col: '#8a5a2a', d: '持续几轮：敌方的单体攻击优先打它，替队友挡刀。' },
-  { id: 'crit', n: '暴击', kind: 'act', col: '#b8402a', d: '这一下伤害 ×1.5。普攻有 10% 机会暴击，有的技能另写暴击率。' },
-  { id: 'pierce', n: '破甲', kind: 'act', col: '#8a4a3a', d: '这一下的伤害不被护体挡，直接打在血上。' },
-  { id: 'knock', n: '击退', kind: 'act', col: '#7a5a34', d: '把目标往后推一格；身后被挡住或到了边上就撞上，双方都受一点伤。' },
-  { id: 'draw', n: '拉近', kind: 'act', col: '#7a5a34', d: '把目标往前拉一格；身前被挡住就撞上，双方都受一点伤。' },
-  { id: 'summon', n: '召唤', kind: 'act', col: '#7a62a0', d: '在空格里召出小蛊帮忙打；阵盘满了就召不出，召唤物打完这一场就散。' },
-  { id: 'eat', n: '吞噬', kind: 'act', col: '#6a3a5a', d: '把血量不多的敌蛊（一般是三成以下）或任意召唤物直接吞掉，自己得到它一部分攻血。' },
-  { id: 'doom', n: '天劫压阵', kind: 'rule', col: '#4a4038', d: '打到第 20 轮还没分出胜负，双方每轮都掉血，越往后越多，护体挡不住，免得两边互相回血拖到最后。' },
+  { id: 'debuffs', n: '减益', kind: 'term', d: '对它不利的状态：灼烧、中毒、寄生、冰寒、眩晕、落网、印记、封印。「清掉减益」会清除这些，以及临时被削的攻和速度。' },
+  { id: 'buffs', n: '增益', kind: 'term', d: '对它有利的状态：护体、格挡、嘲讽。' },
+  { id: 'burn', n: '灼烧', kind: 'debuff', col: '#c2501f', d: '每轮开始受到固定伤害，持续 X 轮。伤害在挂上时按施放者的攻算好，之后不变。重复挂上：伤害、轮数各取较大值，不叠加。无视护体。' },
+  { id: 'psn', n: '中毒', kind: 'debuff', col: '#3d7a33', d: '每轮开始失去 X 点血，不会消退。重复挂上：X 叠加，上限为最大血量的 25%（不低于 60）。无视护体。' },
+  { id: 'para', n: '寄生', kind: 'debuff', col: '#4f6e2a', d: '每轮开始失去 X 点血，不会消退，叠加和上限同中毒。部分寄生另外每轮攻 -8%。无视护体。' },
+  { id: 'chill', n: '冰寒', kind: 'debuff', col: '#3d78a8', d: '每层速度 -15%。叠到 3 层：清空，并冻住。每轮开始退 1 层。' },
+  { id: 'freeze', n: '冻住', kind: 'debuff', col: '#5f93c0', d: '冰寒叠到 3 层时触发：眩晕 1 次。' },
+  { id: 'stun', n: '眩晕', kind: 'debuff', col: '#6a5a8a', d: '跳过接下来 X 次出手。最多 4 次。' },
+  { id: 'web', n: '落网', kind: 'debuff', col: '#6e6a5e', d: '接下来 X 次普攻落空。不影响主动技。' },
+  { id: 'mark', n: '印记', kind: 'debuff', col: '#a8352c', d: '受到敌蛊的伤害 +25%，持续 X 轮。重复挂上取较大轮数。' },
+  { id: 'seal', n: '封印', kind: 'debuff', col: '#5a5244', d: '蛊力不增长，持续 X 轮。重复挂上取较大轮数。' },
+  { id: 'sh', n: '护体', kind: 'buff', col: '#9a7a2a', d: '受到伤害先扣护体，扣完再扣血。整场不消失，上限为最大血量的 2 倍（不低于 990）。灼烧、中毒、寄生、破甲、天劫压阵无视护体。' },
+  { id: 'grd', n: '格挡', kind: 'buff', col: '#8a7434', d: '接下来 X 次受到敌蛊的伤害减半。重复挂上叠加次数。' },
+  { id: 'taunt', n: '嘲讽', kind: 'buff', col: '#8a5a2a', d: '敌方的普攻和单体技能只能打它，持续 X 轮。重复挂上取较大轮数。' },
+  { id: 'crit', n: '暴击', kind: 'act', col: '#b8402a', d: '这次伤害 ×1.5。普攻暴击率 10%，技能的暴击率写在技能里。' },
+  { id: 'pierce', n: '破甲', kind: 'act', col: '#8a4a3a', d: '这次伤害无视护体。' },
+  { id: 'knock', n: '击退', kind: 'act', col: '#7a5a34', d: '目标后退一格。身后有蛊：不动，它和身后那只各受一次撞击伤害；已在最后一列：不动，它受一次撞击伤害。撞击伤害 = 施放者攻的 40%（技能另写的按技能）。' },
+  { id: 'draw', n: '拉近', kind: 'act', col: '#7a5a34', d: '目标前进一格。身前有蛊：不动，它和身前那只各受一次撞击伤害，伤害同击退。已在第一列：没有效果。' },
+  { id: 'summon', n: '召唤', kind: 'act', col: '#7a62a0', d: '在己方空格放出一只召唤物，攻、血按召唤者的攻、最大血量折算（比例写在技能里）。己方已有 9 只时召唤失败。召唤物只存在于本场战斗。' },
+  { id: 'eat', n: '吞噬', kind: 'act', col: '#6a3a5a', d: '吞掉血量不高于 30% 的敌蛊，或任意召唤物；施放者获得它 30% 的攻和最大血量（技能另写的按技能）。被吞掉算阵亡。' },
+  { id: 'gp', n: '蛊力', kind: 'rule', col: '#b08a2a', d: '攒满 100：下一次出手改放主动技，然后清零。开战 20；每次出手 +34；近战被身前友蛊挡住时 +60；受到敌蛊的伤害 +15。' },
+  { id: 'doom', n: '天劫压阵', kind: 'rule', col: '#4a4038', d: '第 20 轮起，每轮开始所有蛊失去最大血量的 10% ×（轮数 − 19）：第 20 轮 10%，第 21 轮 20%，依此类推。无视护体。' },
 ];
 const GL = Object.fromEntries(GLOSS.map(g => [g.id, g]));
 const GL_BY_NAME = Object.fromEntries(GLOSS.map(g => [g.n, g]));
@@ -2386,10 +2388,10 @@ function glossTip(id) {
   return `<b>${g.n}</b> <span class="glk gl-${g.kind}">${glEsc(glossKind(g))}</span><br>${glEsc(g.d)}`;
 }
 function glossTable() {
-  const row = g => `<li><b class="glic" style="background:${g.col || '#5a5244'}">${g.n}</b><span class="glk gl-${g.kind}">${glEsc(glossKind(g))}</span><p>${glEsc(g.d)}</p></li>`;
+  const row = g => `<li><b class="glic" style="background:${g.col || '#5a5244'}">${g.n}</b><p>${glEsc(g.d)}</p></li>`;
   const sec = (k, h) => { const L = GLOSS.filter(g => g.kind === k); return L.length ? `<h5>${glEsc(h)}</h5><ul class="gltab">${L.map(row).join('')}</ul>` : ''; };
-  return `<div class="glossary"><p class="sm">蛊身上挂的状态分两种：<b>增益</b>是对它有利的，<b>减益</b>是对它不利的。战斗里蛊身下沿的小牌子写着状态名和数字（层数、次数、轮数或每轮掉多少血），一格放不下的合成「+几」，悬停或点一下蛊能看全部。文字里带虚线的词，悬停或点一下也能看说明。</p>`
-    + sec('debuff', '减益（对它不利）') + sec('buff', '增益（对它有利）') + sec('act', '招式效果（当场生效，不挂在身上）') + sec('rule', '战斗规则') + '</div>';
+  return `<div class="glossary"><p class="sm">X = 蛊身上小牌子的数字。每轮开始：先结算灼烧、中毒、寄生、天劫压阵，再把按轮计的状态减 1、冰寒退 1 层。「敌蛊的伤害」指普攻、技能和撞击，不含灼烧、中毒、寄生。</p>`
+    + sec('debuff', '减益 · 对它不利') + sec('buff', '增益 · 对它有利') + sec('act', '效果 · 当场生效') + sec('rule', '规则') + '</div>';
 }
 
 return { GL_KIND, GLOSS, GL, GL_BY_NAME, ST_NAME, ST_COLOR, glossKind, glossHTML, glossFound, glossNote, glossTip, glossTable };
@@ -7108,10 +7110,10 @@ const CN = ['', '一', '二', '三', '四', '五', '仙'];
 const ST_ORDER = ['burn', 'psn', 'para', 'chill', 'stun', 'web', 'grd', 'mark', 'seal', 'taunt'];
 const ST_COL = ST_COLOR;   // 图标底色和「状态说明」表同一套（gloss.js）
 const stNum = (k, v) => k === 'burn' ? v[1] : v;   // 图标上的数：灼烧 = 还剩几轮，中毒 = 每轮掉多少，其余 = 层数 / 次数 / 轮数
-const ST_DESC = {
-  burn: v => `还剩 ${v[1]} 轮，每轮烧 ${v[0]}（护体挡不住）`, psn: v => `每轮掉 ${v} 血，不会自己消失（护体挡不住）`, para: v => `每轮掉 ${v} 血`,
-  chill: v => `${v} 层，速 -${Math.round(TUNE.chill * 100 * v)}%，叠到 3 层冻住一次；每轮退一层`, stun: v => `跳过接下来 ${v} 次出手`, web: v => `接下来 ${v} 次普攻落空`,
-  grd: v => `接下来 ${v} 次挨打伤害减半`, mark: v => `还剩 ${v} 轮，受到的伤害 +25%`, seal: v => `还剩 ${v} 轮，蛊力不涨`, taunt: v => `还剩 ${v} 轮，敌方单体攻击优先打它`,
+const ST_DESC = {   // 悬停时带实际数字，规则和 gloss.js 一致
+  burn: v => `每轮开始受到 ${v[0]} 点伤害，还剩 ${v[1]} 轮。无视护体`, psn: v => `每轮开始失去 ${v} 点血，不会消退。无视护体`, para: v => `每轮开始失去 ${v} 点血，不会消退。无视护体`,
+  chill: v => `速度 -${Math.round(TUNE.chill * 100 * v)}%，再叠 ${3 - v} 层冻住。每轮开始退 1 层`, stun: v => `跳过接下来 ${v} 次出手`, web: v => `接下来 ${v} 次普攻落空`,
+  grd: v => `接下来 ${v} 次受到敌蛊的伤害减半`, mark: v => `受到敌蛊的伤害 +25%，还剩 ${v} 轮`, seal: v => `蛊力不增长，还剩 ${v} 轮`, taunt: v => `敌方的普攻和单体技能只能打它，还剩 ${v} 轮`,
 };
 const ST_LOG = { psn: n => `中毒（每轮 ${n}）`, para: n => `寄生（每轮 ${n}）`, burn: n => `灼烧 ${n} 轮`, chill: n => `冰寒 ${n} 层`, freeze: () => '冻住', stun: n => `眩晕 ${n} 次`, web: n => `落网 ${n} 次`, guard: n => `格挡 ${n} 次`, mark: n => `印记 ${n} 轮`, seal: n => `封印 ${n} 轮`, taunt: n => `嘲讽 ${n} 轮` };
 const FL_IC = {
@@ -9452,7 +9454,7 @@ const setHTML = (n, h) => { if (n && n._h !== h) { n.innerHTML = h; n._h = h; } 
 
 // ---------- 界面文案集中在这里 ----------
 const TXT = {
-  glossSum: '灼烧、中毒、冰寒、格挡、护体……分别是什么意思，增益和减益怎么分，点开看',
+  glossSum: '每个状态的规则和数字',
   qiTip: '元气就是你在 AI 编程工具里消耗的 token，没有上限，也没有别的来源。买蛊、买食物、转市花元气；渡劫时先用攒下的元气一口气往深处走，用完靠实时 token。',
   qiTrial: '网页版是模拟元气（存档标「试玩」）。',
   sota: '你正在用 Claude，蛊的伤害 +1%',
