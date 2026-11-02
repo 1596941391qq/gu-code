@@ -6888,7 +6888,7 @@ return { COMBO_FX, playCombo, drawComboFrame, comboSheet };
 // ---- src/battle-view.js（包一层，只放出 export）
 const { playBattle } = (() => {
 // 蛊码 GuCode · 战斗画面：斜俯视的 6×3 阵盘、出手顺序条、出手预告、弹道、伤害数字、主动技大字、杀招动画、结算页。
-// 只读 battle() 的结果（log + roster + units）重放，不改任何战斗数据。对外：playBattle(el, result, opts) → Promise（结算页点「继续」才 resolve）
+// 只读 battle() 的结果（log + roster + units）重放，不改任何战斗数据。对外：playBattle(el, result, opts) → Promise（结算页点「继续」才 resolve；opts.auto 时秘境里打赢、打平过一会儿自己 resolve，opts.loot = 「带回」那一行的 HTML）
 
 
 
@@ -6996,6 +6996,15 @@ const CSS = `
 @keyframes gbvfare{from{opacity:0;filter:blur(2px)}}
 .gbv-res .gbv-note{font-size:11px;color:var(--mu,#8f8775);text-align:center;margin:4px 0}
 .gbv-res .gbv-go{display:block;margin:10px auto 0;min-width:140px;height:38px;border-radius:3px;background:var(--zhu,#b5301f);color:var(--on-zhu,#f3ead6);font:16px var(--kai,serif);letter-spacing:.3em;cursor:pointer;border:0}
+.gbv-res .gbv-go.auto{position:relative;overflow:hidden}.gbv-res .gbv-go.auto::after{content:'';position:absolute;left:0;bottom:0;height:3px;width:100%;background:var(--on-zhu,#f3ead6);opacity:.55;transform-origin:left;animation:gbvauto var(--auto,2.6s) linear both}
+@keyframes gbvauto{from{transform:scaleX(1)}to{transform:scaleX(0)}}
+.gbv-loot{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:0 auto 10px;max-width:420px;padding:8px 10px;border-left:4px solid var(--zhu2,#d8553f);background:var(--bg2,#1e1b16);border-radius:3px;font:15px var(--kai,serif);color:var(--strong,#eee5d1)}
+.gbv-loot>b{font-size:15px;letter-spacing:.1em}.gbv-loot small{flex-basis:100%;font:11px var(--sans,system-ui);color:var(--mu,#8f8775)}
+.gbv-loot span{display:inline-flex;align-items:center;gap:5px;animation:gbvdrop .5s cubic-bezier(.2,1.4,.4,1) both}.gbv-loot span:nth-of-type(2){animation-delay:.12s}.gbv-loot span:nth-of-type(3){animation-delay:.24s}
+.gbv-loot svg{width:34px;height:34px;background:var(--pp);border-radius:3px;flex:0 0 auto}
+@keyframes gbvdrop{from{opacity:0;transform:translateY(-14px) scale(.7)}}
+.gbv.calm .gbv-loot span{animation:none}
+.gbv-more{max-width:420px;margin:0 auto 6px;font-size:12px}.gbv-more summary{cursor:pointer;color:var(--mu,#8f8775);text-align:center;padding:4px;list-style:none}.gbv-more summary::-webkit-details-marker{display:none}.gbv-more summary::after{content:' ▾'}.gbv-more[open] summary::after{content:' ▴'}
 .gbv.narrow .gbv-ic b{font-size:9.5px;line-height:12px;padding:0 1.5px}.gbv.narrow .gbv-ic b em{font-size:8px;line-height:12px;margin-left:1px}
 .gbv.narrow .gbv-tok{border-radius:50%}
 .gbv.narrow .gbv-tok svg{filter:brightness(0);opacity:.85}
@@ -7507,6 +7516,7 @@ async function run(el, res, opts, resolve) {
   showResult(root, res, opts, me, names, skip, resolve, () => window.removeEventListener('resize', onR));
 }
 
+const AUTO_MS = 2600;   // 秘境里打赢后结算页停多久
 function showResult(root, res, opts, me, names, skipped, resolve) {
   const R = res.roster, US = res.units, w = res.winner, mine = w === 'draw' ? 'draw' : (w === 'A' ? 0 : 1) === me ? 'win' : 'lose', trip = modeOf(opts) === 'trip';
   const head = mine === 'win' ? '胜' : mine === 'lose' ? '败' : '平';
@@ -7517,19 +7527,27 @@ function showResult(root, res, opts, me, names, skipped, resolve) {
   const mv = res.mvp && US[res.mvp];
   const mineU = Object.entries(US).filter(([, x]) => x.side === me && !x.summon), saved = trip && mine === 'win' ? mineU.filter(([, x]) => x.dead) : [], fallen = trip && mine !== 'win' ? mineU : [];
   const deadRound = uid => { let rd = 0; for (const e of res.log) { if (e.t === 'round') rd = e.n; if (e.t === 'faint' && e.uid === uid) return rd || 1; } return rd; };
-  const sota = opts.sota || res.sota || [];
+  const sota = opts.sota || res.sota || [], auto = trip && opts.auto && mine !== 'lose';   // 秘境里打赢、打平：不用点，过一会儿自己收起；打输（全队告别）要点
   const box = document.createElement('div'); box.className = 'gbv-res';
+  const table = `<table class="gbv-tb"><tr><th>${esc(names[me])}</th><th>伤害</th><th>承受</th><th>击杀</th><th>剩血</th></tr>${rows(me)}${smTxt(me)}
+    <tr><td class="gbv-side" colspan="5">${esc(names[1 - me])}</td></tr>${rows(1 - me)}${smTxt(1 - me)}</table>`;
   box.innerHTML = `<h3 class="${mine}">${head}</h3><div class="gbv-sub">${esc(names[me])} 对 ${esc(names[1 - me])} · ${res.rounds} 轮${skipped ? ' · 已跳过' : ''}</div>
+    ${trip && mine === 'win' && opts.loot ? `<div class="gbv-loot"><b>带回</b>${opts.loot}<small>进战利品袋</small></div>` : ''}
     ${mv ? `<div class="gbv-mvp">${art(res.mvp, 52)}<div><em>本场最佳</em><b>${esc(mv.name)}</b><br><span style="font-size:12px">伤害 ${mv.dmg} · 承受 ${mv.taken} · 击杀 ${mv.kills}${mv.healed ? ' · 护佑 ' + mv.healed : ''}</span></div></div>` : ''}
     ${saved.length ? `<div class="gbv-save"><b>救回 ${saved.length} 只</b>：${saved.map(([uid, x]) => `<span>${art(uid, 22)}${esc(x.name)}</span>`).join('')}</div>` : ''}
     ${fallen.length ? `<div class="gbv-fare"><h4>全队告别</h4><p class="gbv-lead">这一场输了，渡劫失败，场上的蛊全部永久离开。</p>${fallen.map(([uid, x], i) => `<div class="gbv-g" style="animation-delay:${0.4 + i * 0.6}s">${art(uid, 46)}<div><b>${esc(x.name)}</b>${R[uid].rank ? ` <small>${CN[R[uid].rank]}转</small>` : ''}<p>${x.dead ? `倒在第 ${deadRound(uid)} 轮` : '战到最后'}，打出 ${x.dmg} 点伤害${x.kills ? `、击倒 ${x.kills} 只` : ''}。它不会再回来了。</p></div></div>`).join('')}</div>` : ''}
-    <table class="gbv-tb"><tr><th>${esc(names[me])}</th><th>伤害</th><th>承受</th><th>击杀</th><th>剩血</th></tr>${rows(me)}${smTxt(me)}
-    <tr><td class="gbv-side" colspan="5">${esc(names[1 - me])}</td></tr>${rows(1 - me)}${smTxt(1 - me)}</table>
+    ${auto ? `<details class="gbv-more"><summary>战报</summary>${table}</details>` : table}
     ${trip ? '' : '<p class="gbv-note">切磋：不死蛊</p>'}
     ${sota[me] ? '<p class="gbv-note">SOTA +1%</p>' : ''}
-    <button class="gbv-go">继续</button>`;
+    <button class="gbv-go${auto ? ' auto' : ''}"${auto ? ` style="--auto:${AUTO_MS}ms"` : ''}>继续</button>`;
   root.appendChild(box);
-  box.querySelector('.gbv-go').onclick = () => { box.remove(); resolve({ closed: true, skipped }); };
+  let tm = 0; const go = () => { if (!box.isConnected) return; clearTimeout(tm); box.remove(); resolve({ closed: true, skipped }); };
+  box.querySelector('.gbv-go').onclick = go;
+  if (auto) {   // 点空白处也收起；展开战报就停下来等点「继续」
+    tm = setTimeout(go, AUTO_MS);
+    box.onclick = e => { if (!e.target.closest('.gbv-more')) go(); };
+    box.querySelector('.gbv-more').ontoggle = () => { clearTimeout(tm); box.querySelector('.gbv-go').classList.remove('auto'); };
+  }
 }
 
 return { playBattle };
@@ -8598,9 +8616,9 @@ const TRIP_CFG = {
   foe: { frac: [0.4, 0.04], ramp: 2, elite: 0.68, boss: 0.83, ghost: 1, maxN: 7, daoP: 0.65 },   // 10-31 内容第二批（每转曲线抹平）后重调：精英 0.64→0.68、首领 0.85→0.83
   camp: 0.5,                                   // 篝火：全队回满血的 50%
   // 战利品只有新蛊和食物，越深越多、越稀有：数量 = 基数 + 每层 × 层数（小数部分按几率）；新蛊升一转的几率 up[0] + up[1]×层数，
-  // 第 rare 层起一半几率出自高一档蛊池；食物按价钱算稀有，越深越偏向贵的
+  // 第 rare 层起一半几率出自高一档蛊池；食物按价钱算稀有，越深越偏向贵的。min = 打赢至少掉几样（不够就补食物，出蛊的几率不变）
   loot: {
-    fight: { food: [0.25, 0.04], gu: [0.12, 0.03] },
+    fight: { food: [0.25, 0.04], gu: [0.12, 0.03], min: 1 },
     elite: { food: [1, 0.05], gu: [0.6, 0.04] },
     boss: { food: [1, 0], gu: [0, 0] },        // 首领另有「渡劫成功必掉」二选一（bossReward）
     up: [0.05, 0.05], rare: 5,
@@ -8614,7 +8632,7 @@ const TRIP_CFG = {
 };
 // n 名字、ch 地图上的单字、k 图例里的一句用途、tip 地图格子悬停的一句话（是什么、能得到什么）、d 进房间后的说明
 const ROOMS = {
-  fight:  { n: '战斗', ch: '斗', k: '打野蛊', tip: '战斗：一伙野蛊拦路。打赢可能掉食物和新蛊，倒下的都能救回', d: '一伙野蛊拦路。赢了倒下的都能救回，还可能掉食物和新蛊' },
+  fight:  { n: '战斗', ch: '斗', k: '打野蛊', tip: '战斗：一伙野蛊拦路。打赢必掉一样（食物或新蛊），倒下的都能救回', d: '一伙野蛊拦路。赢了倒下的都能救回，必掉一样食物或新蛊' },
   elite:  { n: '精英', ch: '精', k: '强敌，必掉东西', tip: '精英：强敌。打赢必掉食物、常有新蛊，还能选一个祝福；输了全队永久死亡', d: '强敌，开打前能看阵容。赢了必得食物，常有新蛊，还能选一个祝福' },
   event:  { n: '奇遇', ch: '遇', k: '二选一的小事', tip: '奇遇：一段小事，两个选择，结果都先写明（回血、食物、新蛊、蛊性……）', d: '一段小事，两个选择，结果都先写明' },
   camp:   { n: '篝火', ch: '火', k: '歇脚回血', tip: '篝火：歇脚的地方，全队回血（不是炎道）', d: '歇脚，全队回满血的一半' },
@@ -8760,8 +8778,11 @@ function roomLoot(seed, realm, d, lane, type, foodPool, spPool = null, extraFood
   const roll = ([p, per]) => { const q = p + per * d; let n = Math.floor(q); if (rng() < q - n) n++; return n; };
   for (let i = roll(L.food) + extraFood; i > 0; i--) out.foods.push(foodPick(rng, pool, d));
   for (let i = roll(L.gu); i > 0; i--) out.gu.push(lootGu(rng, realm, d, type === 'boss' ? 1 : 0, spPool));
+  while (out.foods.length + out.gu.length < (L.min | 0)) out.foods.push(foodPick(rng, pool, d));
   return out;
 }
+// 当前房间打赢会掉什么（种子定死，开打前就能算；tripFight 发的就是这一份）
+const winLoot = t => { const room = t.room; return room ? roomLoot(t.seed, t.realm, room.d, room.lane, room.type, t.foodPool, t.spPool, blessRules(t.bless).food) : null; };
 function addLoot(bag, l) { (l.foods || []).forEach(f => bag.foods.push(f)); (l.gu || []).forEach(g => bag.gu.push(g)); return bag; }
 const lootEmpty = l => !l || (!(l.foods || []).length && !(l.gu || []).length);
 const guName = g => RANK.names[g.rank] + (SP[g.sp] ? SP[g.sp].n : g.sp);
@@ -8944,7 +8965,7 @@ function tripFight(t, team, fielded, res) {
     if (k) { if (!real.xing) { real.xing = k; offers.push({ uid: g.uid, xing: k, old: null, auto: true }); } else offers.push({ uid: g.uid, xing: k, old: real.xing }); }
   });
   let loot = null; const revived = saved.includes(t.revived) && t.hp[t.revived] > 1 ? t.revived : null;
-  if (win) { loot = roomLoot(t.seed, t.realm, room.d, room.lane, room.type, t.foodPool, t.spPool, blessRules(t.bless).food); addLoot(t.loot, loot); }
+  if (win) { loot = winLoot(t); addLoot(t.loot, loot); }
   (t.bless || []).forEach(x => { if (x.left > 0) x.left--; });   // 只管几场的祝福（庇佑）少一场
   tlog(t, `${win ? '胜' : '僵持不下，各自退开'}${saved.length ? '。救回：' + saved.map(name).join('、') + '（剩 1 血）' : ''}${revived ? `。定魂香：${name(revived)} 以 ${Math.round(t.revive * 100)}% 血站起来` : ''}${loot && !lootEmpty(loot) ? '。' + lootText(loot) : ''}`);
   offers.filter(o => o.auto).forEach(o => tlog(t, `${name(o.uid)} 得蛊性「${XING[o.xing].n}」`));
@@ -9353,6 +9374,8 @@ function tuEnd(t, by, S) {
 }
 
 // ───────────── 操作 ─────────────
+// 结算页上「带回」那一行：打赢才显示，画像 + 名字（种子定死，开打前算好的就是打赢后发的）
+const tuLootHTML = l => (lootEmpty(l) ? '' : [...l.gu.map(g => `<span>${guSVG(g.sp, { rank: g.rank })}${tuEsc(tuGuN(g))}</span>`), ...l.foods.map(id => `<span>${foodSVG(id)}${tuEsc(tuFood(id))}</span>`)].join(''));
 async function tuFight(api, t) {
   const S = api.S(), room = t.room, ui = tuUI(t);
   const healed = tripPreFight(t), fielded = fieldTeam(t, S.team), foe = roomFoe(t);
@@ -9360,7 +9383,7 @@ async function tuFight(api, t) {
   tuBusy = true; api.save();
   let out;
   try {
-    out = await api.playBattle(foe, { team: fielded, seed: `${t.seed}:${room.d}:${room.lane}`, title: `秘境第 ${room.d + 1} 层 · ${ROOMS[room.type].n}`, foeName: room.type === 'boss' ? `${tripLand(t).n}首领` : room.type === 'elite' ? `${tripLand(t).n}精英` : tripLand(t).n });
+    out = await api.playBattle(foe, { team: fielded, seed: `${t.seed}:${room.d}:${room.lane}`, title: `秘境第 ${room.d + 1} 层 · ${ROOMS[room.type].n}`, foeName: room.type === 'boss' ? `${tripLand(t).n}首领` : room.type === 'elite' ? `${tripLand(t).n}精英` : tripLand(t).n, loot: tuLootHTML(winLoot(t)) });
   } finally { tuBusy = false; }
   const r = tripFight(t, S.team, fielded, out.res); if (!r) return;
   const nm = u => { const g = S.team.find(x => x.uid === u); return g ? SP[g.sp].n : ''; };
@@ -10034,7 +10057,7 @@ function tripPlayBattle(foeTeam, opts = {}) {
   const res = battle(placed(team), placed(foeTeam), 'r:' + seed, { ...(opts.oa || {}), sota });
   if (ff.used.length) { S.fightFood = (S.fightFood || []).filter(x => !ff.used.includes(x)); note(TXT.fightUsed(ff.used.map(x => FOOD[x.id].n).join('、'))); save(); }
   const A = { team, name: S.name || '无名蛊师', realm: S.realm, trial: S.trial }, B = { team: foeTeam, name: opts.foeName || '秘境', realm: S.realm };
-  return new Promise(resolve => runBattle({ kind: 'trip', title: opts.title || '秘境 · 斗蛊', res, A, B, sota, done: () => resolve({ res, A, B }) }));
+  return new Promise(resolve => runBattle({ kind: 'trip', title: opts.title || '秘境 · 斗蛊', res, A, B, sota, loot: opts.loot || '', done: () => resolve({ res, A, B }) }));
 }
 TRIP.api = { S: () => S, save, unlocked: (id, k) => unlocked(id, k), synLine: (team, o) => resoHTML(team, o || {}), get el() { return $('#trip'); }, playBattle: tripPlayBattle, onTripEnd, big, note, float: (uid, t, k) => fxFloat(uid, t, k || 'buff'), renderHome };
 function meters() {
@@ -10186,7 +10209,7 @@ async function animEv(e, ros, seen) {
   }
 }
 
-// 新战斗画面（battle-view.js 的 playBattle）：铺一层全屏，结算页点「继续」再收起。没打包 battle-view 时退回下面的旧画面
+// 新战斗画面（battle-view.js 的 playBattle）：铺一层全屏，结算页点「继续」再收起（秘境里打赢、打平自己收起）。没打包 battle-view 时退回下面的旧画面
 const NEW_BV = typeof playBattle === 'function';
 async function runBattle(B) {
   if (!NEW_BV) return showBattle(B);
@@ -10194,7 +10217,7 @@ async function runBattle(B) {
   const ov = el(`<div class="battle bv2" id="battle"><div class="bvbox"></div>${B.kind !== 'trip' && B.replay ? '<div class="bvx"><button data-act="copyReplay">复制复盘链接</button></div>' : ''}</div>`);
   document.body.appendChild(ov);
   try {
-    await playBattle(ov.querySelector('.bvbox'), B.res, { mode: B.kind === 'trip' ? 'trip' : 'spar', title: B.title, names: [(B.A && B.A.name) || '我方', (B.B && B.B.name) || '对方'], mySide: 0, speed: S.speed >= 2 ? 2 : 1, reduceMotion: !!S.calm, sota: B.sota ? [!!B.sota.A, !!B.sota.B] : [] });
+    await playBattle(ov.querySelector('.bvbox'), B.res, { mode: B.kind === 'trip' ? 'trip' : 'spar', title: B.title, names: [(B.A && B.A.name) || '我方', (B.B && B.B.name) || '对方'], mySide: 0, speed: S.speed >= 2 ? 2 : 1, reduceMotion: !!S.calm, sota: B.sota ? [!!B.sota.A, !!B.sota.B] : [], loot: B.loot || '', auto: B.kind === 'trip' });
   } catch (e) { console.error(e); }
   closeBattle();
 }

@@ -11,7 +11,7 @@ import { VSC } from './tokens.js';
 import { FOOD, FOODS } from './foods.js';
 import { DAO } from './daos.js';
 import { TRIP_CFG, ROOMS, EVENT, nextLanes, tripStart, tripMapOf, tripAlive, tripReach, roomAt, curRoom, needTok, tripPick, tripFeed, roomFoe, fieldTeam, tripFight, tripPreFight, acceptXing, tripEvent, tripCamp, wareTok, tripBuy, wareText, tripLeaveRoom, tripEnd, tripResult, epitaph, lootEmpty, fxText, evPay, tripSeed, LANDS, foeFor, tripLand,
-  roadOf, campOf, preOf, tripBless, tripOffer, blessList, tripReward, tripMods, tripPreview, landReward } from './trip.js';
+  roadOf, campOf, preOf, winLoot, tripBless, tripOffer, blessList, tripReward, tripMods, tripPreview, landReward } from './trip.js';
 import { BLESS, blessLast, JIE, JIE_MAX, JIE_NAMES } from './trip-mods.js';
 import { glossHTML } from './gloss.js';
 
@@ -216,6 +216,8 @@ function tuEnd(t, by, S) {
 }
 
 // ───────────── 操作 ─────────────
+// 结算页上「带回」那一行：打赢才显示，画像 + 名字（种子定死，开打前算好的就是打赢后发的）
+const tuLootHTML = l => (lootEmpty(l) ? '' : [...l.gu.map(g => `<span>${guSVG(g.sp, { rank: g.rank })}${tuEsc(tuGuN(g))}</span>`), ...l.foods.map(id => `<span>${foodSVG(id)}${tuEsc(tuFood(id))}</span>`)].join(''));
 async function tuFight(api, t) {
   const S = api.S(), room = t.room, ui = tuUI(t);
   const healed = tripPreFight(t), fielded = fieldTeam(t, S.team), foe = roomFoe(t);
@@ -223,7 +225,7 @@ async function tuFight(api, t) {
   tuBusy = true; api.save();
   let out;
   try {
-    out = await api.playBattle(foe, { team: fielded, seed: `${t.seed}:${room.d}:${room.lane}`, title: `秘境第 ${room.d + 1} 层 · ${ROOMS[room.type].n}`, foeName: room.type === 'boss' ? `${tripLand(t).n}首领` : room.type === 'elite' ? `${tripLand(t).n}精英` : tripLand(t).n });
+    out = await api.playBattle(foe, { team: fielded, seed: `${t.seed}:${room.d}:${room.lane}`, title: `秘境第 ${room.d + 1} 层 · ${ROOMS[room.type].n}`, foeName: room.type === 'boss' ? `${tripLand(t).n}首领` : room.type === 'elite' ? `${tripLand(t).n}精英` : tripLand(t).n, loot: tuLootHTML(winLoot(t)) });
   } finally { tuBusy = false; }
   const r = tripFight(t, S.team, fielded, out.res); if (!r) return;
   const nm = u => { const g = S.team.find(x => x.uid === u); return g ? SP[g.sp].n : ''; };

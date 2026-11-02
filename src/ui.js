@@ -598,7 +598,7 @@ function tripPlayBattle(foeTeam, opts = {}) {
   const res = battle(placed(team), placed(foeTeam), 'r:' + seed, { ...(opts.oa || {}), sota });
   if (ff.used.length) { S.fightFood = (S.fightFood || []).filter(x => !ff.used.includes(x)); note(TXT.fightUsed(ff.used.map(x => FOOD[x.id].n).join('、'))); save(); }
   const A = { team, name: S.name || '无名蛊师', realm: S.realm, trial: S.trial }, B = { team: foeTeam, name: opts.foeName || '秘境', realm: S.realm };
-  return new Promise(resolve => runBattle({ kind: 'trip', title: opts.title || '秘境 · 斗蛊', res, A, B, sota, done: () => resolve({ res, A, B }) }));
+  return new Promise(resolve => runBattle({ kind: 'trip', title: opts.title || '秘境 · 斗蛊', res, A, B, sota, loot: opts.loot || '', done: () => resolve({ res, A, B }) }));
 }
 TRIP.api = { S: () => S, save, unlocked: (id, k) => unlocked(id, k), synLine: (team, o) => resoHTML(team, o || {}), get el() { return $('#trip'); }, playBattle: tripPlayBattle, onTripEnd, big, note, float: (uid, t, k) => fxFloat(uid, t, k || 'buff'), renderHome };
 function meters() {
@@ -750,7 +750,7 @@ async function animEv(e, ros, seen) {
   }
 }
 
-// 新战斗画面（battle-view.js 的 playBattle）：铺一层全屏，结算页点「继续」再收起。没打包 battle-view 时退回下面的旧画面
+// 新战斗画面（battle-view.js 的 playBattle）：铺一层全屏，结算页点「继续」再收起（秘境里打赢、打平自己收起）。没打包 battle-view 时退回下面的旧画面
 const NEW_BV = typeof playBattle === 'function';
 async function runBattle(B) {
   if (!NEW_BV) return showBattle(B);
@@ -758,7 +758,7 @@ async function runBattle(B) {
   const ov = el(`<div class="battle bv2" id="battle"><div class="bvbox"></div>${B.kind !== 'trip' && B.replay ? '<div class="bvx"><button data-act="copyReplay">复制复盘链接</button></div>' : ''}</div>`);
   document.body.appendChild(ov);
   try {
-    await playBattle(ov.querySelector('.bvbox'), B.res, { mode: B.kind === 'trip' ? 'trip' : 'spar', title: B.title, names: [(B.A && B.A.name) || '我方', (B.B && B.B.name) || '对方'], mySide: 0, speed: S.speed >= 2 ? 2 : 1, reduceMotion: !!S.calm, sota: B.sota ? [!!B.sota.A, !!B.sota.B] : [] });
+    await playBattle(ov.querySelector('.bvbox'), B.res, { mode: B.kind === 'trip' ? 'trip' : 'spar', title: B.title, names: [(B.A && B.A.name) || '我方', (B.B && B.B.name) || '对方'], mySide: 0, speed: S.speed >= 2 ? 2 : 1, reduceMotion: !!S.calm, sota: B.sota ? [!!B.sota.A, !!B.sota.B] : [], loot: B.loot || '', auto: B.kind === 'trip' });
   } catch (e) { console.error(e); }
   closeBattle();
 }

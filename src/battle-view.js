@@ -1,5 +1,5 @@
 // 蛊码 GuCode · 战斗画面：斜俯视的 6×3 阵盘、出手顺序条、出手预告、弹道、伤害数字、主动技大字、杀招动画、结算页。
-// 只读 battle() 的结果（log + roster + units）重放，不改任何战斗数据。对外：playBattle(el, result, opts) → Promise（结算页点「继续」才 resolve）
+// 只读 battle() 的结果（log + roster + units）重放，不改任何战斗数据。对外：playBattle(el, result, opts) → Promise（结算页点「继续」才 resolve；opts.auto 时秘境里打赢、打平过一会儿自己 resolve，opts.loot = 「带回」那一行的 HTML）
 import { guSVG, ART_DEFS } from './art.js';
 import { TRAITS, XING } from './core.js';
 import { FOOD } from './foods.js';
@@ -107,6 +107,15 @@ const CSS = `
 @keyframes gbvfare{from{opacity:0;filter:blur(2px)}}
 .gbv-res .gbv-note{font-size:11px;color:var(--mu,#8f8775);text-align:center;margin:4px 0}
 .gbv-res .gbv-go{display:block;margin:10px auto 0;min-width:140px;height:38px;border-radius:3px;background:var(--zhu,#b5301f);color:var(--on-zhu,#f3ead6);font:16px var(--kai,serif);letter-spacing:.3em;cursor:pointer;border:0}
+.gbv-res .gbv-go.auto{position:relative;overflow:hidden}.gbv-res .gbv-go.auto::after{content:'';position:absolute;left:0;bottom:0;height:3px;width:100%;background:var(--on-zhu,#f3ead6);opacity:.55;transform-origin:left;animation:gbvauto var(--auto,2.6s) linear both}
+@keyframes gbvauto{from{transform:scaleX(1)}to{transform:scaleX(0)}}
+.gbv-loot{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:0 auto 10px;max-width:420px;padding:8px 10px;border-left:4px solid var(--zhu2,#d8553f);background:var(--bg2,#1e1b16);border-radius:3px;font:15px var(--kai,serif);color:var(--strong,#eee5d1)}
+.gbv-loot>b{font-size:15px;letter-spacing:.1em}.gbv-loot small{flex-basis:100%;font:11px var(--sans,system-ui);color:var(--mu,#8f8775)}
+.gbv-loot span{display:inline-flex;align-items:center;gap:5px;animation:gbvdrop .5s cubic-bezier(.2,1.4,.4,1) both}.gbv-loot span:nth-of-type(2){animation-delay:.12s}.gbv-loot span:nth-of-type(3){animation-delay:.24s}
+.gbv-loot svg{width:34px;height:34px;background:var(--pp);border-radius:3px;flex:0 0 auto}
+@keyframes gbvdrop{from{opacity:0;transform:translateY(-14px) scale(.7)}}
+.gbv.calm .gbv-loot span{animation:none}
+.gbv-more{max-width:420px;margin:0 auto 6px;font-size:12px}.gbv-more summary{cursor:pointer;color:var(--mu,#8f8775);text-align:center;padding:4px;list-style:none}.gbv-more summary::-webkit-details-marker{display:none}.gbv-more summary::after{content:' ▾'}.gbv-more[open] summary::after{content:' ▴'}
 .gbv.narrow .gbv-ic b{font-size:9.5px;line-height:12px;padding:0 1.5px}.gbv.narrow .gbv-ic b em{font-size:8px;line-height:12px;margin-left:1px}
 .gbv.narrow .gbv-tok{border-radius:50%}
 .gbv.narrow .gbv-tok svg{filter:brightness(0);opacity:.85}
@@ -618,6 +627,7 @@ async function run(el, res, opts, resolve) {
   showResult(root, res, opts, me, names, skip, resolve, () => window.removeEventListener('resize', onR));
 }
 
+const AUTO_MS = 2600;   // 秘境里打赢后结算页停多久
 function showResult(root, res, opts, me, names, skipped, resolve) {
   const R = res.roster, US = res.units, w = res.winner, mine = w === 'draw' ? 'draw' : (w === 'A' ? 0 : 1) === me ? 'win' : 'lose', trip = modeOf(opts) === 'trip';
   const head = mine === 'win' ? '胜' : mine === 'lose' ? '败' : '平';
@@ -628,17 +638,25 @@ function showResult(root, res, opts, me, names, skipped, resolve) {
   const mv = res.mvp && US[res.mvp];
   const mineU = Object.entries(US).filter(([, x]) => x.side === me && !x.summon), saved = trip && mine === 'win' ? mineU.filter(([, x]) => x.dead) : [], fallen = trip && mine !== 'win' ? mineU : [];
   const deadRound = uid => { let rd = 0; for (const e of res.log) { if (e.t === 'round') rd = e.n; if (e.t === 'faint' && e.uid === uid) return rd || 1; } return rd; };
-  const sota = opts.sota || res.sota || [];
+  const sota = opts.sota || res.sota || [], auto = trip && opts.auto && mine !== 'lose';   // 秘境里打赢、打平：不用点，过一会儿自己收起；打输（全队告别）要点
   const box = document.createElement('div'); box.className = 'gbv-res';
+  const table = `<table class="gbv-tb"><tr><th>${esc(names[me])}</th><th>伤害</th><th>承受</th><th>击杀</th><th>剩血</th></tr>${rows(me)}${smTxt(me)}
+    <tr><td class="gbv-side" colspan="5">${esc(names[1 - me])}</td></tr>${rows(1 - me)}${smTxt(1 - me)}</table>`;
   box.innerHTML = `<h3 class="${mine}">${head}</h3><div class="gbv-sub">${esc(names[me])} 对 ${esc(names[1 - me])} · ${res.rounds} 轮${skipped ? ' · 已跳过' : ''}</div>
+    ${trip && mine === 'win' && opts.loot ? `<div class="gbv-loot"><b>带回</b>${opts.loot}<small>进战利品袋</small></div>` : ''}
     ${mv ? `<div class="gbv-mvp">${art(res.mvp, 52)}<div><em>本场最佳</em><b>${esc(mv.name)}</b><br><span style="font-size:12px">伤害 ${mv.dmg} · 承受 ${mv.taken} · 击杀 ${mv.kills}${mv.healed ? ' · 护佑 ' + mv.healed : ''}</span></div></div>` : ''}
     ${saved.length ? `<div class="gbv-save"><b>救回 ${saved.length} 只</b>：${saved.map(([uid, x]) => `<span>${art(uid, 22)}${esc(x.name)}</span>`).join('')}</div>` : ''}
     ${fallen.length ? `<div class="gbv-fare"><h4>全队告别</h4><p class="gbv-lead">这一场输了，渡劫失败，场上的蛊全部永久离开。</p>${fallen.map(([uid, x], i) => `<div class="gbv-g" style="animation-delay:${0.4 + i * 0.6}s">${art(uid, 46)}<div><b>${esc(x.name)}</b>${R[uid].rank ? ` <small>${CN[R[uid].rank]}转</small>` : ''}<p>${x.dead ? `倒在第 ${deadRound(uid)} 轮` : '战到最后'}，打出 ${x.dmg} 点伤害${x.kills ? `、击倒 ${x.kills} 只` : ''}。它不会再回来了。</p></div></div>`).join('')}</div>` : ''}
-    <table class="gbv-tb"><tr><th>${esc(names[me])}</th><th>伤害</th><th>承受</th><th>击杀</th><th>剩血</th></tr>${rows(me)}${smTxt(me)}
-    <tr><td class="gbv-side" colspan="5">${esc(names[1 - me])}</td></tr>${rows(1 - me)}${smTxt(1 - me)}</table>
+    ${auto ? `<details class="gbv-more"><summary>战报</summary>${table}</details>` : table}
     ${trip ? '' : '<p class="gbv-note">切磋：不死蛊</p>'}
     ${sota[me] ? '<p class="gbv-note">SOTA +1%</p>' : ''}
-    <button class="gbv-go">继续</button>`;
+    <button class="gbv-go${auto ? ' auto' : ''}"${auto ? ` style="--auto:${AUTO_MS}ms"` : ''}>继续</button>`;
   root.appendChild(box);
-  box.querySelector('.gbv-go').onclick = () => { box.remove(); resolve({ closed: true, skipped }); };
+  let tm = 0; const go = () => { if (!box.isConnected) return; clearTimeout(tm); box.remove(); resolve({ closed: true, skipped }); };
+  box.querySelector('.gbv-go').onclick = go;
+  if (auto) {   // 点空白处也收起；展开战报就停下来等点「继续」
+    tm = setTimeout(go, AUTO_MS);
+    box.onclick = e => { if (!e.target.closest('.gbv-more')) go(); };
+    box.querySelector('.gbv-more').ontoggle = () => { clearTimeout(tm); box.querySelector('.gbv-go').classList.remove('auto'); };
+  }
 }

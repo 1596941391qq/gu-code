@@ -44,9 +44,9 @@ export const TRIP_CFG = {
   foe: { frac: [0.4, 0.04], ramp: 2, elite: 0.68, boss: 0.83, ghost: 1, maxN: 7, daoP: 0.65 },   // 10-31 内容第二批（每转曲线抹平）后重调：精英 0.64→0.68、首领 0.85→0.83
   camp: 0.5,                                   // 篝火：全队回满血的 50%
   // 战利品只有新蛊和食物，越深越多、越稀有：数量 = 基数 + 每层 × 层数（小数部分按几率）；新蛊升一转的几率 up[0] + up[1]×层数，
-  // 第 rare 层起一半几率出自高一档蛊池；食物按价钱算稀有，越深越偏向贵的
+  // 第 rare 层起一半几率出自高一档蛊池；食物按价钱算稀有，越深越偏向贵的。min = 打赢至少掉几样（不够就补食物，出蛊的几率不变）
   loot: {
-    fight: { food: [0.25, 0.04], gu: [0.12, 0.03] },
+    fight: { food: [0.25, 0.04], gu: [0.12, 0.03], min: 1 },
     elite: { food: [1, 0.05], gu: [0.6, 0.04] },
     boss: { food: [1, 0], gu: [0, 0] },        // 首领另有「渡劫成功必掉」二选一（bossReward）
     up: [0.05, 0.05], rare: 5,
@@ -60,7 +60,7 @@ export const TRIP_CFG = {
 };
 // n 名字、ch 地图上的单字、k 图例里的一句用途、tip 地图格子悬停的一句话（是什么、能得到什么）、d 进房间后的说明
 export const ROOMS = {
-  fight:  { n: '战斗', ch: '斗', k: '打野蛊', tip: '战斗：一伙野蛊拦路。打赢可能掉食物和新蛊，倒下的都能救回', d: '一伙野蛊拦路。赢了倒下的都能救回，还可能掉食物和新蛊' },
+  fight:  { n: '战斗', ch: '斗', k: '打野蛊', tip: '战斗：一伙野蛊拦路。打赢必掉一样（食物或新蛊），倒下的都能救回', d: '一伙野蛊拦路。赢了倒下的都能救回，必掉一样食物或新蛊' },
   elite:  { n: '精英', ch: '精', k: '强敌，必掉东西', tip: '精英：强敌。打赢必掉食物、常有新蛊，还能选一个祝福；输了全队永久死亡', d: '强敌，开打前能看阵容。赢了必得食物，常有新蛊，还能选一个祝福' },
   event:  { n: '奇遇', ch: '遇', k: '二选一的小事', tip: '奇遇：一段小事，两个选择，结果都先写明（回血、食物、新蛊、蛊性……）', d: '一段小事，两个选择，结果都先写明' },
   camp:   { n: '篝火', ch: '火', k: '歇脚回血', tip: '篝火：歇脚的地方，全队回血（不是炎道）', d: '歇脚，全队回满血的一半' },
@@ -206,8 +206,11 @@ export function roomLoot(seed, realm, d, lane, type, foodPool, spPool = null, ex
   const roll = ([p, per]) => { const q = p + per * d; let n = Math.floor(q); if (rng() < q - n) n++; return n; };
   for (let i = roll(L.food) + extraFood; i > 0; i--) out.foods.push(foodPick(rng, pool, d));
   for (let i = roll(L.gu); i > 0; i--) out.gu.push(lootGu(rng, realm, d, type === 'boss' ? 1 : 0, spPool));
+  while (out.foods.length + out.gu.length < (L.min | 0)) out.foods.push(foodPick(rng, pool, d));
   return out;
 }
+// 当前房间打赢会掉什么（种子定死，开打前就能算；tripFight 发的就是这一份）
+export const winLoot = t => { const room = t.room; return room ? roomLoot(t.seed, t.realm, room.d, room.lane, room.type, t.foodPool, t.spPool, blessRules(t.bless).food) : null; };
 export function addLoot(bag, l) { (l.foods || []).forEach(f => bag.foods.push(f)); (l.gu || []).forEach(g => bag.gu.push(g)); return bag; }
 export const lootEmpty = l => !l || (!(l.foods || []).length && !(l.gu || []).length);
 export const guName = g => RANK.names[g.rank] + (SP[g.sp] ? SP[g.sp].n : g.sp);
@@ -390,7 +393,7 @@ export function tripFight(t, team, fielded, res) {
     if (k) { if (!real.xing) { real.xing = k; offers.push({ uid: g.uid, xing: k, old: null, auto: true }); } else offers.push({ uid: g.uid, xing: k, old: real.xing }); }
   });
   let loot = null; const revived = saved.includes(t.revived) && t.hp[t.revived] > 1 ? t.revived : null;
-  if (win) { loot = roomLoot(t.seed, t.realm, room.d, room.lane, room.type, t.foodPool, t.spPool, blessRules(t.bless).food); addLoot(t.loot, loot); }
+  if (win) { loot = winLoot(t); addLoot(t.loot, loot); }
   (t.bless || []).forEach(x => { if (x.left > 0) x.left--; });   // 只管几场的祝福（庇佑）少一场
   tlog(t, `${win ? '胜' : '僵持不下，各自退开'}${saved.length ? '。救回：' + saved.map(name).join('、') + '（剩 1 血）' : ''}${revived ? `。定魂香：${name(revived)} 以 ${Math.round(t.revive * 100)}% 血站起来` : ''}${loot && !lootEmpty(loot) ? '。' + lootText(loot) : ''}`);
   offers.filter(o => o.auto).forEach(o => tlog(t, `${name(o.uid)} 得蛊性「${XING[o.xing].n}」`));
